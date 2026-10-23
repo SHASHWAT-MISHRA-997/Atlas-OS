@@ -73,7 +73,7 @@
     if ($('pairbanner')) return;
     const banner = el('div', { id: 'pairbanner', class: 'warn', role: 'alert', style: 'margin-bottom:14px' }, [
       el('strong', { text: 'This device is not signed in to ATLAS. ' }),
-      el('span', { text: 'On the computer running ATLAS, run `python -m app.auth token` in the backend folder and open the pairing link it prints on this device. Opening ATLAS on that computer itself signs in automatically.' }),
+      el('span', { text: 'On the computer running ATLAS, open Devices, create a pairing link and open it on this device. (Or run `python -m app.auth token` in the backend folder.) Opening ATLAS on that computer itself signs in automatically.' }),
     ]);
     $('main').prepend(banner);
   }
@@ -999,10 +999,105 @@
       'Local models (Ollama): ' + (s.ollama.available ? 'reachable, ' + s.ollama.count + ' model(s)' : 'not reachable'),
       'Cloud model providers: ' + (s.external_providers_enabled ? 'allowed with your own key' : 'disabled by server configuration'),
       'Desktop agent: ' + (s.desktop_agent_enabled ? 'enabled on this machine (allowlisted apps only)' : 'off'),
-      'File system: not connected', 'Calendar / email / messaging: not implemented', 'Remote devices: not implemented',
+      'File system: not connected', 'Calendar / email / messaging: not implemented', 'Other devices: pair them in Devices (one-time links, per-device logins)',
     ] : ['Backend unreachable: integration status unknown'];
     v.append(el('h2', { text: 'Integrations' }), el('p', { class: 'muted', text: 'Live status from the ATLAS backend. Nothing here is connected unless it says so.' }));
     rows.forEach((t) => v.append(el('div', { class: 'task', text: t })));
+  }
+
+  async function renderDevices(v) {
+    await ensureStatus();
+    v.replaceChildren(el('h2', { text: 'Devices' }));
+    if (systemStatus && systemStatus.auth === 'off') {
+      v.append(el('p', { class: 'warn', text: 'Login is switched off on this server (ATLAS_AUTH_REQUIRED=false), so anyone who can reach it can use it. Device pairing needs login on.' }));
+      return;
+    }
+    let me;
+    try {
+      me = await api('/api/devices/current');
+    } catch (err) {
+      v.append(el('p', { class: 'warn', text: 'Could not check this device: ' + err.message }));
+      return;
+    }
+    if (me.kind === 'device') {
+      const forget = el('button', { class: 'btn', type: 'button', text: 'Forget this device' });
+      forget.addEventListener('click', async () => {
+        if (!confirm('Sign this device out of ATLAS? You will need a new pairing link to come back.')) return;
+        forget.disabled = true;
+        try {
+          await api('/api/devices/current', { method: 'DELETE' });
+          v.replaceChildren(el('h2', { text: 'Devices' }), el('p', { class: 'notice', role: 'status', text: 'This device is signed out.' }));
+        } catch (err) {
+          forget.disabled = false;
+          alert('Could not sign out: ' + err.message);
+        }
+      });
+      v.append(
+        el('p', { class: 'muted', text: 'This device is paired as “' + me.name + '”. Only the computer running ATLAS can pair or remove other devices.' }),
+        el('div', { class: 'row' }, [forget]),
+      );
+      return;
+    }
+    v.append(el('p', { class: 'muted', text: 'Pair a phone or another computer. Each device gets its own login that you can remove here at any time. Pairing links work once and expire after 10 minutes. Traffic is plain HTTP, so pair only on a network you trust.' }));
+    const name = el('input', { id: 'devicename', maxlength: '40', placeholder: 'Device name, e.g. My phone', 'aria-label': 'Device name', style: 'padding:9px;border:1px solid #304771;border-radius:8px;background:#080f20;color:white;min-width:0;flex:1' });
+    const create = el('button', { class: 'btn primary', type: 'submit', text: 'Create pairing link' });
+    const result = el('div', { 'aria-live': 'polite' });
+    const form = el('form', { class: 'panel', style: 'margin-top:16px' }, [el('div', { class: 'row' }, [name, create]), result]);
+    const list = el('div', { class: 'tasklist', id: 'devicelist', style: 'margin-top:14px' });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      create.disabled = true;
+      try {
+        const r = await api('/api/devices/pairing', { method: 'POST', body: { name: name.value.trim() || null } });
+        const link = r.url || 'http://<this-computer-address>:' + (location.port || '80') + r.path;
+        result.replaceChildren(
+          el('p', { class: 'notice', style: 'margin-top:12px', text: 'Open this link on the other device within 10 minutes. It works once.' }),
+          el('code', { id: 'pairlink', style: 'display:block;word-break:break-all;padding:10px;background:#080f20;border-radius:8px', text: link }),
+          r.url ? null : el('p', { class: 'tiny muted', text: 'Replace <this-computer-address> with this computer\'s network address and add it to ATLAS_ALLOWED_HOSTS, or set ATLAS_PUBLIC_URL to get a complete link.' }),
+        );
+        name.value = '';
+      } catch (err) {
+        result.replaceChildren(el('p', { class: 'warn', style: 'margin-top:12px', text: 'Could not create a link: ' + err.message }));
+      } finally {
+        create.disabled = false;
+      }
+    });
+
+    async function refresh() {
+      let data;
+      try {
+        data = await api('/api/devices');
+      } catch (err) {
+        list.replaceChildren(el('div', { class: 'task', text: 'Could not load devices: ' + err.message }));
+        return;
+      }
+      list.replaceChildren();
+      if (!data.devices.length) {
+        list.append(el('div', { class: 'task', text: 'No other devices are paired.' }));
+        return;
+      }
+      data.devices.forEach((d) => {
+        const revoke = el('button', { class: 'btn tiny', type: 'button', text: 'Remove', 'aria-label': 'Remove ' + d.name });
+        revoke.addEventListener('click', async () => {
+          if (!confirm('Remove “' + d.name + '”? It is signed out immediately.')) return;
+          revoke.disabled = true;
+          try {
+            await api('/api/devices/' + encodeURIComponent(d.id), { method: 'DELETE' });
+          } catch (err) {
+            alert('Could not remove: ' + err.message);
+          }
+          refresh();
+        });
+        list.append(el('div', { class: 'task row', style: 'justify-content:space-between' }, [
+          el('div', {}, [el('strong', { text: d.name }), el('div', { class: 'tiny muted', text: 'Paired ' + new Date(d.created_at).toLocaleString() + ' · last used ' + (d.last_seen_at ? new Date(d.last_seen_at).toLocaleString() : 'never') })]),
+          revoke,
+        ]));
+      });
+    }
+
+    v.append(form, el('h3', { text: 'Paired devices', style: 'margin-top:18px' }), list);
+    refresh();
   }
 
   function showSection(button) {
@@ -1025,6 +1120,7 @@
     if (page === 'chat') return renderChat(v);
     if (page === 'tasks') return renderTasks(v);
     if (page === 'integrations') return renderIntegrations(v);
+    if (page === 'devices') return renderDevices(v);
     const p = pages[page];
     v.append(el('h2', { text: p[0] }), el('p', { class: 'muted', text: p[1] }));
     p[2].forEach((t) => v.append(el('div', { class: 'task', text: t })));

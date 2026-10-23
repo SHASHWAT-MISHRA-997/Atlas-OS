@@ -61,7 +61,7 @@ flowchart LR
 
 ## Trust and network boundaries
 
-1. **Browser ↔ backend.** Same-origin only (CORS denies other origins). There is **no authentication**, so anyone who can reach the port can use it. Bind to `127.0.0.1` (the uvicorn default) unless authentication is added.
+1. **Browser ↔ backend.** Same-origin only (CORS denies other origins). Every `/api/` call needs the install token (this computer) or a device token (paired devices, `app/devices.py`). Plain HTTP: bind to `127.0.0.1` unless you trust the LAN.
 2. **Backend ↔ providers.** Outbound only, to the fixed URLs plus the operator-set Ollama URL. Redirects are not followed. Provider bodies are never forwarded to the browser.
 3. **Backend ↔ OS.** Only `desktop.py`, only when enabled, and only allowlisted argv lists with `shell=False`.
 

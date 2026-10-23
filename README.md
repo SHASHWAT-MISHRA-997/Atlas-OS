@@ -41,7 +41,7 @@ Open http://127.0.0.1:8000. API docs are at http://127.0.0.1:8000/api/docs (deve
 
 Local model: install Ollama, run `ollama pull llama3.2:3b`, then open **AI Chat**. The model fills in automatically.
 
-To use ATLAS from another device on your network, run with `--host 0.0.0.0`, add your computer's name or IP to `ATLAS_ALLOWED_HOSTS`, and pair the device with the link from `python -m app.auth token`. Traffic is plain HTTP, so only do this on a network you trust (see [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)).
+To use ATLAS from another device on your network, run with `--host 0.0.0.0`, add your computer's name or IP to `ATLAS_ALLOWED_HOSTS`, and pair the device from the Devices screen (each device gets its own login you can remove). Traffic is plain HTTP, so only do this on a network you trust (see [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)).
 
 ## Configuration
 

@@ -27,7 +27,7 @@ def api_routes():
     for path, ops in create_app().openapi()["paths"].items():
         if path.startswith("/api/"):
             for method in ops:
-                yield method.upper(), path.replace("{memory_id}", "x").replace("{task_id}", "x")
+                yield method.upper(), path.replace("{memory_id}", "x").replace("{task_id}", "x").replace("{device_id}", "x")
 
 
 def test_route_sweep_is_not_empty():
@@ -62,14 +62,15 @@ def test_other_devices_get_no_cookie_without_pairing():
     assert c.get("/api/memory").status_code == 401
 
 
-def test_pairing_link_sets_cookie_and_strips_token_from_url():
+def test_install_token_pairing_link_gives_the_device_its_own_token():
     c = make(REMOTE)
     token = auth.get_token()
     r = c.get(f"/?pair={token}", follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/"
-    assert token in r.headers["set-cookie"]
-    c.cookies.set("atlas_session", token)
+    cookie = r.headers["set-cookie"]
+    assert token not in cookie and "HttpOnly" in cookie  # the install token never lands on the device
     assert c.get("/api/memory").status_code == 200
+    assert c.get("/api/devices/current").json()["kind"] == "device"
 
 
 def test_wrong_pairing_token_is_rejected():
@@ -140,3 +141,12 @@ def test_cli_prints_token(capsys):
     assert auth._main(["token"]) == 0
     out = capsys.readouterr()
     assert out.out.strip() == auth.get_token() and "?pair=" in out.err
+
+
+def test_cli_rotate_also_revokes_devices(capsys):
+    c = make(REMOTE)
+    c.get(f"/?pair={auth.get_token()}")
+    assert c.get("/api/memory").status_code == 200
+    assert auth._main(["rotate"]) == 0
+    assert "1 paired device(s) revoked" in capsys.readouterr().err
+    assert c.get("/api/memory").status_code == 401

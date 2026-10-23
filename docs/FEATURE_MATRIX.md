@@ -18,9 +18,9 @@ Last updated: 2026-10-23 (v0.4.0), branch `atlas/v7-foundation`.
 | Validation errors redact inputs | `app/main.py` | Verified (Linux) | `test_validation_errors_do_not_echo_api_keys` |
 | API docs off in production | `app/main.py` | Verified (Linux) | `test_api_docs_are_off_in_production` |
 | CORS same-origin only | `app/main.py` | Verified (Linux) | `test_cors_does_not_allow_foreign_origins` |
-| API login (per-install token, same-computer cookie, pairing link, Bearer) | `app/auth.py` | Verified (Linux, Chromium) | `test_auth.py` sweeps every API route; e2e pairing flow. Single shared token, no per-device revocation yet |
+| API login (per-install token, same-computer cookie, pairing link, Bearer) | `app/auth.py` | Verified (Linux, Chromium) | `test_auth.py` sweeps every API route; e2e pairing flow |
 | Host allowlist + Origin check (DNS rebinding, CSRF) | `app/auth.py` | Verified (Linux) | `test_unknown_host_*`, `test_cross_origin_writes_*` |
-| Per-device credentials, revocation, device list | — | Not implemented | Milestone H |
+| Per-device credentials, one-time pairing codes, revocation, device list | `app/devices.py`, `routers/devices.py`, Devices screen | Verified (Linux, Chromium) | `test_devices.py`; e2e `test_owner_pairs_a_second_device_*`. Only token hashes stored. Not tested on a real phone over Wi-Fi. No QR code yet |
 | CI workflow (lint, tests, e2e, Docker, pip-audit, secret scan, Windows runner) | `.github/workflows/tests.yml` | Implemented | Never run on GitHub: the source is not pushed yet |
 | Docker image | `Dockerfile` | Implemented | Not built here (no Docker). CI has a build + health smoke job |
 | Lint + security lint | `backend/ruff.toml` | Verified (Linux) | `ruff check .` clean, including the bandit `S` rules |
@@ -95,7 +95,8 @@ Last updated: 2026-10-23 (v0.4.0), branch `atlas/v7-foundation`.
 | Idempotency keys, bounded queue, timeouts, step retries | Verified (Linux, mocked provider) | |
 | Restart recovery (unfinished → Failed "interrupted", explicit Retry) | Verified (Linux) | `test_restart_*`, `test_recovery_after_crash_*` |
 | Task types | Implemented | Only `plan` (model writes steps; nothing executed) and `summarize_text`. No action-executing tasks exist |
-| Device pairing / remote access | Not implemented | Milestone H |
+| Device pairing (same LAN) | Verified (Linux, Chromium) | Plain HTTP on the LAN; no TLS, relay or internet access (rest of Milestone H) |
+| Remote access outside the home network (TLS, relay/tunnel) | Not implemented | Milestone H |
 | Live system status panel | Verified (Linux, Chromium) | `/api/system/status`; e2e |
 | Tasks screen (live progress, approve/cancel/pause/resume/retry) | Verified (Chromium, fake Ollama) | e2e `test_plan_task_*`, `test_task_can_be_cancelled_*`, `test_cloud_task_needs_approval_*` |
 | Responsive layout at 390 px | Verified (Chromium) | Was 747 px wide before the fix |

@@ -32,3 +32,5 @@
 4. Milestone E: a Windows agent with typed actions, which needs a Windows machine to verify.
 
 Voice (D) waits on local STT/TTS engine selection and real hardware.
+
+**D-013 Per-device tokens in a JSON file, not the database.** Device records must work even when server storage is off (production default), and there are at most 20 of them. Only SHA-256 hashes are stored; pairing codes live in memory only, so a restart simply invalidates them. Paired devices can use every feature but cannot pair or remove other devices.

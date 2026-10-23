@@ -9,13 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, storage, task_engine
+from . import auth, devices, storage, task_engine
 from .config import get_settings
 from .providers import ProviderError, ollama_status
 from .routers import desktop, llm, memory, tasks
+from .routers import devices as devices_router
 from .security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 CANDIDATE_ROOT = Path(__file__).resolve().parents[2]
 ROOT = CANDIDATE_ROOT if (CANDIDATE_ROOT / "frontend" / "index.html").exists() else Path(__file__).resolve().parents[1]
@@ -67,6 +68,10 @@ def create_app() -> FastAPI:
     async def task_error_handler(_: Request, exc: task_engine.TaskError):
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.message, "code": exc.code})
 
+    @application.exception_handler(devices.DeviceError)
+    async def device_error_handler(_: Request, exc: devices.DeviceError):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.message, "code": exc.code})
+
     @application.exception_handler(RequestValidationError)
     async def validation_error_handler(_: Request, exc: RequestValidationError):
         # Drop the offending input values: they can contain API keys or private prompt text.
@@ -80,6 +85,7 @@ def create_app() -> FastAPI:
     application.include_router(desktop.router)
     application.include_router(tasks.router)
     application.include_router(memory.router)
+    application.include_router(devices_router.router)
 
     @application.get("/health")
     def health():
@@ -107,14 +113,21 @@ def create_app() -> FastAPI:
     @application.get("/", include_in_schema=False)
     def frontend(request: Request, pair: str | None = None):
         if pair is not None:
-            if not auth.token_matches(pair):
-                return JSONResponse(status_code=401, content={"detail": "Pairing link is wrong or out of date.", "code": "bad_pairing"})
-            # Redirect so the token does not stay in the address bar or history.
+            # A one-time code from the Devices panel, or the install token from the CLI.
+            name = devices.redeem_pairing_code(pair) or ("Paired with install token" if auth.token_matches(pair) else None)
+            if name is None:
+                return JSONResponse(status_code=401, content={"detail": "Pairing link is wrong, already used or expired.",
+                                                              "code": "bad_pairing"})
+            _, device_token = devices.register(name)
+            # The device gets its own revocable token, never the install token. Redirect so the
+            # code does not stay in the address bar or history.
             response = RedirectResponse("/", status_code=303)
-            response.headers["set-cookie"] = auth.session_cookie_header(auth.get_token())
+            response.headers["set-cookie"] = auth.session_cookie_header(device_token)
             return response
         response = FileResponse(FRONTEND / "index.html")
-        if auth.auth_required() and auth.is_loopback(request.client.host if request.client else None):
+        if (auth.auth_required() and auth.is_loopback(request.client.host if request.client else None)
+                and auth.identify(request.cookies.get(auth.COOKIE)) is None):
+            # A browser on this machine is the owner, unless it already has a working session.
             response.headers["set-cookie"] = auth.session_cookie_header(auth.get_token())
         return response
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0 — 2026-10-23 (branch `atlas/v7-foundation`, not yet released)
+
+### Added
+- Per-device logins (`backend/app/devices.py`). The Devices screen on the computer running ATLAS creates one-time pairing links (10 minutes, single use). Each paired device gets its own random token; only its SHA-256 hash is stored, in `devices.json` (0600).
+- `/api/devices` (list), `/api/devices/pairing` (create code), `/api/devices/{id}` (remove), `/api/devices/current` (who am I / forget this device). Managing devices is owner-only.
+- CLI: `python -m app.auth devices | revoke <id> | revoke-all`. `rotate` now also revokes every device.
+- `ATLAS_PUBLIC_URL` (optional) so the Devices screen can show a complete link.
+
+### Changed
+- Pairing with the install token (`/?pair=<install token>`) now registers a device and gives it its own token; the install token is no longer stored on other devices.
+- A browser on the same computer keeps an existing device session instead of being switched to the owner session.
+
 ## 0.4.0 — 2026-10-23 (branch `atlas/v7-foundation`, not yet released)
 
 ### Added

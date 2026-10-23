@@ -398,3 +398,35 @@ def test_unpaired_browser_sees_pairing_help_and_pairing_link_signs_in(browser, s
 def test_api_rejects_requests_without_token(server):
     r = httpx.get(server + "/api/memory")
     assert r.status_code == 401
+
+
+def test_owner_pairs_a_second_device_from_the_ui_and_removes_it(page, browser, server):
+    page.get_by_role("button", name="Devices").click()
+    page.fill("#devicename", "Test phone")
+    page.get_by_role("button", name="Create pairing link").click()
+    link = page.locator("#pairlink").inner_text()
+    path = link[link.index("/?pair="):]
+    assert E2E_TOKEN not in link
+
+    phone_ctx = browser.new_context()
+    phone = phone_ctx.new_page()
+    phone.goto(server + path)
+    assert phone.url.rstrip("/") == server  # code removed from the address bar
+    assert all(c["value"] != E2E_TOKEN for c in phone_ctx.cookies())
+    phone.get_by_role("button", name="Devices").click()
+    phone.wait_for_selector("text=This device is paired as “Test phone”")
+    # The code is single-use.
+    assert httpx.get(server + path, follow_redirects=False).status_code == 401
+
+    page.get_by_role("button", name="Memory").click()
+    page.get_by_role("button", name="Devices").click()
+    row = page.locator("#devicelist .task", has_text="Test phone")
+    playwright_sync.expect(row).to_have_count(1, timeout=5000)
+    page.once("dialog", lambda d: d.accept())
+    row.get_by_role("button", name="Remove Test phone").click()
+    playwright_sync.expect(row).to_have_count(0, timeout=5000)
+
+    phone.get_by_role("button", name="Refresh status").click()
+    phone.wait_for_selector("#pairbanner")
+    assert page.errors == []
+    phone_ctx.close()

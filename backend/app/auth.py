@@ -5,14 +5,19 @@ one random API token, and every /api/ request must prove it knows the token:
 
 * A browser on the same machine (loopback address) that loads ``/`` receives it
   as an HttpOnly, SameSite=Strict cookie, so the UI just works.
-* Any other device must open ``/?pair=<token>`` once. The token is shown by
-  ``python -m app.auth token`` on the machine running ATLAS. It is never logged.
-* Scripts can send ``Authorization: Bearer <token>``.
+* Any other device is paired once through ``/?pair=<code>`` and gets its own
+  revocable device token (see app/devices.py). The code comes from the Devices
+  panel, or the install token itself works as a code (``python -m app.auth
+  token``). Either way the device never stores the install token.
+* Scripts can send ``Authorization: Bearer <token>`` (install or device token).
+
+Each request records who made it in ``scope["state"]["principal"]``:
+``{"kind": "owner"}`` for the install token, or ``{"kind": "device", ...}``.
 
 The middleware also rejects unknown Host headers (DNS-rebinding protection) and
 cross-origin state-changing requests (CSRF protection).
 
-CLI (from backend/):  python -m app.auth token | rotate
+CLI (from backend/):  python -m app.auth token | rotate | devices | revoke <id> | revoke-all
 """
 from __future__ import annotations
 
@@ -25,7 +30,7 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import storage
+from . import devices, storage
 
 COOKIE = "atlas_session"
 PUBLIC_PATHS = {"/", "/health", "/favicon.ico"}
@@ -74,6 +79,20 @@ def token_matches(candidate: str | None) -> bool:
     return bool(candidate) and hmac.compare_digest(candidate.encode(), get_token().encode())
 
 
+OWNER = {"kind": "owner"}
+
+
+def identify(token: str | None) -> dict | None:
+    """Who a presented token belongs to: the owner (install token), an active device, or nobody."""
+    if token_matches(token):
+        return dict(OWNER)
+    try:
+        device = devices.authenticate(token)
+    except devices.DeviceError:
+        return None  # fail closed
+    return {"kind": "device", "id": device["id"], "name": device["name"]} if device else None
+
+
 def allowed_hosts() -> set[str]:
     extra = {h.strip().lower() for h in (os.getenv("ATLAS_ALLOWED_HOSTS") or "").split(",") if h.strip()}
     return LOOPBACK | extra
@@ -92,6 +111,10 @@ def _host_only(value: str) -> str:
 
 def session_cookie_header(token: str) -> str:
     return f"{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict"
+
+
+def clear_cookie_header() -> str:
+    return f"{COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
 
 
 class AuthMiddleware:
@@ -116,7 +139,11 @@ class AuthMiddleware:
             if parsed.hostname is None or _host_only(parsed.netloc) != host:
                 return await _deny(send, 403, "cross_origin", "Cross-origin requests are not allowed.")
 
-        if not auth_required() or path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES):
+        state = scope.setdefault("state", {})
+        if not auth_required():
+            state["principal"] = dict(OWNER)
+            return await self.app(scope, receive, send)
+        if path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES):
             return await self.app(scope, receive, send)
 
         bearer = headers.get("authorization", "")
@@ -128,10 +155,12 @@ class AuthMiddleware:
             except Exception:  # noqa: BLE001 - malformed cookie header means "no session"
                 jar = SimpleCookie()
             presented = jar[COOKIE].value if COOKIE in jar else None
-        if not token_matches(presented):
+        principal = identify(presented)
+        if principal is None:
             return await _deny(send, 401, "unauthorized",
-                               "Not signed in to this ATLAS install. Open ATLAS from this computer, or pair this device with "
-                               "the link from `python -m app.auth token`.")
+                               "Not signed in to this ATLAS install. Open ATLAS on the computer running it, or pair this "
+                               "device with a link from Settings → Devices there.")
+        state["principal"] = principal
         return await self.app(scope, receive, send)
 
 
@@ -151,7 +180,23 @@ def _main(argv: list[str]) -> int:
         return 0
     if argv[:1] == ["rotate"]:
         rotate_token()
-        print("New token written. Every paired device must pair again; restart is not needed.", file=sys.stderr)
+        revoked = devices.revoke_all()
+        print(f"New install token written and {revoked} paired device(s) revoked. Restart is not needed.", file=sys.stderr)
+        return 0
+    if argv[:1] == ["devices"]:
+        for d in devices.list_devices():
+            print(f"{d['id']}  {d['name']}  paired {d['created_at']}  last seen {d['last_seen_at'] or 'never'}")
+        return 0
+    if argv[:1] == ["revoke"] and len(argv) == 2:
+        try:
+            devices.revoke(argv[1])
+        except devices.DeviceError as exc:
+            print(exc.message, file=sys.stderr)
+            return 1
+        print("Device revoked.", file=sys.stderr)
+        return 0
+    if argv[:1] == ["revoke-all"]:
+        print(f"{devices.revoke_all()} device(s) revoked.", file=sys.stderr)
         return 0
     print(__doc__)
     return 2
