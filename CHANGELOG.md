@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — mobile polish (branch `atlas/mobile-redesign`)
+
+### Fixed
+- Symbols that showed as boxes on some Android phones are now inline SVG icons.
+- Your own chat bubble was clipped by a header style (pill corners cut "YOU" and words); header styles are now scoped to the header.
+- Chat box placeholder no longer wraps and gets cut at 320 px; composer buttons wrap instead of overflowing.
+- PC action inputs stuck out of their card on narrow phones; they are now labelled fields.
+- Home cards use a 2-column grid on phones instead of a sideways scroller; model name wraps instead of being cut.
+- Verified with a scripted audit at 320/360/390/412 px for cut text, wrapped placeholders, round-corner clipping, elements outside their card, and tap targets in the More sheet (0 findings).
+
 ## 0.6.0 — 2026-10-23 (branch `atlas/windows-agent`)
 
 ### Added

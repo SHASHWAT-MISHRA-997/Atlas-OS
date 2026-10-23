@@ -275,7 +275,7 @@ def test_mobile_layout_has_no_horizontal_scroll(browser, server):
     context = browser.new_context(viewport={"width": 390, "height": 844})
     pg = context.new_page()
     pg.goto(server + "/")
-    pg.wait_for_selector("#topstatus:has-text('API online')")
+    pg.wait_for_selector("#topstatus:has-text('Online')")
     assert pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
     # Every screen, reached the way a phone user would: bottom tabs, then the More sheet.
     for name in ("AI Chat", "Tasks", "Memory", "Home"):

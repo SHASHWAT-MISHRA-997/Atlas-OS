@@ -25,6 +25,52 @@
     return node;
   }
 
+  // Line icons drawn as SVG, so they look the same on every phone (some Android fonts
+  // have no glyph for symbols like ⧉ or ⛨ and show a box or clip them).
+  const ICONS = {
+    home: 'M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z',
+    chat: 'M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z',
+    tasks: 'M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01',
+    agents: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
+    folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
+    repeat: 'M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5',
+    plug: 'M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0zM12 18v4',
+    memory: 'M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3zM4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6',
+    phone: 'M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2',
+    more: 'M5 12h.01M12 12h.01M19 12h.01',
+    search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3',
+    arrowupright: 'M7 17 17 7M8 7h9v9',
+    arrowright: 'M5 12h14M13 6l6 6-6 6',
+    chart: 'M3 3v18h18M8 17v-5M13 17V8M18 17v-9',
+    code: 'M16 18l6-6-6-6M8 6l-6 6 6 6',
+    layout: 'M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z',
+    check: 'M20 6 9 17l-5-5',
+    diamond: 'M12 2l10 10-10 10L2 12z',
+    shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+    logo: 'M12 3.5 21.5 20h-19z',
+    stop: 'M7 7h10v10H7z',
+    lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
+    cloud: 'M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.7 1.5A4 4 0 0 0 6 19z',
+    link: 'M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1',
+    file: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6',
+    send: 'M22 2 11 13M22 2l-7 20-4-9-9-4z',
+  };
+
+  function icon(name, cls) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', 'ic' + (cls ? ' ' + cls : ''));
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('d', ICONS[name] || ICONS.diamond);
+    svg.append(path);
+    return svg;
+  }
+
+  document.querySelectorAll('[data-icon]').forEach((n) => n.replaceChildren(icon(n.dataset.icon)));
+
   function log(message) {
     const box = $('log');
     box.textContent += (box.textContent ? '\n' : '') + '[' + new Date().toLocaleTimeString() + '] ' + message;
@@ -101,12 +147,13 @@
         statusRow(s.task_runner === 'background-engine' ? '' : 'off', s.task_runner === 'background-engine' ? 'Task engine: running' : 'Task engine: stopped'),
       );
       $('ollamastat').textContent = s.ollama.available ? String(s.ollama.count).padStart(2, '0') : 'Off';
-      $('topstatus').textContent = (s.ollama.available ? '● Local AI ready' : '◌ Local AI offline') + ' · API online';
+      $('topstatus').replaceChildren(el('span', { class: 'dot ' + (s.ollama.available ? '' : 'off'), 'aria-hidden': 'true' }), el('span', { text: (s.ollama.available ? 'AI ready' : 'AI offline') + ' · Online' }));
+      $('topstatus').title = s.ollama.available ? 'Local AI ready, API online' : 'Local AI offline, API online';
     } catch (err) {
       systemStatus = null;
       box.replaceChildren(statusRow('off', 'Backend unreachable: ' + err.message));
       $('ollamastat').textContent = '—';
-      $('topstatus').textContent = '◌ Backend offline';
+      $('topstatus').replaceChildren(el('span', { class: 'dot off', 'aria-hidden': 'true' }), el('span', { text: 'Offline' }));
     }
   }
 
@@ -593,12 +640,12 @@
     ]);
 
     const transcript = el('div', { class: 'transcript', 'aria-live': 'polite', 'aria-label': 'Conversation' });
-    const prompt = el('textarea', { rows: '1', maxlength: '12000', placeholder: 'Ask ATLAS something…', 'aria-label': 'Message', class: 'composer-input' });
+    const prompt = el('textarea', { rows: '1', maxlength: '12000', placeholder: 'Ask ATLAS…', 'aria-label': 'Message', class: 'composer-input' });
     const send = el('button', { class: 'btn primary sendbtn', type: 'submit', text: 'Send' });
-    const stop = el('button', { class: 'btn chip', type: 'button', text: '■ Stop', disabled: true, 'aria-label': 'Stop generating and speaking' });
+    const stop = el('button', { class: 'btn chip', type: 'button', disabled: true, 'aria-label': 'Stop generating and speaking' }, [icon('stop', 'filled'), 'Stop']);
     const mic = el('button', { class: 'btn chip', type: 'button', text: '🎙 Dictate', 'aria-label': 'Dictate a message using browser speech recognition' });
-    const speak = el('button', { class: 'btn chip', type: 'button', text: '🔊 Read replies: Off', 'aria-pressed': 'false' });
-    const clear = el('button', { class: 'btn chip', type: 'button', text: 'Clear chat history' });
+    const speak = el('button', { class: 'btn chip', type: 'button', text: '🔊 Read aloud', 'aria-pressed': 'false', 'aria-label': 'Read replies aloud' });
+    const clear = el('button', { class: 'btn chip', type: 'button', text: 'Clear chat', 'aria-label': 'Clear chat history' });
     const status = el('p', { class: 'chatstatus tiny muted', role: 'status', text: 'No message sent yet.' });
     prompt.addEventListener('input', () => { prompt.style.height = 'auto'; prompt.style.height = Math.min(prompt.scrollHeight, 180) + 'px'; });
     prompt.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); form.requestSubmit(); } });
@@ -622,7 +669,7 @@
       keyInput.placeholder = p.server_key_configured ? 'Optional: server key configured' : 'Paste key for this page session';
       billingBox.classList.toggle('hidden', p.local);
       billingLabel.textContent = 'I understand that requests to ' + p.label + ' leave this machine and may be billed to my account. Free tiers and prices are set by the provider and change.';
-      routeBadge.textContent = p.local ? '🔒 Local · stays on your PC' : '☁ Sends to ' + p.label;
+      routeBadge.replaceChildren(icon(p.local ? 'lock' : 'cloud'), el('span', { text: p.local ? 'Stays on your PC' : 'Sends to ' + p.label }));
       routeBadge.classList.toggle('cloud', !p.local);
       if (!p.local) settings.open = true;
       routing.textContent = p.local
@@ -669,7 +716,7 @@
       transcript.replaceChildren();
       if (!items.length) {
         transcript.append(el('div', { class: 'emptychat' }, [
-          el('div', { class: 'emptylogo', 'aria-hidden': 'true', text: '△' }),
+          el('div', { class: 'emptylogo', 'aria-hidden': 'true' }, [icon('logo')]),
           el('strong', { text: 'Namaste! What should we work on?' }),
           el('p', { class: 'muted', text: 'History is stored in ' + store.label + '.' }),
           el('div', { class: 'chips-row' }, ['Explain DBMS normalization simply', 'Plan my study week', 'Write a polite leave email'].map((t) =>
@@ -678,7 +725,13 @@
         return;
       }
       items.forEach((m) => transcript.append(bubble(m.role, m.content, m.meta)));
+      scrollChat();
+    }
+
+    function scrollChat() {
       transcript.scrollTop = transcript.scrollHeight;
+      // On phones the page itself scrolls; keep the newest message above the composer.
+      if (matchMedia('(max-width: 700px)').matches) window.scrollTo({ top: document.documentElement.scrollHeight });
     }
 
     function bubble(role, content, meta, extraClass) {
@@ -722,7 +775,7 @@
     speak.addEventListener('click', () => {
       const enabled = speak.getAttribute('aria-pressed') !== 'true';
       speak.setAttribute('aria-pressed', String(enabled));
-      speak.textContent = enabled ? '🔊 Read replies: On' : '🔊 Read replies: Off';
+      speak.textContent = enabled ? '🔊 Reading aloud' : '🔊 Read aloud';
       if (!enabled && 'speechSynthesis' in window) window.speechSynthesis.cancel();
       status.textContent = enabled
         ? ('speechSynthesis' in window ? 'New replies will be read aloud with your browser\'s voices. Press Stop to interrupt.' : 'This browser has no speech synthesis.')
@@ -784,8 +837,9 @@
       transcript.append(bubble('user', text));
       const reply = bubble('assistant', '', 'Waiting for ' + p.label + '…');
       transcript.append(reply);
-      transcript.scrollTop = transcript.scrollHeight;
+      scrollChat();
       prompt.value = '';
+      prompt.style.height = '';
 
       const controller = new AbortController();
       activeGeneration = { controller };
@@ -811,7 +865,7 @@
               answer += data.text;
               reply.body.textContent = answer;
               reply.metaLine.textContent = 'Streaming from ' + p.label + '…';
-              transcript.scrollTop = transcript.scrollHeight;
+              scrollChat();
             } else if (event === 'done') {
               meta = data;
             } else if (event === 'error') {
@@ -882,7 +936,7 @@
     }
     const providers = catalogue.providers.filter((p) => p.enabled);
     const saved = storageGet(CHAT_SETTINGS_KEY, {});
-    const kind = el('select', { id: 'taskkind' }, [el('option', { value: 'plan', text: 'Plan a goal (nothing is executed)' }), el('option', { value: 'summarize_text', text: 'Summarize long text' })]);
+    const kind = el('select', { id: 'taskkind' }, [el('option', { value: 'plan', text: 'Plan a goal' }), el('option', { value: 'summarize_text', text: 'Summarize long text' })]);
     const provider = el('select', { id: 'taskprovider' }, providers.map((p) => el('option', { value: p.id, text: p.label + (p.local ? '' : ' · may bill') })));
     provider.value = providers.some((p) => p.id === saved.provider) ? saved.provider : catalogue.default_provider;
     const model = el('input', { id: 'taskmodel', placeholder: 'Model ID', value: saved.model || '', autocomplete: 'off' });
@@ -906,27 +960,28 @@
     v.append(list);
 
     function actionForm(d) {
-      const fieldStyle = 'padding:9px;border:1px solid #304771;border-radius:8px;background:#080f20;color:white;min-width:0';
       const what = el('select', { id: 'actionkind' }, d.actions.map((a) => el('option', { value: a.kind, text: a.label })));
       const app = el('select', { id: 'actionapp' }, d.apps.map((a) => el('option', { value: a.id, text: a.label })));
       const folder = el('select', { id: 'actionfolder' }, d.folders.map((f) => el('option', { value: f, text: f })));
-      const sub = el('input', { id: 'actionpath', placeholder: 'Sub-folder (optional), e.g. college/sem5', maxlength: '500', style: fieldStyle });
-      const query = el('input', { id: 'actionquery', placeholder: 'Part of a file name, e.g. resume', maxlength: '200', style: fieldStyle });
+      const sub = el('input', { id: 'actionpath', placeholder: 'e.g. college/notes', maxlength: '500' });
+      const query = el('input', { id: 'actionquery', placeholder: 'e.g. resume', maxlength: '200' });
       const risk = el('p', { class: 'tiny muted' });
       const go = el('button', { class: 'btn primary', type: 'submit', text: 'Ask for approval' });
       const appField = el('label', { class: 'field' }, ['APP', app]);
       const folderField = el('label', { class: 'field' }, ['FOLDER', folder]);
+      const subField = el('label', { class: 'field' }, ['SUB-FOLDER (OPTIONAL)', sub]);
+      const queryField = el('label', { class: 'field' }, ['FILE NAME CONTAINS', query]);
       const f = el('form', { class: 'panel', style: 'margin-top:14px', 'aria-label': 'PC actions' }, [
         el('h3', { text: 'PC actions', style: 'margin:0 0 8px' }),
-        el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['ACTION', what]), appField, folderField]),
-        sub, query, risk, go,
+        el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['ACTION', what]), appField, folderField, subField, queryField]),
+        risk, go,
       ]);
       function sync() {
         const k = what.value;
         appField.classList.toggle('hidden', k !== 'open_app');
         folderField.classList.toggle('hidden', k === 'open_app');
-        sub.classList.toggle('hidden', k === 'open_app');
-        query.classList.toggle('hidden', k !== 'search_files');
+        subField.classList.toggle('hidden', k === 'open_app');
+        queryField.classList.toggle('hidden', k !== 'search_files');
         risk.textContent = d.actions.find((a) => a.kind === k).risk + (d.folders.length || k === 'open_app' ? '' : ' No approved folders exist on this PC.');
       }
       what.addEventListener('change', sync);
@@ -1034,7 +1089,7 @@
         children.push(el('p', { class: 'tiny muted', text: task.output.notice }));
       }
       if (task.output && task.output.entries) {
-        children.push(el('ul', { class: 'filelist' }, task.output.entries.map((e) => el('li', { text: (e.type === 'folder' ? '📁 ' : e.type === 'link' ? '↪ ' : '📄 ') + e.name + (e.size != null ? ' · ' + e.size.toLocaleString() + ' bytes' : '') }))));
+        children.push(el('ul', { class: 'filelist' }, task.output.entries.map((e) => el('li', { text: (e.type === 'folder' ? '📁 ' : e.type === 'link' ? '🔗 ' : '📄 ') + e.name + (e.size != null ? ' · ' + e.size.toLocaleString() + ' bytes' : '') }))));
         if (task.output.truncated) children.push(el('p', { class: 'tiny muted', text: 'Showing ' + task.output.entries.length + ' of ' + task.output.total + ' entries.' }));
       }
       if (task.output && task.output.results) {
@@ -1122,7 +1177,7 @@
       return;
     }
     v.append(el('p', { class: 'muted', text: 'Pair a phone or another computer. Each device gets its own login that you can remove here at any time. Pairing links work once and expire after 10 minutes. Traffic is plain HTTP, so pair only on a network you trust.' }));
-    const name = el('input', { id: 'devicename', maxlength: '40', placeholder: 'Device name, e.g. My phone', 'aria-label': 'Device name', style: 'padding:9px;border:1px solid #304771;border-radius:8px;background:#080f20;color:white;min-width:0;flex:1' });
+    const name = el('input', { id: 'devicename', maxlength: '40', placeholder: 'Device name', 'aria-label': 'Device name', style: 'padding:9px;border:1px solid #304771;border-radius:8px;background:#080f20;color:white;min-width:0;flex:1' });
     const create = el('button', { class: 'btn primary', type: 'submit', text: 'Create pairing link' });
     const result = el('div', { 'aria-live': 'polite' });
     const form = el('form', { class: 'panel', style: 'margin-top:16px' }, [el('div', { class: 'row' }, [name, create]), result]);
