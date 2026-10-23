@@ -4,7 +4,7 @@ States: **Not implemented** · **Partially implemented** · **Implemented** (cod
 
 "Verified (Linux, mocked provider)" means automated tests passed on Linux with the model provider replaced by `httpx.MockTransport` or a fake Ollama server. It is **not** evidence that a real provider, a real Ollama install, or Windows works.
 
-Last updated: 2026-10-23 (v0.3.0), branch `atlas/v7-foundation`.
+Last updated: 2026-10-23 (v0.4.0), branch `atlas/v7-foundation`.
 
 ## Foundation and security
 
@@ -18,8 +18,10 @@ Last updated: 2026-10-23 (v0.3.0), branch `atlas/v7-foundation`.
 | Validation errors redact inputs | `app/main.py` | Verified (Linux) | `test_validation_errors_do_not_echo_api_keys` |
 | API docs off in production | `app/main.py` | Verified (Linux) | `test_api_docs_are_off_in_production` |
 | CORS same-origin only | `app/main.py` | Verified (Linux) | `test_cors_does_not_allow_foreign_origins` |
-| Authentication / sessions | — | Not implemented | Required before any hosted or remote use (Milestone H) |
-| CI workflow | `.github/workflows/tests.yml` | Implemented | Never run on GitHub: the source is not pushed yet |
+| API login (per-install token, same-computer cookie, pairing link, Bearer) | `app/auth.py` | Verified (Linux, Chromium) | `test_auth.py` sweeps every API route; e2e pairing flow. Single shared token, no per-device revocation yet |
+| Host allowlist + Origin check (DNS rebinding, CSRF) | `app/auth.py` | Verified (Linux) | `test_unknown_host_*`, `test_cross_origin_writes_*` |
+| Per-device credentials, revocation, device list | — | Not implemented | Milestone H |
+| CI workflow (lint, tests, e2e, Docker, pip-audit, secret scan, Windows runner) | `.github/workflows/tests.yml` | Implemented | Never run on GitHub: the source is not pushed yet |
 | Docker image | `Dockerfile` | Implemented | Not built here (no Docker). CI has a build + health smoke job |
 | Lint + security lint | `backend/ruff.toml` | Verified (Linux) | `ruff check .` clean, including the bandit `S` rules |
 | Secret scan | — | Verified (manual run) | `detect-secrets` found only test placeholders; not yet in CI |
@@ -41,7 +43,7 @@ Last updated: 2026-10-23 (v0.3.0), branch `atlas/v7-foundation`.
 | Server-side provider keys | `ATLAS_<PROVIDER>_API_KEY` | Verified (Linux, mocked provider) | Never returned; the catalogue shows presence only |
 | Local-only switch | `ATLAS_ALLOW_EXTERNAL_PROVIDERS=false` | Verified (Linux) | `test_external_providers_can_be_disabled` |
 | Billing / data-routing acknowledgement in UI | `frontend/static/app.js` | Verified (Linux, Chromium) | e2e `test_cloud_provider_requires_key_and_billing_*` |
-| Real Ollama end-to-end | — | **Blocked** | Ollama and models not installed in this container. See `TEST_PLAN.md` §Manual |
+| Real Ollama end-to-end | — | **Not verified** | The workspace network blocks Ollama downloads, and the owner chose not to pursue it for now. See `TEST_PLAN.md` §Manual |
 | Real cloud provider end-to-end | — | **Blocked** | Needs the user's own key; never requested in chat |
 | Provider fallback | — | Not implemented | Only if explicitly configured (spec 5.5) |
 | Usage/latency metadata | chat + stream responses | Verified (Linux, mocked provider) | `latency_ms`, `first_token_ms`, `usage` when the provider sends it |
@@ -60,7 +62,7 @@ Last updated: 2026-10-23 (v0.3.0), branch `atlas/v7-foundation`.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Allowlisted app launch (Notepad/Calculator/File manager) | Implemented | Unit tests cover the policy only. **Not tested on Windows.** No UI |
+| Allowlisted app launch (Notepad/Calculator/File manager) | Implemented | Policy unit-tested. `test_windows.py` launches real Notepad, but only runs on the Windows CI job, which has not run yet. No UI |
 | Typed action schemas, risk classes, audit log | Not implemented | |
 | Scoped file access | Not implemented | |
 | Office document generation | Not implemented | |

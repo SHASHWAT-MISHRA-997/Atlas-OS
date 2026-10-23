@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 — 2026-10-23 (branch `atlas/v7-foundation`, not yet released)
+
+### Added
+- API login (`backend/app/auth.py`): every `/api/` route needs the per-install token. A browser on the same computer gets it as an HttpOnly, SameSite=Strict cookie; other devices pair once with `/?pair=<token>` (shown by `python -m app.auth token`); scripts use `Authorization: Bearer`. `python -m app.auth rotate` signs every device out.
+- Host-header allowlist (DNS-rebinding protection) and Origin check on writes (CSRF protection).
+- UI banner explaining how to pair when a device is not signed in.
+- CI: dependency audit, secret scan, and a Windows job that runs the test suite on a real Windows runner, including an actual Notepad launch.
+
 ## 0.3.0 — 2026-10-23 (branch `atlas/v7-foundation`, not yet released)
 
 ### Added

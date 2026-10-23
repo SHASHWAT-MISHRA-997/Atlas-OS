@@ -31,6 +31,30 @@ jobs:
       - name: Unit and API tests
         working-directory: backend
         run: python -m pytest -q -m "not e2e"
+      - name: Dependency vulnerability audit
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r backend/requirements.txt
+      - name: Secret scan (fails on any finding outside tests)
+        run: |
+          python -m pip install detect-secrets
+          detect-secrets scan --all-files --exclude-files '(^|/)(\.git|tests|\.pytest_cache|\.ruff_cache)/' > secrets.json
+          python -c "import json,sys; r=json.load(open('secrets.json'))['results']; print(json.dumps({k:[x['type'] for x in v] for k,v in r.items()})); sys.exit(1 if r else 0)"
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements-dev.txt
+      - name: Unit, API and Windows tests (includes a real Notepad launch)
+        working-directory: backend
+        run: python -m pytest -q -m "not e2e"
 
   frontend-e2e:
     runs-on: ubuntu-latest

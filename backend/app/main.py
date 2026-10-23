@@ -6,16 +6,16 @@ import httpx  # noqa: F401 - tests patch ``app.main.httpx.AsyncClient`` to stub 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import storage, task_engine
+from . import auth, storage, task_engine
 from .config import get_settings
 from .providers import ProviderError, ollama_status
 from .routers import desktop, llm, memory, tasks
 from .security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 CANDIDATE_ROOT = Path(__file__).resolve().parents[2]
 ROOT = CANDIDATE_ROOT if (CANDIDATE_ROOT / "frontend" / "index.html").exists() else Path(__file__).resolve().parents[1]
@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
         allow_headers=["Content-Type"],
     )
     application.add_middleware(BodySizeLimitMiddleware)
+    application.add_middleware(auth.AuthMiddleware)
     application.add_middleware(SecurityHeadersMiddleware)
 
     @application.exception_handler(ProviderError)
@@ -95,6 +96,7 @@ def create_app() -> FastAPI:
             "external_providers_enabled": current.allow_external_providers,
             "desktop_agent_enabled": current.enable_desktop_agent,
             "task_runner": "background-engine" if task_engine.manager.started else "stopped",
+            "auth": "token" if auth.auth_required() else "off",
             "memory_storage": "server-sqlite" if storage.server_storage_enabled() else "browser-local",
         }
 
@@ -103,8 +105,18 @@ def create_app() -> FastAPI:
         application.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     @application.get("/", include_in_schema=False)
-    def frontend():
-        return FileResponse(FRONTEND / "index.html")
+    def frontend(request: Request, pair: str | None = None):
+        if pair is not None:
+            if not auth.token_matches(pair):
+                return JSONResponse(status_code=401, content={"detail": "Pairing link is wrong or out of date.", "code": "bad_pairing"})
+            # Redirect so the token does not stay in the address bar or history.
+            response = RedirectResponse("/", status_code=303)
+            response.headers["set-cookie"] = auth.session_cookie_header(auth.get_token())
+            return response
+        response = FileResponse(FRONTEND / "index.html")
+        if auth.auth_required() and auth.is_loopback(request.client.host if request.client else None):
+            response.headers["set-cookie"] = auth.session_cookie_header(auth.get_token())
+        return response
 
     return application
 

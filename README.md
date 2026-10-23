@@ -4,7 +4,7 @@
 
 ATLAS OS is an AI assistant you run on your own computer. It is **not** an operating system and **not** production-ready. This README describes only what exists today; see [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the status of every feature.
 
-## What it does today (v0.3.0)
+## What it does today (v0.4.0)
 
 - **Chat with a local model through Ollama** (the default), with streamed replies, a Stop button that really cancels generation, automatic discovery of installed models, and clear errors when Ollama or a model is missing.
 - **Optional cloud models** (OpenAI, Groq, OpenRouter, NVIDIA NIM, Together, Cerebras, Fireworks, DeepSeek) with your own key. Each reply says which provider and model answered. Cloud use needs an explicit billing/data-routing acknowledgement and can be switched off server-wide.
@@ -12,12 +12,13 @@ ATLAS OS is an AI assistant you run on your own computer. It is **not** an opera
 - **Background tasks** with live progress, cancel, pause/resume and urgent priority: a model-written plan (never executed) or a long-text summary. Cloud tasks wait for your approval first.
 - **CSV workbench**: statistics computed in your browser; the file is never uploaded.
 - **Live status** of the API, Ollama, cloud policy and desktop agent.
+- **API login**: every API call needs this install's token. Opening ATLAS on the same computer signs you in automatically; another device (like your phone on the same Wi-Fi) pairs once with the link from `python -m app.auth token`.
 - **Quick plan on Home**: still a fixed 4-step simulation. Use Tasks for a real plan.
 - **Desktop launcher** (off by default): opens Notepad, Calculator or the file manager. Not yet tested on Windows; API only.
 
 ## Not supported yet
 
-Wake word, local speech recognition, Windows automation beyond the 3-app launcher, file operations, action-executing tasks, document RAG, authentication, remote/mobile access, vision and tool calling. Browser dictation exists, but in Chrome/Edge **it sends audio to the browser vendor**.
+Wake word, local speech recognition, Windows automation beyond the 3-app launcher, file operations, action-executing tasks, document RAG, per-device login and revocation, remote access over the internet, vision and tool calling. Browser dictation exists, but in Chrome/Edge **it sends audio to the browser vendor**.
 
 ## Requirements
 
@@ -40,7 +41,7 @@ Open http://127.0.0.1:8000. API docs are at http://127.0.0.1:8000/api/docs (deve
 
 Local model: install Ollama, run `ollama pull llama3.2:3b`, then open **AI Chat**. The model fills in automatically.
 
-**Do not run with `--host 0.0.0.0` on a shared network.** There is no authentication yet (see [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)).
+To use ATLAS from another device on your network, run with `--host 0.0.0.0`, add your computer's name or IP to `ATLAS_ALLOWED_HOSTS`, and pair the device with the link from `python -m app.auth token`. Traffic is plain HTTP, so only do this on a network you trust (see [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)).
 
 ## Configuration
 
@@ -77,11 +78,11 @@ docker build -t atlas-os .
 docker run -p 127.0.0.1:8000:8000 -e ATLAS_OLLAMA_BASE_URL=http://host.docker.internal:11434 atlas-os
 ```
 
-The image runs in production mode as a non-root user. It has not been built in the development environment yet; CI builds it.
+The image runs in production mode as a non-root user. Your browser reaches the container through Docker's network, so pair it once: `docker exec <container> python -m app.auth token`. It has not been built in the development environment yet; CI builds it.
 
 ## Deployment
 
-There is no deployment. Hosting this build publicly is **not safe**, because it has no authentication. A hosted Ollama URL cannot reach the user's PC. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+There is no deployment. Hosting this build publicly is **not safe**: it has only a single shared token, no TLS of its own and no per-user separation. A hosted Ollama URL cannot reach the user's PC. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Data and privacy
 

@@ -18,9 +18,13 @@ def _isolate_env(monkeypatch, tmp_path):
     # Every test gets its own empty data directory; tests never touch the real user profile.
     monkeypatch.setenv("ATLAS_DATA_DIR", str(tmp_path / "atlas-data"))
     for name in ("ATLAS_ENV", "ATLAS_SERVER_STORAGE", "ATLAS_ENABLE_API_DOCS", "ATLAS_ALLOW_EXTERNAL_PROVIDERS", "ATLAS_OLLAMA_BASE_URL",
-                 "ATLAS_MAX_BODY_BYTES", "ATLAS_GROQ_API_KEY", "ATLAS_OPENAI_API_KEY"):
+                 "ATLAS_MAX_BODY_BYTES", "ATLAS_GROQ_API_KEY", "ATLAS_OPENAI_API_KEY", "ATLAS_API_TOKEN"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("ATLAS_LLM_RATE_LIMIT_PER_MINUTE", "10000")
+    # Most tests exercise features, not login: they use TestClient's default host and no token.
+    # tests/test_auth.py turns authentication back on and covers it end to end.
+    monkeypatch.setenv("ATLAS_ALLOWED_HOSTS", "testserver")
+    monkeypatch.setenv("ATLAS_AUTH_REQUIRED", "false")
     llm_rate_limiter.reset()
     yield
     llm_rate_limiter.reset()

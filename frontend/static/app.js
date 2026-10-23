@@ -58,6 +58,7 @@
     const response = await fetch(path, init);
     let data = {};
     try { data = await response.json(); } catch { /* non-JSON error page */ }
+    if (response.status === 401 && data.code === 'unauthorized') showPairingBanner();
     if (!response.ok) {
       const detail = typeof data.detail === 'string' ? data.detail : 'Request failed with HTTP ' + response.status;
       const error = new Error(detail);
@@ -66,6 +67,15 @@
       throw error;
     }
     return data;
+  }
+
+  function showPairingBanner() {
+    if ($('pairbanner')) return;
+    const banner = el('div', { id: 'pairbanner', class: 'warn', role: 'alert', style: 'margin-bottom:14px' }, [
+      el('strong', { text: 'This device is not signed in to ATLAS. ' }),
+      el('span', { text: 'On the computer running ATLAS, run `python -m app.auth token` in the backend folder and open the pairing link it prints on this device. Opening ATLAS on that computer itself signs in automatically.' }),
+    ]);
+    $('main').prepend(banner);
   }
 
   // ---------------------------------------------------------------- status
