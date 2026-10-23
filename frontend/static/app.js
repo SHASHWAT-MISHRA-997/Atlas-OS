@@ -88,7 +88,7 @@
           s.external_providers_enabled ? 'Cloud providers: allowed (BYOK)' : 'Cloud providers: disabled'),
         statusRow(s.desktop_agent_enabled ? 'warn' : 'off', s.desktop_agent_enabled ? 'Desktop agent: enabled' : 'Desktop agent: off'),
         statusRow(s.memory_storage === 'server-sqlite' ? '' : 'off', s.memory_storage === 'server-sqlite' ? 'Memory: ATLAS storage (SQLite)' : 'Memory: this browser only'),
-        statusRow('off', 'Task runner: simulation only'),
+        statusRow(s.task_runner === 'background-engine' ? '' : 'off', s.task_runner === 'background-engine' ? 'Task engine: running' : 'Task engine: stopped'),
       );
       $('ollamastat').textContent = s.ollama.available ? String(s.ollama.count).padStart(2, '0') : 'Off';
       $('topstatus').textContent = (s.ollama.available ? '● Local AI ready' : '◌ Local AI offline') + ' · API online';
@@ -122,7 +122,7 @@
       const plan = await api('/api/tasks/plan', { method: 'POST', body: { command: cmd } });
       planCount += 1;
       $('taskcount').textContent = String(planCount).padStart(2, '0');
-      message.textContent = plan.notice;
+      message.textContent = plan.notice + ' For a plan written by your model, use the Tasks screen.';
       $('taskstate').textContent = 'PLAN READY · ' + plan.mode.toUpperCase();
       const box = $('tasksteps');
       box.replaceChildren();
@@ -826,6 +826,156 @@
     discoverModels(true);
   }
 
+  // ---------------------------------------------------------------- task manager
+  let taskPoll = null;
+  const TASK_TERMINAL = ['Succeeded', 'Failed', 'Cancelled'];
+
+  function stopTaskPolling() {
+    if (taskPoll) clearInterval(taskPoll);
+    taskPoll = null;
+  }
+
+  async function renderTasks(v) {
+    await ensureStatus();
+    v.replaceChildren();
+    v.append(el('h2', { text: 'Tasks' }), el('p', {
+      class: 'muted',
+      text: 'Background jobs run by the ATLAS backend. Progress, states and timings are real. Tasks only call the model you choose: they never run commands, touch files or control the desktop. Cloud tasks wait for your approval first.',
+    }));
+    let catalogue;
+    try {
+      catalogue = await api('/api/llm/providers');
+    } catch (err) {
+      v.append(el('p', { class: 'warn', text: 'Cannot load providers: ' + err.message }));
+      return;
+    }
+    const providers = catalogue.providers.filter((p) => p.enabled);
+    const saved = storageGet(CHAT_SETTINGS_KEY, {});
+    const kind = el('select', { id: 'taskkind' }, [el('option', { value: 'plan', text: 'Plan a goal (model writes steps; nothing is executed)' }), el('option', { value: 'summarize_text', text: 'Summarize long text (split into parts)' })]);
+    const provider = el('select', { id: 'taskprovider' }, providers.map((p) => el('option', { value: p.id, text: p.label + (p.local ? '' : ' · may bill') })));
+    provider.value = providers.some((p) => p.id === saved.provider) ? saved.provider : catalogue.default_provider;
+    const model = el('input', { id: 'taskmodel', placeholder: 'Model ID', value: saved.model || '', autocomplete: 'off' });
+    const key = el('input', { id: 'taskkey', type: 'password', placeholder: 'API key (kept in memory only until the task ends)', autocomplete: 'off' });
+    const keyField = el('label', { class: 'field' }, ['API KEY', key]);
+    const input = el('textarea', { id: 'taskinput', rows: '4', 'aria-label': 'Task input', style: 'display:block;width:100%;margin-top:8px;padding:12px;border:1px solid #304771;border-radius:9px;background:#080f20;color:white' });
+    const urgent = el('input', { type: 'checkbox', id: 'taskurgent' });
+    const submit = el('button', { class: 'btn primary', type: 'submit', text: 'Start task' });
+    const status = el('p', { class: 'notice', role: 'status', text: 'No task started from this screen yet.' });
+    const form = el('form', { class: 'panel', style: 'margin-top:14px' }, [
+      el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['TASK', kind]), el('label', { class: 'field' }, ['PROVIDER', provider]), el('label', { class: 'field' }, ['MODEL', model]), keyField]),
+      input,
+      el('div', { class: 'row', style: 'margin-top:9px' }, [submit, el('label', { class: 'check', style: 'margin:0' }, [urgent, 'Urgent (runs before normal queued tasks)'])]),
+      status,
+    ]);
+    const list = el('div', { class: 'tasklist', id: 'tasklist', style: 'margin-top:14px', 'aria-live': 'polite' });
+    v.append(form, list);
+
+    const current = () => providers.find((p) => p.id === provider.value);
+    function refreshForm() {
+      const p = current();
+      keyField.classList.toggle('hidden', !p.key_required || p.server_key_configured);
+      input.placeholder = kind.value === 'plan' ? 'Goal, e.g. "Plan a weekend trip to Jaipur on a student budget"' : 'Paste the text to summarize (up to 100,000 characters)';
+      input.maxLength = kind.value === 'plan' ? 2000 : 100000;
+    }
+    kind.addEventListener('change', refreshForm);
+    provider.addEventListener('change', async () => {
+      refreshForm();
+      model.value = '';
+      if (current().local) {
+        try {
+          const data = await api('/api/llm/models', { method: 'POST', body: { provider: 'ollama' } });
+          if (data.models.length) model.value = data.models[0];
+        } catch { /* user can type a model */ }
+      }
+    });
+    refreshForm();
+    if (!model.value && current().local) {
+      api('/api/llm/models', { method: 'POST', body: { provider: 'ollama' } }).then((d) => { if (!model.value && d.models.length) model.value = d.models[0]; }).catch(() => {});
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) { status.textContent = 'Enter a goal or text first.'; return; }
+      if (!model.value.trim()) { status.textContent = 'Enter a model ID.'; return; }
+      const body = { kind: kind.value, provider: provider.value, model: model.value.trim(), api_key: key.value.trim(), priority: urgent.checked ? 1 : 0 };
+      body[kind.value === 'plan' ? 'goal' : 'text'] = text;
+      submit.disabled = true;
+      try {
+        const task = await api('/api/tasks', { method: 'POST', body });
+        status.textContent = task.state === 'AwaitingApproval' ? 'Task created. It is waiting for your approval below before anything is sent to ' + current().label + '.' : 'Task queued.';
+        input.value = '';
+        log('task ' + task.id.slice(0, 8) + ' created (' + task.kind + ', ' + task.state + ')');
+        refreshList();
+      } catch (err) {
+        status.textContent = 'Could not start task: ' + err.message;
+      } finally {
+        submit.disabled = false;
+      }
+    });
+
+    async function act(task, action, body) {
+      try {
+        await api('/api/tasks/' + task.id + '/' + action, { method: 'POST', body: body || {} });
+        log('task ' + task.id.slice(0, 8) + ': ' + action);
+      } catch (err) {
+        status.textContent = action + ' failed: ' + err.message;
+      }
+      refreshList();
+    }
+
+    function card(task) {
+      const label = providers.find((p) => p.id === task.params.provider);
+      const providerLabel = label ? label.label : task.params.provider;
+      const title = task.kind === 'plan' ? 'Plan: ' + task.params.goal : 'Summarize ' + (task.params.text_chars || (task.params.text || '').length).toLocaleString() + ' characters';
+      const total = task.progress.total;
+      const bar = el('progress', { max: String(total || 1), value: String(task.progress.done || 0), 'aria-label': 'Task progress', style: 'width:100%' });
+      if (!total && !TASK_TERMINAL.includes(task.state)) bar.removeAttribute('value');
+      const buttons = [];
+      if (task.state === 'AwaitingApproval') {
+        buttons.push(el('button', { class: 'btn primary', type: 'button', text: 'Approve: send to ' + providerLabel + ' (may bill)', onclick: () => act(task, 'approve', { approval_hash: task.approval_hash }) }));
+      }
+      if (task.state === 'Running' && task.kind === 'summarize_text') buttons.push(el('button', { class: 'btn', type: 'button', text: 'Pause', onclick: () => act(task, 'pause') }));
+      if (task.state === 'Paused') buttons.push(el('button', { class: 'btn', type: 'button', text: 'Resume', onclick: () => act(task, 'resume') }));
+      if (!TASK_TERMINAL.includes(task.state)) buttons.push(el('button', { class: 'btn', type: 'button', text: 'Cancel', 'aria-label': 'Cancel task', onclick: () => act(task, 'cancel') }));
+      if (task.state === 'Failed' || task.state === 'Cancelled') buttons.push(el('button', { class: 'btn', type: 'button', text: 'Retry', onclick: () => act(task, 'retry', { api_key: key.value.trim() }) }));
+
+      const children = [
+        el('div', { class: 'agenttop' }, [el('strong', { text: title.length > 120 ? title.slice(0, 120) + '…' : title }), el('span', { class: 'badge task-state', 'data-state': task.state, text: task.state.replace(/([a-z])([A-Z])/g, '$1 $2').toUpperCase() })]),
+        el('div', { class: 'tiny muted', text: providerLabel + ' · ' + task.params.model + (task.priority ? ' · urgent' : '') + ' · created ' + new Date(task.created_at).toLocaleTimeString() }),
+        bar,
+        el('div', { class: 'tiny muted', text: task.progress.note ? task.progress.note + (total ? ' (' + task.progress.done + '/' + total + ')' : '') : 'Not started' }),
+      ];
+      if (task.error) children.push(el('p', { class: 'warn', text: task.error.message }));
+      if (task.output && task.output.steps) {
+        children.push(el('ol', { style: 'margin:8px 0 0 18px;padding:0' }, task.output.steps.map((s) => el('li', {}, [el('strong', { text: s.title }), el('span', { class: 'muted', text: s.detail ? ' — ' + s.detail : '' })]))));
+        children.push(el('p', { class: 'tiny muted', text: task.output.notice }));
+      }
+      if (task.output && task.output.summary) children.push(el('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere;color:#dce9ff', text: task.output.summary }));
+      if (buttons.length) children.push(el('div', { class: 'row', style: 'margin-top:8px' }, buttons));
+      return el('div', { class: 'task', style: 'display:block', 'data-task-id': task.id }, children);
+    }
+
+    async function refreshList() {
+      let tasks;
+      try {
+        tasks = (await api('/api/tasks?limit=20')).tasks;
+      } catch (err) {
+        list.replaceChildren(el('div', { class: 'task', text: 'Could not load tasks: ' + err.message }));
+        return;
+      }
+      const detailed = await Promise.all(tasks.map((t) => (t.output || t.error ? api('/api/tasks/' + t.id).catch(() => t) : t)));
+      list.replaceChildren(...(detailed.length ? detailed.map(card) : [el('div', { class: 'task', text: 'No tasks yet.' })]));
+    }
+
+    stopTaskPolling();
+    await refreshList();
+    taskPoll = setInterval(() => {
+      if (!document.body.contains(list)) return stopTaskPolling();
+      if (list.querySelector('.task-state') && [...list.querySelectorAll('.task-state')].some((b) => !TASK_TERMINAL.includes(b.dataset.state))) refreshList();
+    }, 1000);
+  }
+
   // ---------------------------------------------------------------- simple pages
   const pages = {
     agents: ['Agents', 'These are role definitions only. They are not yet connected to model execution or automation.', ['Data Analyst', 'Software Engineer', 'BI Builder', 'QA Agent']],
@@ -851,6 +1001,7 @@
       if (x === button) x.setAttribute('aria-current', 'page'); else x.removeAttribute('aria-current');
     });
     const page = button.dataset.section;
+    stopTaskPolling();
     const v = $('subview');
     if (page === 'home') {
       $('home').classList.remove('hidden');
@@ -862,6 +1013,7 @@
     v.replaceChildren();
     if (page === 'memory') return renderMemory(v);
     if (page === 'chat') return renderChat(v);
+    if (page === 'tasks') return renderTasks(v);
     if (page === 'integrations') return renderIntegrations(v);
     const p = pages[page];
     v.append(el('h2', { text: p[0] }), el('p', { class: 'muted', text: p[1] }));

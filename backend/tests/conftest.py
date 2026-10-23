@@ -53,10 +53,11 @@ def upstream(monkeypatch):
 
     monkeypatch.setattr(httpx, "AsyncClient", PatchedAsyncClient)
 
-    async def no_sleep(_seconds):
+    async def no_backoff(self, _attempt):
         return None
 
-    monkeypatch.setattr("app.providers.openai_compat.asyncio.sleep", no_sleep)
+    # Patch only the retry backoff (not asyncio.sleep, which is global).
+    monkeypatch.setattr("app.providers.openai_compat.OpenAICompatibleClient._backoff", no_backoff)
     return up
 
 

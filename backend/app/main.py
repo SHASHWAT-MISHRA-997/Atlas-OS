@@ -1,4 +1,5 @@
 """ATLAS OS API entry point: `uvicorn app.main:app` from the backend directory."""
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx  # noqa: F401 - tests patch ``app.main.httpx.AsyncClient`` to stub outbound calls
@@ -8,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import storage
+from . import storage, task_engine
 from .config import get_settings
 from .providers import ProviderError, ollama_status
 from .routers import desktop, llm, memory, tasks
@@ -21,10 +22,20 @@ ROOT = CANDIDATE_ROOT if (CANDIDATE_ROOT / "frontend" / "index.html").exists() e
 FRONTEND = ROOT / "frontend"
 
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await task_engine.manager.start()
+    try:
+        yield
+    finally:
+        await task_engine.manager.stop()
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     docs = settings.enable_api_docs
     application = FastAPI(
+        lifespan=lifespan,
         title="ATLAS OS API",
         version=VERSION,
         docs_url="/api/docs" if docs else None,
@@ -49,6 +60,10 @@ def create_app() -> FastAPI:
 
     @application.exception_handler(storage.StorageError)
     async def storage_error_handler(_: Request, exc: storage.StorageError):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.message, "code": exc.code})
+
+    @application.exception_handler(task_engine.TaskError)
+    async def task_error_handler(_: Request, exc: task_engine.TaskError):
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.message, "code": exc.code})
 
     @application.exception_handler(RequestValidationError)
@@ -79,7 +94,7 @@ def create_app() -> FastAPI:
             "ollama": {"available": ollama["available"], "count": ollama.get("count", 0), "message": ollama["message"]},
             "external_providers_enabled": current.allow_external_providers,
             "desktop_agent_enabled": current.enable_desktop_agent,
-            "task_runner": "simulation",
+            "task_runner": "background-engine" if task_engine.manager.started else "stopped",
             "memory_storage": "server-sqlite" if storage.server_storage_enabled() else "browser-local",
         }
 

@@ -59,6 +59,37 @@ MIGRATIONS: list[str] = [
     CREATE INDEX chat_conversation ON chat_messages(conversation_id, id);
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     """,
+    # 2: background tasks and their audit events. API keys are never stored here.
+    """
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('Queued','Planning','AwaitingApproval','Running','Paused','Succeeded','Failed','Cancelled')),
+        priority INTEGER NOT NULL DEFAULT 0,
+        params TEXT NOT NULL,
+        approval_hash TEXT NOT NULL,
+        idempotency_key TEXT UNIQUE,
+        resource TEXT,
+        steps_done INTEGER NOT NULL DEFAULT 0,
+        steps_total INTEGER,
+        progress_note TEXT,
+        output TEXT,
+        error_code TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT
+    );
+    CREATE INDEX tasks_created ON tasks(created_at);
+    CREATE TABLE task_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        ts TEXT NOT NULL,
+        type TEXT NOT NULL,
+        message TEXT NOT NULL
+    );
+    CREATE INDEX task_events_task ON task_events(task_id, id);
+    """,
 ]
 
 

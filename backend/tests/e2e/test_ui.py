@@ -71,6 +71,25 @@ class FakeOllama:
                     self.wfile.write(body)
                     return
                 last = payload["messages"][-1]["content"]
+                if not payload.get("stream"):
+                    if payload["model"] == "fake-slow:1b":
+                        time.sleep(3)
+                    system = payload["messages"][0]["content"] if payload["messages"][0]["role"] == "system" else ""
+                    if "planner" in system:
+                        answer = json.dumps({"steps": [{"title": "Book train", "detail": "Compare fares."},
+                                                       {"title": "Pick hostel", "detail": "Near the old city."}]})
+                    else:
+                        answer = "Summary: " + last[:40]
+                    body = json.dumps({"choices": [{"message": {"content": answer}, "finish_reason": "stop"}]}).encode()
+                    try:
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                    except (BrokenPipeError, ConnectionResetError):
+                        outer.disconnected.set()
+                    return
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.end_headers()
@@ -168,7 +187,7 @@ def test_status_panel_shows_real_backend_and_ollama_state(page):
     page.wait_for_selector("text=API online")
     assert page.locator("#sysstatus").inner_text().count("2 local model(s)") == 1
     assert page.locator("#ollamastat").inner_text() == "02"
-    assert "Task runner: simulation only" in page.locator("#sysstatus").inner_text()
+    assert "Task engine: running" in page.locator("#sysstatus").inner_text()
     assert page.errors == []
 
 
@@ -309,3 +328,48 @@ def test_browser_memories_from_older_versions_can_be_moved_to_storage(page, serv
     page.wait_for_selector("text=Moved 1 memories")
     assert "Legacy browser memory" in {m["text"] for m in httpx.get(server + "/api/memory").json()["memories"]}
     assert page.evaluate("localStorage.getItem('atlas.os.memories.v1')") is None
+
+
+def open_tasks(page):
+    page.get_by_role("button", name="Tasks").click()
+    page.wait_for_selector("#taskinput")
+    playwright_sync.expect(page.locator("#taskmodel")).not_to_have_value("", timeout=10000)
+
+
+def test_plan_task_runs_in_background_and_shows_real_steps(page):
+    open_tasks(page)
+    page.fill("#taskinput", "Plan a weekend trip to Jaipur on a student budget")
+    page.click("button:has-text('Start task')")
+    card = page.locator("[data-task-id]").first
+    playwright_sync.expect(card.locator(".task-state")).to_have_text("SUCCEEDED", timeout=10000)
+    assert "Book train" in card.inner_text() and "did not execute" in card.inner_text()
+    assert page.errors == []
+
+
+def test_task_can_be_cancelled_from_the_ui(page):
+    open_tasks(page)
+    page.select_option("#taskkind", "summarize_text")
+    page.fill("#taskmodel", "fake-slow:1b")
+    page.fill("#taskinput", "A long text that takes a while. " * 50)
+    page.click("button:has-text('Start task')")
+    card = page.locator("[data-task-id]").first
+    playwright_sync.expect(card.locator(".task-state")).to_have_text("RUNNING", timeout=10000)
+    card.locator("button[aria-label='Cancel task']").click()
+    playwright_sync.expect(card.locator(".task-state")).to_have_text("CANCELLED", timeout=5000)
+    playwright_sync.expect(card.locator("button:has-text('Retry')")).to_be_visible()
+
+
+def test_cloud_task_needs_approval_in_the_ui(page, fake_ollama):
+    open_tasks(page)
+    before = len(fake_ollama.chat_requests)
+    page.select_option("#taskprovider", "groq")
+    page.fill("#taskmodel", "some-model")
+    page.fill("#taskkey", "gsk_dummy_not_real")
+    page.fill("#taskinput", "Plan something")
+    page.click("button:has-text('Start task')")
+    card = page.locator("[data-task-id]").first
+    playwright_sync.expect(card.locator(".task-state")).to_have_text("AWAITING APPROVAL", timeout=5000)
+    assert "Approve: send to Groq (may bill)" in card.inner_text()
+    card.locator("button[aria-label='Cancel task']").click()
+    playwright_sync.expect(card.locator(".task-state")).to_have_text("CANCELLED", timeout=5000)
+    assert len(fake_ollama.chat_requests) == before

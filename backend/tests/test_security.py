@@ -80,7 +80,7 @@ def test_system_status_reflects_real_configuration(monkeypatch, upstream):
     body = client.get("/api/system/status").json()
     assert body["ollama"]["available"] is False
     assert body["desktop_agent_enabled"] is True
-    assert body["task_runner"] == "simulation"
+    assert body["task_runner"] == "stopped"  # no lifespan in this client, so the engine is not running
 
 
 def test_cors_does_not_allow_foreign_origins():
