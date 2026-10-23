@@ -21,11 +21,11 @@ Last updated: 2026-10-23 (v0.4.0), branch `atlas/v7-foundation`.
 | API login (per-install token, same-computer cookie, pairing link, Bearer) | `app/auth.py` | Verified (Linux, Chromium) | `test_auth.py` sweeps every API route; e2e pairing flow |
 | Host allowlist + Origin check (DNS rebinding, CSRF) | `app/auth.py` | Verified (Linux) | `test_unknown_host_*`, `test_cross_origin_writes_*` |
 | Per-device credentials, one-time pairing codes, revocation, device list | `app/devices.py`, `routers/devices.py`, Devices screen | Verified (Linux, Chromium) | `test_devices.py`; e2e `test_owner_pairs_a_second_device_*`. Only token hashes stored. Not tested on a real phone over Wi-Fi. No QR code yet |
-| CI workflow (lint, tests, e2e, Docker, pip-audit, secret scan, Windows runner) | `.github/workflows/tests.yml` | Implemented | Never run on GitHub: the source is not pushed yet |
-| Docker image | `Dockerfile` | Implemented | Not built here (no Docker). CI has a build + health smoke job |
+| CI workflow (lint, tests, e2e, Docker, pip-audit, secret scan, Windows runner) | `.github/workflows/tests.yml` | Verified | All 4 jobs green on PR #1, [run 39955295769](https://github.com/SHASHWAT-MISHRA-997/Atlas-OS/actions/runs/39955295769) (2026-10-23) |
+| Docker image | `Dockerfile` | Verified (CI) | `docker-build` job built the image and `/health` answered from the container, [run 39955295769](https://github.com/SHASHWAT-MISHRA-997/Atlas-OS/actions/runs/39955295769) |
 | Lint + security lint | `backend/ruff.toml` | Verified (Linux) | `ruff check .` clean, including the bandit `S` rules |
-| Secret scan | — | Verified (manual run) | `detect-secrets` found only test placeholders; not yet in CI |
-| Dependency audit | — | Verified (manual run) | `pip-audit`: no known vulnerabilities on 2026-10-23; not yet in CI |
+| Secret scan | — | Verified (CI) | `detect-secrets` in the `backend` job; fails on any finding outside tests |
+| Dependency audit | — | Verified (CI) | `pip-audit` in the `backend` job: no known vulnerabilities on 2026-10-23 |
 
 ## AI providers (Milestone C)
 
@@ -62,7 +62,7 @@ Last updated: 2026-10-23 (v0.4.0), branch `atlas/v7-foundation`.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Allowlisted app launch (Notepad/Calculator/File manager) | Implemented | Policy unit-tested. `test_windows.py` launches real Notepad, but only runs on the Windows CI job, which has not run yet. No UI |
+| Allowlisted app launch (Notepad/Calculator/File manager) | Verified (Windows CI runner) | `test_windows.py` launched real Notepad on the GitHub `windows` runner (Python 3.11.9), [run 39955295769](https://github.com/SHASHWAT-MISHRA-997/Atlas-OS/actions/runs/39955295769). Not tested on a personal Windows 11 PC. No UI |
 | Typed action schemas, risk classes, audit log | Not implemented | |
 | Scoped file access | Not implemented | |
 | Office document generation | Not implemented | |

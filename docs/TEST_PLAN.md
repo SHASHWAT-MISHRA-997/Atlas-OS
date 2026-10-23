@@ -25,8 +25,10 @@ Date: 2026-10-23. Environment: Linux container, Python 3.13.16, Chromium 141 (Pl
 | `node --check ../frontend/static/app.js` | 0 | OK | — | — |
 | `detect-secrets scan --all-files` | 0 | Only test placeholders and cache tags | — | — |
 | `pip-audit -r requirements.txt` | 0 | No known vulnerabilities | — | — |
-| `docker build .` | — | **Not run** (no Docker here) | — | — |
-| GitHub Actions | — | **Not run** (source not pushed) | — | — |
+| `docker build .` + `/health` smoke (CI `docker-build`) | 0 | passed | 0 | 0 |
+| GitHub Actions [run 39955295769](https://github.com/SHASHWAT-MISHRA-997/Atlas-OS/actions/runs/39955295769): `backend` (Linux, 3.11) | 0 | 169 + ruff, pip-audit, detect-secrets | 0 | 3 |
+| GitHub Actions: `windows` (Windows Server, Python 3.11.9) | 0 | 172 (incl. real Notepad launch) | 0 | 0 |
+| GitHub Actions: `frontend-e2e` (Chromium headless shell 156) | 0 | 17 | 0 | 0 |
 
 The 18 original tests pass on the refactored backend. Their only change is blank lines between import groups added by ruff.
 
@@ -49,4 +51,4 @@ Set `ATLAS_ENABLE_DESKTOP_AGENT=true`, then `POST /api/desktop/launch {"app_id":
 
 ## Not yet covered
 
-There are no automated tests for the CSV workbench, no accessibility audit (axe), no load tests, no Windows CI runner, and no real-provider contract tests.
+There are no automated tests for the CSV workbench, no accessibility audit (axe), no load tests, no real-provider contract tests.
