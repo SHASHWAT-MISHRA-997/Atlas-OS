@@ -109,3 +109,6 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .user{white-space:normal}
 .search{min-width:0;width:100%}
 }
+
+.filelist{margin:8px 0 0;padding:0 0 0 4px;list-style:none;font-size:14px;overflow-wrap:anywhere}
+.filelist li{padding:3px 0}

@@ -850,7 +850,7 @@
     v.replaceChildren();
     v.append(el('h2', { text: 'Tasks' }), el('p', {
       class: 'muted',
-      text: 'Background jobs run by the ATLAS backend. Progress, states and timings are real. Tasks only call the model you choose: they never run commands, touch files or control the desktop. Cloud tasks wait for your approval first.',
+      text: 'Background jobs run by the ATLAS backend. Progress, states and timings are real. Model tasks only call the model you choose. PC actions (when enabled) do one fixed thing each and always wait for your approval. Nothing runs shell commands.',
     }));
     let catalogue;
     try {
@@ -878,7 +878,57 @@
       status,
     ]);
     const list = el('div', { class: 'tasklist', id: 'tasklist', style: 'margin-top:14px', 'aria-live': 'polite' });
-    v.append(form, list);
+    v.append(form);
+    const desktop = await api('/api/desktop/status').catch(() => null);
+    if (desktop && desktop.enabled) v.append(actionForm(desktop));
+    else v.append(el('p', { class: 'tiny muted', style: 'margin-top:10px', text: 'PC actions are off. They can be enabled only on the computer running ATLAS (ATLAS_ENABLE_DESKTOP_AGENT=true).' }));
+    v.append(list);
+
+    function actionForm(d) {
+      const fieldStyle = 'padding:9px;border:1px solid #304771;border-radius:8px;background:#080f20;color:white;min-width:0';
+      const what = el('select', { id: 'actionkind' }, d.actions.map((a) => el('option', { value: a.kind, text: a.label })));
+      const app = el('select', { id: 'actionapp' }, d.apps.map((a) => el('option', { value: a.id, text: a.label })));
+      const folder = el('select', { id: 'actionfolder' }, d.folders.map((f) => el('option', { value: f, text: f })));
+      const sub = el('input', { id: 'actionpath', placeholder: 'Sub-folder (optional), e.g. college/sem5', maxlength: '500', style: fieldStyle });
+      const query = el('input', { id: 'actionquery', placeholder: 'Part of a file name, e.g. resume', maxlength: '200', style: fieldStyle });
+      const risk = el('p', { class: 'tiny muted' });
+      const go = el('button', { class: 'btn primary', type: 'submit', text: 'Ask for approval' });
+      const appField = el('label', { class: 'field' }, ['APP', app]);
+      const folderField = el('label', { class: 'field' }, ['FOLDER', folder]);
+      const f = el('form', { class: 'panel', style: 'margin-top:14px', 'aria-label': 'PC actions' }, [
+        el('h3', { text: 'PC actions', style: 'margin:0 0 8px' }),
+        el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['ACTION', what]), appField, folderField]),
+        sub, query, risk, go,
+      ]);
+      function sync() {
+        const k = what.value;
+        appField.classList.toggle('hidden', k !== 'open_app');
+        folderField.classList.toggle('hidden', k === 'open_app');
+        sub.classList.toggle('hidden', k === 'open_app');
+        query.classList.toggle('hidden', k !== 'search_files');
+        risk.textContent = d.actions.find((a) => a.kind === k).risk + (d.folders.length || k === 'open_app' ? '' : ' No approved folders exist on this PC.');
+      }
+      what.addEventListener('change', sync);
+      sync();
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const body = { kind: what.value };
+        if (what.value === 'open_app') body.app_id = app.value;
+        else { body.folder = folder.value; body.path = sub.value.trim(); }
+        if (what.value === 'search_files') body.query = query.value.trim();
+        go.disabled = true;
+        try {
+          const task = await api('/api/tasks', { method: 'POST', body });
+          status.textContent = 'Waiting for your approval below: ' + task.action.summary + '.';
+          refreshList();
+        } catch (err) {
+          status.textContent = 'Could not create the action: ' + err.message;
+        } finally {
+          go.disabled = false;
+        }
+      });
+      return f;
+    }
 
     const current = () => providers.find((p) => p.id === provider.value);
     function refreshForm() {
@@ -937,13 +987,14 @@
     function card(task) {
       const label = providers.find((p) => p.id === task.params.provider);
       const providerLabel = label ? label.label : task.params.provider;
-      const title = task.kind === 'plan' ? 'Plan: ' + task.params.goal : 'Summarize ' + (task.params.text_chars || (task.params.text || '').length).toLocaleString() + ' characters';
+      const title = task.action ? task.action.summary : task.kind === 'plan' ? 'Plan: ' + task.params.goal : 'Summarize ' + (task.params.text_chars || (task.params.text || '').length).toLocaleString() + ' characters';
       const total = task.progress.total;
       const bar = el('progress', { max: String(total || 1), value: String(task.progress.done || 0), 'aria-label': 'Task progress', style: 'width:100%' });
       if (!total && !TASK_TERMINAL.includes(task.state)) bar.removeAttribute('value');
       const buttons = [];
       if (task.state === 'AwaitingApproval') {
-        buttons.push(el('button', { class: 'btn primary', type: 'button', text: 'Approve: send to ' + providerLabel + ' (may bill)', onclick: () => act(task, 'approve', { approval_hash: task.approval_hash }) }));
+        const approveText = task.action ? 'Approve: ' + task.action.summary : 'Approve: send to ' + providerLabel + ' (may bill)';
+        buttons.push(el('button', { class: 'btn primary', type: 'button', text: approveText, onclick: () => act(task, 'approve', { approval_hash: task.approval_hash }) }));
       }
       if (task.state === 'Running' && task.kind === 'summarize_text') buttons.push(el('button', { class: 'btn', type: 'button', text: 'Pause', onclick: () => act(task, 'pause') }));
       if (task.state === 'Paused') buttons.push(el('button', { class: 'btn', type: 'button', text: 'Resume', onclick: () => act(task, 'resume') }));
@@ -952,7 +1003,7 @@
 
       const children = [
         el('div', { class: 'agenttop' }, [el('strong', { text: title.length > 120 ? title.slice(0, 120) + '…' : title }), el('span', { class: 'badge task-state', 'data-state': task.state, text: task.state.replace(/([a-z])([A-Z])/g, '$1 $2').toUpperCase() })]),
-        el('div', { class: 'tiny muted', text: providerLabel + ' · ' + task.params.model + (task.priority ? ' · urgent' : '') + ' · created ' + new Date(task.created_at).toLocaleTimeString() }),
+        el('div', { class: 'tiny muted', text: (task.action ? 'PC action · ' + task.action.risk : providerLabel + ' · ' + task.params.model) + (task.priority ? ' · urgent' : '') + ' · created ' + new Date(task.created_at).toLocaleTimeString() }),
         bar,
         el('div', { class: 'tiny muted', text: task.progress.note ? task.progress.note + (total ? ' (' + task.progress.done + '/' + total + ')' : '') : 'Not started' }),
       ];
@@ -961,6 +1012,17 @@
         children.push(el('ol', { style: 'margin:8px 0 0 18px;padding:0' }, task.output.steps.map((s) => el('li', {}, [el('strong', { text: s.title }), el('span', { class: 'muted', text: s.detail ? ' — ' + s.detail : '' })]))));
         children.push(el('p', { class: 'tiny muted', text: task.output.notice }));
       }
+      if (task.output && task.output.entries) {
+        children.push(el('ul', { class: 'filelist' }, task.output.entries.map((e) => el('li', { text: (e.type === 'folder' ? '📁 ' : e.type === 'link' ? '↪ ' : '📄 ') + e.name + (e.size != null ? ' · ' + e.size.toLocaleString() + ' bytes' : '') }))));
+        if (task.output.truncated) children.push(el('p', { class: 'tiny muted', text: 'Showing ' + task.output.entries.length + ' of ' + task.output.total + ' entries.' }));
+      }
+      if (task.output && task.output.results) {
+        children.push(task.output.results.length
+          ? el('ul', { class: 'filelist' }, task.output.results.map((r) => el('li', { text: (r.type === 'folder' ? '📁 ' : '📄 ') + r.path })))
+          : el('p', { class: 'muted', text: 'No matching names.' }));
+        if (task.output.stopped_at) children.push(el('p', { class: 'tiny muted', text: 'Stopped early (' + task.output.stopped_at + ').' }));
+      }
+      if (task.output && task.output.launched) children.push(el('p', { class: 'notice', text: task.output.label + ' was started on the PC.' }));
       if (task.output && task.output.summary) children.push(el('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere;color:#dce9ff', text: task.output.summary }));
       if (buttons.length) children.push(el('div', { class: 'row', style: 'margin-top:8px' }, buttons));
       return el('div', { class: 'task', style: 'display:block', 'data-task-id': task.id }, children);

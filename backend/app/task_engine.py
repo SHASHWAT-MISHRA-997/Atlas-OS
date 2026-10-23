@@ -1,8 +1,10 @@
 """Background task engine: real states, progress, cancellation, pause, approval and audit events.
 
-Tasks run inside the API process on its event loop. They only call model
-providers; no task type touches files, the shell or the desktop. Limits are
-enforced on every task: queue size, steps, input size and wall-clock time.
+Tasks run inside the API process on its event loop. Model tasks call model
+providers. Desktop-action tasks (app/agent.py) run one typed action each, always
+wait for the user's approval, and are refused unless the desktop agent is
+enabled. No task runs shell commands or free-form programs. Limits are enforced
+on every task: queue size, steps, input size and wall-clock time.
 
 State machine::
 
@@ -27,7 +29,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from . import storage
+from . import agent, storage
 from .providers import ChatMessage, ProviderError, build_client, get_spec
 
 log = logging.getLogger("atlas.tasks")
@@ -88,6 +90,8 @@ def _row_to_task(row, events: list[dict] | None = None) -> dict:
         "error": {"code": row["error_code"], "message": row["error"]} if row["error"] else None,
         "created_at": row["created_at"], "started_at": row["started_at"], "finished_at": row["finished_at"],
     }
+    if row["kind"] in agent.ACTIONS:
+        task["action"] = agent.describe(row["kind"], task["params"])
     if events is not None:
         task["events"] = events
     return task
@@ -277,7 +281,23 @@ async def summarize_handler(ctx: TaskContext) -> dict:
     return {"summary": summary, "parts": len(chunks), "input_chars": len(ctx.params["text"])}
 
 
-HANDLERS: dict[str, Handler] = {"plan": plan_handler, "summarize_text": summarize_handler}
+async def action_handler(ctx: TaskContext) -> dict:
+    kind = ctx.params["_kind"]
+    _transition(ctx.task_id, "Running", f"running desktop action {kind}")
+    ctx.progress(0, 1, agent.describe(kind, ctx.params)["summary"])
+    try:
+        # File-system work runs in a thread so a slow disk cannot stall other tasks.
+        result = await asyncio.to_thread(agent.run, kind, ctx.params)
+    except agent.AgentError as exc:
+        raise TaskFailed(exc.code, exc.message) from None
+    except OSError as exc:
+        raise TaskFailed("os_error", f"The operating system refused the action ({exc.__class__.__name__}).") from None
+    ctx.progress(1, 1, "done")
+    return result
+
+
+HANDLERS: dict[str, Handler] = {"plan": plan_handler, "summarize_text": summarize_handler,
+                                **{kind: action_handler for kind in agent.ACTIONS}}
 
 
 # --- manager -----------------------------------------------------------------------
@@ -357,8 +377,15 @@ class TaskManager:
         self._require_started()
         if kind not in HANDLERS:
             raise TaskError(422, "unknown_kind", "Unknown task type.")
-        spec = get_spec(params["provider"])
-        build_client(params["provider"], api_key)  # policy + key checks before anything is stored
+        is_action = kind in agent.ACTIONS
+        if is_action:
+            try:
+                agent.validate(kind, params)
+            except agent.AgentError as exc:
+                raise TaskError(exc.status_code, exc.code, exc.message) from None
+        else:
+            spec = get_spec(params["provider"])
+            build_client(params["provider"], api_key)  # policy + key checks before anything is stored
         with storage.connection() as conn:
             if idempotency_key:
                 row = conn.execute("SELECT id FROM tasks WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
@@ -372,15 +399,21 @@ class TaskManager:
             if active >= MAX_QUEUED:
                 raise TaskError(429, "queue_full", f"Too many unfinished tasks ({MAX_QUEUED}). Wait or cancel some.")
             task_id = str(uuid.uuid4())
-            needs_approval = not spec.local
+            if is_action:
+                # Every desktop action waits for an explicit approval of exactly these parameters.
+                needs_approval, resource = True, "desktop"
+                note = f" (desktop action: {agent.describe(kind, params)['summary']})"
+            else:
+                needs_approval = not spec.local
+                resource = "ollama" if spec.local else f"cloud:{spec.id}"
+                note = f" (sends data to {spec.label}, may bill)" if needs_approval else ""
             state = "AwaitingApproval" if needs_approval else "Queued"
-            resource = "ollama" if spec.local else f"cloud:{spec.id}"
             with conn:
                 conn.execute(
                     "INSERT INTO tasks(id, kind, state, priority, params, approval_hash, idempotency_key, resource, created_at) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (task_id, kind, state, priority, json.dumps(params), approval_hash(kind, params), idempotency_key, resource, storage._now()))
-                _event(conn, task_id, "state", f"created as {state}" + (f" (sends data to {spec.label}, may bill)" if needs_approval else ""))
+                _event(conn, task_id, "state", f"created as {state}{note}")
         if api_key:
             self._keys[task_id] = api_key
         if not needs_approval:
@@ -411,14 +444,19 @@ class TaskManager:
                 return item
         return None
 
-    def approve(self, task_id: str, hash_: str) -> dict:
+    def approve(self, task_id: str, hash_: str, approver: str = "user") -> dict:
         self._require_started()
         task = get_task(task_id, with_events=False)
         if task["state"] != "AwaitingApproval":
             raise TaskError(409, "invalid_transition", f"Task is {task['state']}; only AwaitingApproval tasks can be approved.")
         if hash_ != task["approval_hash"]:
             raise TaskError(409, "approval_mismatch", "Approval does not match this task's parameters.")
-        _transition(task_id, "Queued", "approved by user")
+        if task["kind"] in agent.ACTIONS:
+            try:
+                agent.require_enabled()  # the agent may have been switched off since the task was created
+            except agent.AgentError as exc:
+                raise TaskError(exc.status_code, exc.code, exc.message) from None
+        _transition(task_id, "Queued", f"approved by {approver}")
         self._enqueue(task_id, task["priority"], task["resource"])
         return get_task(task_id)
 
@@ -489,7 +527,8 @@ class TaskManager:
         resume = asyncio.Event()
         resume.set()
         self._resume[task_id] = resume
-        ctx = TaskContext(task_id, task["params"], self._keys.get(task_id, ""), resume,
+        params = {**task["params"], "_kind": task["kind"]}
+        ctx = TaskContext(task_id, params, self._keys.get(task_id, ""), resume,
                           _env_int("ATLAS_TASK_STEP_RETRIES", 1, 0, 3))
         timeout = _env_int("ATLAS_TASK_TIMEOUT_SECONDS", 600, 1, 3600)
 
