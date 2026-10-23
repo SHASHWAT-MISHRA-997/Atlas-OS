@@ -62,9 +62,9 @@ Last updated: 2026-10-23 (v0.4.0), branch `atlas/v7-foundation`.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Allowlisted app launch (Notepad/Calculator/File manager) | Verified (Windows CI runner) | `test_windows.py` launched real Notepad on the GitHub `windows` runner (Python 3.11.9), [run 39955295769](https://github.com/SHASHWAT-MISHRA-997/Atlas-OS/actions/runs/39955295769). Not tested on a personal Windows 11 PC. No UI |
-| Typed action schemas, risk classes, audit log | Not implemented | |
-| Scoped file access | Not implemented | |
+| Allowlisted app launch (Notepad/Calculator/File manager) | Verified (Windows CI runner) | `test_windows.py` launched real Notepad on the GitHub `windows` runner (Python 3.11.9), [run 39955295769](https://github.com/SHASHWAT-MISHRA-997/Atlas-OS/actions/runs/39955295769). Not tested on a personal Windows 11 PC. Now also an approved task (`open_app`) in the Tasks screen |
+| Typed actions with risk notes, per-action approval, audit log | Verified (Linux; Windows on CI pending) | `app/agent.py`: `open_app`, `list_folder`, `search_files` run as tasks that always start AwaitingApproval; approval is bound to a SHA-256 of the exact parameters; who approved (owner or which paired device) is in the task events. `test_agent.py`, e2e `test_pc_action_*` |
+| Scoped, read-only file access | Verified (Linux; Windows on CI pending) | Approved folders only (default Documents/Downloads/Desktop, or `ATLAS_AGENT_FOLDERS`); paths resolved incl. symlinks and must stay inside; links are never followed; list/search limits (500 entries, 100 results, 20k names, depth 8, 10 s). No reading file contents, no writes, no deletes |
 | Office document generation | Not implemented | |
 | Browser/media control | Not implemented | |
 | Startup on login | Not implemented | |
