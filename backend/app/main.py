@@ -8,12 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import storage
 from .config import get_settings
 from .providers import ProviderError, ollama_status
-from .routers import desktop, llm, tasks
+from .routers import desktop, llm, memory, tasks
 from .security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 CANDIDATE_ROOT = Path(__file__).resolve().parents[2]
 ROOT = CANDIDATE_ROOT if (CANDIDATE_ROOT / "frontend" / "index.html").exists() else Path(__file__).resolve().parents[1]
@@ -46,6 +47,10 @@ def create_app() -> FastAPI:
     async def provider_error_handler(_: Request, exc: ProviderError):
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.message, "code": exc.code})
 
+    @application.exception_handler(storage.StorageError)
+    async def storage_error_handler(_: Request, exc: storage.StorageError):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.message, "code": exc.code})
+
     @application.exception_handler(RequestValidationError)
     async def validation_error_handler(_: Request, exc: RequestValidationError):
         # Drop the offending input values: they can contain API keys or private prompt text.
@@ -58,6 +63,7 @@ def create_app() -> FastAPI:
     application.include_router(llm.router)
     application.include_router(desktop.router)
     application.include_router(tasks.router)
+    application.include_router(memory.router)
 
     @application.get("/health")
     def health():
@@ -74,7 +80,7 @@ def create_app() -> FastAPI:
             "external_providers_enabled": current.allow_external_providers,
             "desktop_agent_enabled": current.enable_desktop_agent,
             "task_runner": "simulation",
-            "memory_storage": "browser-local",
+            "memory_storage": "server-sqlite" if storage.server_storage_enabled() else "browser-local",
         }
 
     static_dir = FRONTEND / "static"

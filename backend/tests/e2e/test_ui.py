@@ -111,9 +111,10 @@ def fake_ollama():
 
 
 @pytest.fixture(scope="module")
-def server(fake_ollama):
+def server(fake_ollama, tmp_path_factory):
     port = free_port()
     env = {**os.environ, "ATLAS_OLLAMA_BASE_URL": f"http://127.0.0.1:{fake_ollama.port}",
+           "ATLAS_DATA_DIR": str(tmp_path_factory.mktemp("atlas-data")),
            "ATLAS_LLM_RATE_LIMIT_PER_MINUTE": "1000", "PYTHONPATH": str(BACKEND)}
     proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)],
                             cwd=BACKEND, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -253,3 +254,58 @@ def test_keyboard_users_can_reach_navigation(page):
     assert page.evaluate("document.activeElement.textContent") == "Skip to content"
     page.keyboard.press("Tab")
     assert "Home" in page.evaluate("document.activeElement.textContent")
+
+
+def open_memory(page):
+    page.get_by_role("button", name="Memory").click()
+    page.wait_for_selector("#memorytext")
+
+
+def test_memory_is_saved_server_side_searchable_and_deletable(page, server):
+    page.wait_for_selector("text=Memory: ATLAS storage (SQLite)")
+    open_memory(page)
+    page.fill("#memorytext", "Mera favourite colour neela hai")
+    page.click("button:has-text('Save memory')")
+    page.wait_for_selector("text=Mera favourite colour neela hai")
+    page.fill("#memorytext", "Deadline is Friday")
+    page.click("button:has-text('Save memory')")
+    page.wait_for_selector("text=Deadline is Friday")
+    stored = httpx.get(server + "/api/memory").json()
+    assert {m["text"] for m in stored["memories"]} >= {"Mera favourite colour neela hai", "Deadline is Friday"}
+    # Survives a reload because it lives in SQLite, not the page.
+    page.reload()
+    open_memory(page)
+    page.fill("#memorysearch", "deadl")
+    playwright_sync.expect(page.locator("#subview .tasklist .task")).to_have_count(1)
+    page.click("button[aria-label='Delete memory']")
+    page.wait_for_selector("text=No memories match that search.")
+    assert "Deadline is Friday" not in {m["text"] for m in httpx.get(server + "/api/memory").json()["memories"]}
+    assert page.errors == []
+
+
+def test_memories_are_sent_to_the_model_only_when_enabled(page, server, fake_ollama):
+    httpx.post(server + "/api/memory", json={"text": "User name is Asha"})
+    open_chat(page)
+    page.fill("textarea[aria-label=Message]", "who am i")
+    page.click("button:has-text('Send')")
+    page.wait_for_selector("text=Echo: who am i")
+    assert "User name is Asha" in fake_ollama.chat_requests[-1]["messages"][0]["content"]
+    httpx.put(server + "/api/memory/settings", json={"enabled": False})
+    page.fill("textarea[aria-label=Message]", "again")
+    page.click("button:has-text('Send')")
+    page.wait_for_selector("text=Echo: again")
+    assert "User name is Asha" not in fake_ollama.chat_requests[-1]["messages"][0]["content"]
+    httpx.put(server + "/api/memory/settings", json={"enabled": True})
+    history = httpx.get(server + "/api/chat/history").json()["messages"]
+    assert [m["content"] for m in history][-2:] == ["again", "Echo: again"]
+
+
+def test_browser_memories_from_older_versions_can_be_moved_to_storage(page, server):
+    page.evaluate("""localStorage.setItem('atlas.os.memories.v1', JSON.stringify([
+        {id: 'x1', text: 'Legacy browser memory', createdAt: '2026-09-01T00:00:00.000Z'}]))""")
+    page.reload()
+    open_memory(page)
+    page.click("button:has-text('Move to ATLAS storage')")
+    page.wait_for_selector("text=Moved 1 memories")
+    assert "Legacy browser memory" in {m["text"] for m in httpx.get(server + "/api/memory").json()["memories"]}
+    assert page.evaluate("localStorage.getItem('atlas.os.memories.v1')") is None

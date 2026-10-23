@@ -12,3 +12,9 @@ dist/
 # Netlify CLI state (may contain project identifiers)
 .netlify/
 .ruff_cache/
+
+# ATLAS local data if ATLAS_DATA_DIR points inside the repo
+atlas-data/
+*.db
+*.db-wal
+*.db-shm

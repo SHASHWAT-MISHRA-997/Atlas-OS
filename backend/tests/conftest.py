@@ -14,8 +14,10 @@ from app.security import llm_rate_limiter
 
 
 @pytest.fixture(autouse=True)
-def _isolate_env(monkeypatch):
-    for name in ("ATLAS_ENV", "ATLAS_ENABLE_API_DOCS", "ATLAS_ALLOW_EXTERNAL_PROVIDERS", "ATLAS_OLLAMA_BASE_URL",
+def _isolate_env(monkeypatch, tmp_path):
+    # Every test gets its own empty data directory; tests never touch the real user profile.
+    monkeypatch.setenv("ATLAS_DATA_DIR", str(tmp_path / "atlas-data"))
+    for name in ("ATLAS_ENV", "ATLAS_SERVER_STORAGE", "ATLAS_ENABLE_API_DOCS", "ATLAS_ALLOW_EXTERNAL_PROVIDERS", "ATLAS_OLLAMA_BASE_URL",
                  "ATLAS_MAX_BODY_BYTES", "ATLAS_GROQ_API_KEY", "ATLAS_OPENAI_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("ATLAS_LLM_RATE_LIMIT_PER_MINUTE", "10000")
