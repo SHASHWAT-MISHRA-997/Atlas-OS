@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 client = TestClient(app)
@@ -77,6 +78,7 @@ def test_chat_uses_fixed_provider_endpoint_and_returns_answer(monkeypatch):
 
 def test_chat_maps_provider_timeout_to_gateway_timeout(monkeypatch):
     import httpx
+
     from app import main as main_module
 
     class TimeoutAsyncClient:
@@ -103,6 +105,7 @@ def test_chat_maps_provider_timeout_to_gateway_timeout(monkeypatch):
 
 def test_ollama_status_reports_unreachable_without_leaking_details(monkeypatch):
     import httpx
+
     from app import main as main_module
 
     class UnreachableClient:
