@@ -4,7 +4,7 @@
 
 | Suite | Location | What it uses | Command (from `backend/`) |
 |---|---|---|---|
-| API / unit | `tests/test_api.py`, `test_llm.py`, `test_providers.py`, `test_security.py` | FastAPI TestClient. **Mocked provider** via `httpx.MockTransport` (see `tests/conftest.py`) | `python -m pytest -q -m "not e2e"` |
+| API / unit | `tests/test_api.py`, `test_llm.py`, `test_providers.py`, `test_security.py`, `test_memory.py` (real SQLite in temp dirs), `test_tasks.py` (real engine + SQLite) | FastAPI TestClient. **Mocked provider** via `httpx.MockTransport` (see `tests/conftest.py`) | `python -m pytest -q -m "not e2e"` |
 | Browser e2e | `tests/e2e/test_ui.py` | Real uvicorn process, real Chromium via Playwright, **fake Ollama server** defined in the test | `python -m pytest -q -m e2e` |
 | Lint + security lint | `ruff.toml` (includes bandit `S` rules) | ruff | `python -m ruff check .` |
 | JS syntax | `frontend/static/app.js` | Node | `node --check ../frontend/static/app.js` |
@@ -17,8 +17,9 @@ Date: 2026-10-23. Environment: Linux container, Python 3.13.16, Chromium 141 (Pl
 
 | Command | Exit | Passed | Failed | Skipped |
 |---|---|---|---|---|
-| `python -m pytest -q -m "not e2e"` | 0 | 63 | 0 | 0 |
-| `ATLAS_E2E_CHROMIUM=/opt/pw-browsers/chromium python -m pytest -q -m e2e` | 0 | 8 | 0 | 0 |
+| `python -m pytest -q -m "not e2e"` (Python 3.13.16, run 3 times) | 0 | 103 | 0 | 0 |
+| `python -m pytest -q -m "not e2e"` (Python 3.11.17, the CI version) | 0 | 103 | 0 | 0 |
+| `ATLAS_E2E_CHROMIUM=/opt/pw-browsers/chromium python -m pytest -q -m e2e` | 0 | 14 | 0 | 0 |
 | `python -m ruff check .` | 0 | clean | — | — |
 | `node --check ../frontend/static/app.js` | 0 | OK | — | — |
 | `detect-secrets scan --all-files` | 0 | Only test placeholders and cache tags | — | — |
@@ -47,4 +48,4 @@ Set `ATLAS_ENABLE_DESKTOP_AGENT=true`, then `POST /api/desktop/launch {"app_id":
 
 ## Not yet covered
 
-There are no automated tests for the CSV workbench or the memory screen, no accessibility audit (axe), no load tests, no Windows CI runner, and no real-provider contract tests.
+There are no automated tests for the CSV workbench, no accessibility audit (axe), no load tests, no Windows CI runner, and no real-provider contract tests.

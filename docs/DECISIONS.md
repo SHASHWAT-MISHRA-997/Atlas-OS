@@ -19,7 +19,13 @@
 2. Cancellation latency: time from Stop until the upstream connection closes and generation stops.
 3. Permission-policy effectiveness, once the action engine exists: the share of unauthorized action attempts blocked, on a red-team prompt set.
 
-**D-009 Planned next milestones, in order:**
+**D-010 Tasks fail on restart instead of resuming.** A model call can be half done when the process stops, and replaying it could double-bill or duplicate output. Unfinished tasks become `Failed` (`interrupted`), and the user can Retry them explicitly.
+
+**D-011 Scheduler owns resource exclusivity.** Workers pick the highest-priority task whose resource is free, rather than taking the next queue item and blocking on a lock. This keeps urgent tasks ahead and stops one queued local-model task from tying up a worker.
+
+**D-012 Server storage is off in production mode.** Without authentication, a hosted ATLAS would share one memory store with everyone who can reach it.
+
+**D-009 Planned next milestones, in order (superseded in part by v0.3.0; see HANDOFF.md):**
 1. Push the source (blocked on access) and get a green CI run.
 2. Milestone F-lite: SQLite storage for memories and chat with export/delete, because it unblocks memory surviving across devices, tasks and audit logs.
 3. Milestone G: a real task engine with states and cancellation.

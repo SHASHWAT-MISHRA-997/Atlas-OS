@@ -4,7 +4,7 @@ States: **Not implemented** · **Partially implemented** · **Implemented** (cod
 
 "Verified (Linux, mocked provider)" means automated tests passed on Linux with the model provider replaced by `httpx.MockTransport` or a fake Ollama server. It is **not** evidence that a real provider, a real Ollama install, or Windows works.
 
-Last updated: 2026-10-23, branch `atlas/v7-foundation`.
+Last updated: 2026-10-23 (v0.3.0), branch `atlas/v7-foundation`.
 
 ## Foundation and security
 
@@ -71,15 +71,31 @@ Last updated: 2026-10-23, branch `atlas/v7-foundation`.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Browser-local memory (add/edit/delete/clear) | Implemented | Unchanged from v7, no automated test yet |
-| Memory export (JSON) | Implemented | New button; no automated test yet |
-| Server-side persistent memory (SQLite), import, retention | Not implemented | Milestone F |
-| Chat history persists across reload | Verified (Linux, Chromium) | e2e reload check; browser storage only |
+| Persistent memory in SQLite (add/edit/delete/clear) | Verified (Linux, real SQLite) | `test_memory.py`; survives app restart; e2e through UI |
+| Memory full-text search (FTS5) kept in sync on edit/delete | Verified (Linux) | `test_search_uses_the_full_text_index_*` |
+| Deletion removes text from the DB file (`secure_delete`) | Verified (Linux) | `test_deleted_text_is_removed_from_the_database_file`; test fails if the pragma is off |
+| Memory on/off switch (excluded from prompts when off) | Verified (Linux, Chromium, fake Ollama) | e2e `test_memories_are_sent_to_the_model_only_when_enabled` |
+| Export (JSON) / import with dedupe, all-or-nothing | Verified (Linux) | `test_export_*`, `test_import_*` |
+| Backup and **tested** restore (SQLite backup API + CLI) | Verified (Linux) | `test_backup_and_restore_round_trip`; restore rejects foreign DBs |
+| Move old browser-only memories/chat into storage | Verified (Chromium) | e2e `test_browser_memories_from_older_versions_*` |
+| Chat history in SQLite, survives reload/restart | Verified (Linux, Chromium) | e2e + `test_chat_history_*`; capped at 500 per conversation |
+| Retention rules (auto-expiry) | Not implemented | Only a size cap today |
+| Inspect which memory influenced an answer | Not implemented | All enabled memories (max 30) are sent; no attribution |
+| Document RAG | Not implemented | |
+| Browser-local fallback storage | Implemented | Used only when server storage is off (e.g. production) |
 | CSV workbench (browser-only) | Implemented | Unchanged logic; no automated test yet |
-| Task planner | Partially implemented | UI now calls the backend, but the backend still returns 4 fixed steps. Labelled simulation |
-| Real task manager (states, cancel, retries) | Not implemented | Milestone G |
+| Quick plan on Home | Partially implemented | Still the fixed 4-step simulation; points to Tasks for a real plan |
+| Task engine: states, enforced transitions, audit events | Verified (Linux, mocked provider) | `test_tasks.py` (20 tests) |
+| Cancel (running and queued), pause/resume between steps | Verified (Linux, mocked provider + Chromium) | `test_cancel_*`, `test_pause_*`, e2e cancel |
+| Real progress (parts done / total) | Verified (Linux, mocked provider) | `test_summarize_reports_real_per_part_progress` |
+| One local model at a time, urgent-first scheduling | Verified (Linux, mocked provider) | `test_local_tasks_share_one_model_at_a_time`, `test_urgent_tasks_jump_the_queue` |
+| Approval bound to parameters for cloud tasks | Verified (Linux, Chromium) | `test_cloud_tasks_wait_for_approval_*`, e2e |
+| Idempotency keys, bounded queue, timeouts, step retries | Verified (Linux, mocked provider) | |
+| Restart recovery (unfinished → Failed "interrupted", explicit Retry) | Verified (Linux) | `test_restart_*`, `test_recovery_after_crash_*` |
+| Task types | Implemented | Only `plan` (model writes steps; nothing executed) and `summarize_text`. No action-executing tasks exist |
 | Device pairing / remote access | Not implemented | Milestone H |
 | Live system status panel | Verified (Linux, Chromium) | `/api/system/status`; e2e |
+| Tasks screen (live progress, approve/cancel/pause/resume/retry) | Verified (Chromium, fake Ollama) | e2e `test_plan_task_*`, `test_task_can_be_cancelled_*`, `test_cloud_task_needs_approval_*` |
 | Responsive layout at 390 px | Verified (Chromium) | Was 747 px wide before the fix |
 | Keyboard skip link + focus styles | Verified (Chromium) | Partial: a full accessibility audit has not been done |
 | Reduced motion | Implemented | `prefers-reduced-motion` CSS (from v7) |

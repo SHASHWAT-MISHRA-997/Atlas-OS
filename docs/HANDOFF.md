@@ -1,4 +1,4 @@
-# Handoff — session of 2026-10-23
+# Handoff — session of 2026-10-23 (updated for v0.3.0)
 
 ## State
 
@@ -7,7 +7,7 @@
 
 ```bash
 git clone https://github.com/SHASHWAT-MISHRA-997/Atlas-OS && cd Atlas-OS
-git fetch /path/to/atlas-os-v0.2.0.bundle atlas/v7-foundation:atlas/v7-foundation
+git fetch /path/to/atlas-os.bundle atlas/v7-foundation:atlas/v7-foundation
 git push -u origin atlas/v7-foundation      # then open a PR into main
 ```
 
@@ -17,7 +17,7 @@ Or apply the patches: `git checkout -b atlas/v7-foundation && git am /path/to/pa
 
 ## Verified in this session (Linux, not Windows)
 
-63 API/unit tests and 8 browser e2e tests pass; ruff is clean; detect-secrets and pip-audit are clean. See `TEST_PLAN.md`.
+103 API/unit tests (Python 3.11 and 3.13) and 14 browser e2e tests pass; ruff and pip-audit are clean. See `TEST_PLAN.md`.
 
 ## Blockers
 
@@ -32,7 +32,8 @@ Or apply the patches: `git checkout -b atlas/v7-foundation && git am /path/to/pa
 
 1. Merge this branch; confirm the CI jobs `backend`, `frontend-e2e` and `docker-build` go green; update `TEST_PLAN.md`.
 2. Remove `ATLAS_OS_Research_Starter_v4.zip` from `main` once the owner agrees. It is superseded and should not be the source of truth.
-3. Milestone F-lite: SQLite store (`backend/app/storage.py`) for memories and chat history with migrations, export/import and delete; move the UI off localStorage behind a toggle.
-4. Milestone G: task engine (`Queued → … → Succeeded/Failed/Cancelled`) with cancellation tokens; replace the fixed-step planner with a model-backed planner that still executes nothing.
+3. ~~Milestone F-lite (SQLite memory)~~ done in v0.3.0. ~~Milestone G (task engine)~~ done in v0.3.0.
+4. Authentication for the local API (a per-install token the UI receives on first load, plus an origin check). This is the main blocker for anything beyond a single local user.
 5. Add `pip-audit` and `detect-secrets` to CI; add a lockfile.
-6. Milestone E design: typed action schemas + risk policy + audit log, verified on Windows.
+6. Milestone E: typed action schemas + risk policy + audit log, built as task types on the new engine, and verified on Windows.
+7. Milestone D: local STT/TTS engine selection (e.g. faster-whisper, Piper) and a wake-word spike, which needs real hardware.

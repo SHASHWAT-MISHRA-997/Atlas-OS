@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 — 2026-10-23 (branch `atlas/v7-foundation`, not yet released)
+
+### Added
+- SQLite storage (`backend/app/storage.py`) for memories, chat history and settings: versioned migrations, FTS5 search, `secure_delete`, export, import with dedupe, backup and restore (`python -m app.storage backup|restore|export|path`). Data lives in `%LOCALAPPDATA%\AtlasOS` on Windows or `~/.local/share/atlas-os` elsewhere (`ATLAS_DATA_DIR` overrides).
+- `/api/memory`, `/api/memory/{id}`, `/api/memory/clear`, `/api/memory/settings`, `/api/memory/import`, `/api/chat/history`, `/api/storage/export`, `/api/storage/backup`.
+- Background task engine (`backend/app/task_engine.py`) with real states, progress, cancel, pause/resume, priority, approval for cloud tasks, idempotency keys, timeouts and restart recovery. `/api/tasks` (create, list, get, approve, cancel, pause, resume, retry).
+- Task types `plan` (model-written steps, never executed) and `summarize_text` (chunked).
+- UI: Tasks screen; memory search and on/off switch; one-click move of old browser data into storage.
+
+### Changed
+- Memory and chat history default to server storage locally. In production mode server storage is off unless `ATLAS_SERVER_STORAGE=true`, because there is no authentication yet.
+- The sidebar shows memory storage and task engine state.
+
 ## 0.2.0 — 2026-10-23 (branch `atlas/v7-foundation`, not yet released)
 
 ### Added

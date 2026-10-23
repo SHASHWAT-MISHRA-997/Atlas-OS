@@ -4,19 +4,20 @@
 
 ATLAS OS is an AI assistant you run on your own computer. It is **not** an operating system and **not** production-ready. This README describes only what exists today; see [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the status of every feature.
 
-## What it does today (v0.2.0)
+## What it does today (v0.3.0)
 
 - **Chat with a local model through Ollama** (the default), with streamed replies, a Stop button that really cancels generation, automatic discovery of installed models, and clear errors when Ollama or a model is missing.
 - **Optional cloud models** (OpenAI, Groq, OpenRouter, NVIDIA NIM, Together, Cerebras, Fireworks, DeepSeek) with your own key. Each reply says which provider and model answered. Cloud use needs an explicit billing/data-routing acknowledgement and can be switched off server-wide.
-- **Browser-local memory** (add, edit, delete, export) and chat history. Memories are included as context in chat.
+- **Memory you control**, stored in SQLite on your machine: add, edit, search, delete, export/import, back up and restore, or switch it off. Chat history is stored the same way. Nothing is saved unless you save it.
+- **Background tasks** with live progress, cancel, pause/resume and urgent priority: a model-written plan (never executed) or a long-text summary. Cloud tasks wait for your approval first.
 - **CSV workbench**: statistics computed in your browser; the file is never uploaded.
 - **Live status** of the API, Ollama, cloud policy and desktop agent.
-- **Task planner**: simulation only, returning fixed planning steps. Nothing is executed.
+- **Quick plan on Home**: still a fixed 4-step simulation. Use Tasks for a real plan.
 - **Desktop launcher** (off by default): opens Notepad, Calculator or the file manager. Not yet tested on Windows; API only.
 
 ## Not supported yet
 
-Wake word, local speech recognition, Windows automation beyond the 3-app launcher, file operations, a real task engine, server-side memory, authentication, remote/mobile access, vision and tool calling. Browser dictation exists, but in Chrome/Edge **it sends audio to the browser vendor**.
+Wake word, local speech recognition, Windows automation beyond the 3-app launcher, file operations, action-executing tasks, document RAG, authentication, remote/mobile access, vision and tool calling. Browser dictation exists, but in Chrome/Edge **it sends audio to the browser vendor**.
 
 ## Requirements
 
@@ -84,7 +85,7 @@ There is no deployment. Hosting this build publicly is **not safe**, because it 
 
 ## Data and privacy
 
-The server stores nothing (no database). Memories and chat history live in your browser's localStorage, unencrypted, and can be deleted from the UI. Chat requests to a cloud provider include your memories and recent turns. CSV files never leave the browser.
+Memories, chat history and task records are stored in SQLite at `%LOCALAPPDATA%\AtlasOS\atlas.db` (Windows) or `~/.local/share/atlas-os/atlas.db` (set `ATLAS_DATA_DIR` to change it). The file is not encrypted. Deleted memories are overwritten in the file. Back up with `python -m app.storage backup` and restore with `python -m app.storage restore <file>` from `backend/`. In production mode, server storage is off and the browser's localStorage is used instead. Chat requests to a cloud provider include your memories and recent turns. CSV files never leave the browser.
 
 ## Troubleshooting
 
@@ -98,7 +99,7 @@ The server stores nothing (no database). Memories and chat history live in your 
 
 ## Uninstall
 
-Stop the server, delete the folder and the `.venv`, and clear the site data for `127.0.0.1:8000` in your browser. Remove Ollama models with `ollama rm <model>`.
+Stop the server, delete the folder and the `.venv`, delete the data folder above, and clear the site data for `127.0.0.1:8000` in your browser. Remove Ollama models with `ollama rm <model>`.
 
 ## Project docs
 

@@ -1,4 +1,4 @@
-# Threat model (v0.2.0)
+# Threat model (v0.3.0)
 
 Scope: a single user running the backend on their own machine, reached from a browser on the same machine. Hosted, multi-user and remote use are **out of scope until authentication exists**. This build must not be exposed to the internet.
 
@@ -17,8 +17,12 @@ Scope: a single user running the backend on their own machine, reached from a br
 | T11 | **Silent audio upload** | Dictation is user-initiated per click, and the UI states that the browser vendor's service is used | Vendor processing is outside ATLAS's control | — |
 | T12 | **Dependency compromise** | Ranged pins; `pip-audit` run manually | No lockfile or hash pinning yet; audit not in CI | — |
 | T13 | **Malicious documents / files** | Only CSV, parsed in the browser with size, row and column limits | — | — |
-| T14 | **Lost/stolen device** | Nothing server-side; localStorage is unencrypted | Memories and history are readable by anyone with the browser profile | — |
+| T14 | **Lost/stolen device** | SQLite file in the user profile (OS account permissions; `0700` dir on Linux/macOS) | The DB and backups are not encrypted by ATLAS; rely on full-disk encryption (BitLocker/FileVault) | — |
 | T15 | **Cross-user data leakage** | Single-user design | Any shared deployment would mix users | — |
+| T17 | **Memory exposure** through the unauthenticated API | Server storage is off in production mode; data dir is created `0700` on Linux/macOS; `secure_delete` | Anyone who can reach the API locally can read memories (see T1); the DB is not encrypted | `test_storage_is_off_in_production_unless_enabled` |
+| T18 | **Runaway or duplicated background work** | Bounded queue (50), per-task timeout (600 s), max 20 parts, idempotency keys, connect-only/one-step retries | — | `test_queue_is_bounded`, `test_task_timeout_is_enforced`, `test_idempotency_*` |
+| T19 | **Silent cloud sends from tasks** | Cloud tasks start in AwaitingApproval; approval must match the SHA-256 of the task's parameters; keys are held in memory only and never written to SQLite | Approval is a click by whoever can reach the API (T1) | `test_cloud_tasks_wait_for_approval_bound_to_parameters` |
+| T20 | **Prompt injection in text given to summarize** | Text is labelled as data in the system note; tasks have no tools or actions | The summary itself can be manipulated | — |
 | T16 | **API docs exposure** | Docs are off when `ATLAS_ENV=production` | — | `test_api_docs_are_off_in_production` |
 
-Before any hosted or remote use: add authentication (T1), a persistent rate limiter (T2), TLS at a reverse proxy, a lockfile with CI audit (T12), and server-side storage with access control (T14/T15).
+Before any hosted or remote use: add authentication (T1), a persistent rate limiter (T2), TLS at a reverse proxy, a lockfile with CI audit (T12), and server-side storage with access control (T14/T15/T17).
