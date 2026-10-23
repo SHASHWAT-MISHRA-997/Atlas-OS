@@ -8,10 +8,12 @@ Please do not publish exploit details or secrets in public issues. Contact the r
 
 ## Current security limitations
 
-- The BYOK chat endpoint has no built-in user authentication or per-user rate limiting.
+- The API has no user authentication. Model endpoints have only an in-memory per-IP rate limit. Bind to 127.0.0.1 and do not expose the server to other networks.
 - Browser-local memory and chat history are not encrypted by this application and do not sync across devices.
 - API keys submitted to the chat endpoint are used for that request and are not intentionally persisted by this application; HTTPS and trusted hosting are required in deployment.
 - The task planner is simulation-only and does not execute shell commands or operate the desktop.
+- Provider error bodies are never forwarded to the browser, validation errors never echo input values, and the UI is served with a strict script CSP.
+- See docs/THREAT_MODEL.md for threats, mitigations and residual risks.
 - This project has not undergone an independent penetration test or formal security audit.
 
 ## Safe use

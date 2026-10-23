@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  backend-tests:
+  backend:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -20,11 +20,51 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: backend/requirements-dev.txt
       - name: Install backend dependencies
-        run: python -m pip install -r backend/requirements.txt
-      - name: Run API tests
+        run: python -m pip install -r backend/requirements-dev.txt
+      - name: Compile
+        run: python -m compileall -q backend/app
+      - name: Lint (ruff, includes bandit security rules)
         working-directory: backend
-        env:
-          PYTHONPATH: .
-        run: python -m pytest -q
+        run: python -m ruff check .
+      - name: Unit and API tests
+        working-directory: backend
+        run: python -m pytest -q -m "not e2e"
+
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Set up Node (JS syntax check)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check frontend JavaScript syntax
+        run: node --check frontend/static/app.js
+      - name: Install dependencies and Chromium
+        run: |
+          python -m pip install -r backend/requirements-dev.txt
+          python -m playwright install --with-deps chromium
+      - name: Browser end-to-end tests (fake Ollama provider)
+        working-directory: backend
+        run: python -m pytest -q -m e2e
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t atlas-os:ci .
+      - name: Smoke test container health
+        run: |
+          docker run -d --name atlas -p 8000:8000 atlas-os:ci
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/health && exit 0; sleep 1; done
+          docker logs atlas; exit 1

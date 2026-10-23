@@ -11,3 +11,4 @@ dist/
 
 # Netlify CLI state (may contain project identifiers)
 .netlify/
+.ruff_cache/

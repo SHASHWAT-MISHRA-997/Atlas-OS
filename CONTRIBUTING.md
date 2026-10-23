@@ -8,7 +8,11 @@ Thanks for helping improve ATLAS OS. This is an early-stage project; please keep
 4. Run the backend tests before opening a pull request:
    ```bash
    cd backend
-   PYTHONPATH=. python -m pytest -q
+   pip install -r requirements-dev.txt
+   python -m ruff check .
+   python -m pytest -q -m "not e2e"
+   python -m pytest -q -m e2e   # needs: python -m playwright install chromium
    ```
 5. Include tests for API behavior and security-sensitive changes.
 6. Do not introduce real desktop execution, file transfer, or remote-control actions without explicit authorization, scoped permissions, and tests.
+7. Update `docs/FEATURE_MATRIX.md` when a feature's status changes. Mark a feature Verified only with passing acceptance tests in the named environment, and label mocked-provider results as mocked.
