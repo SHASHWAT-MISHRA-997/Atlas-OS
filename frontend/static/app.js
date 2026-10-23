@@ -831,7 +831,7 @@
       const payload = { provider: p.id, model, api_key: keyInput.value.trim(), messages: await buildMessages(items) };
       storageSet(CHAT_SETTINGS_KEY, { provider: p.id, model });
       const saveTurn = (message) => store.appendChat(message).catch((err) => log('could not save chat turn: ' + err.message));
-      saveTurn({ role: 'user', content: text });
+      const userSaved = saveTurn({ role: 'user', content: text });
 
       if (transcript.querySelector('p.muted')) transcript.replaceChildren();
       transcript.append(bubble('user', text));
@@ -882,7 +882,8 @@
         const metaText = describeAnswer(meta, p.label);
         reply.body.textContent = answer;
         reply.metaLine.textContent = metaText;
-        saveTurn({ role: 'assistant', content: answer, meta: metaText });
+        await userSaved;  // keep turns in order
+        await saveTurn({ role: 'assistant', content: answer, meta: metaText });
         status.textContent = 'Reply received from ' + p.label + '.';
         log('chat reply from ' + p.id + '/' + model + (meta.latency_ms != null ? ' in ' + meta.latency_ms + ' ms' : ''));
         speakText(answer);

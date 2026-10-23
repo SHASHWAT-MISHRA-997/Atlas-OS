@@ -219,6 +219,8 @@ def test_local_chat_streams_answer_and_labels_provider(page, fake_ollama):
     page.click("button:has-text('Send')")
     page.wait_for_selector("text=Echo: namaste ATLAS")
     page.wait_for_selector("text=Answered by Ollama (local) (on this machine)")
+    # The reply is saved before the status says so; reloading earlier could race the save.
+    playwright_sync.expect(page.locator(".chatstatus")).to_have_text("Reply received from Ollama (local).")
     sent = fake_ollama.chat_requests[-1]
     assert sent["stream"] is True
     assert sent["messages"][0]["role"] == "system" and sent["messages"][-1] == {"role": "user", "content": "namaste ATLAS"}
