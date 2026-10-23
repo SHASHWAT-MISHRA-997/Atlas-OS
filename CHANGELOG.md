@@ -7,6 +7,12 @@
 - `ATLAS_AGENT_FOLDERS` to choose approved folders (default: Documents, Downloads, Desktop).
 - Tasks screen: a PC actions form, approval cards that say exactly what will happen, and file results.
 
+### Changed (mobile redesign)
+- Phones get a bottom tab bar (Home, AI Chat, Tasks, Memory, More), a sticky top bar with live status, and a "More" sheet with every section and the system status. The squeezed quick-plan bar is hidden on phones.
+- Chat: message bubbles, a collapsible model drawer with a route badge (local or cloud), an empty state with suggestions, and a composer that grows with the text and sticks above the tab bar.
+- Bigger touch targets (44 px), 16 px inputs (no zoom on focus), horizontal agent cards, fixed oversized status dots.
+- Browser test checks every screen at phone width for anything cut off past the screen edge.
+
 ### Changed
 - `/api/desktop/status` also lists approved folders and actions. `/api/desktop/launch` uses the same launcher code.
 

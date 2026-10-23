@@ -190,6 +190,11 @@ def open_chat(page):
     playwright_sync.expect(page.locator("#atlasmodel")).not_to_have_value("", timeout=10000)
 
 
+def open_model_settings(page):
+    if page.locator("#chatsettings[open]").count() == 0:
+        page.locator("#chatsettings > summary").click()
+
+
 def test_status_panel_shows_real_backend_and_ollama_state(page):
     page.wait_for_selector("text=API online")
     assert page.locator("#sysstatus").inner_text().count("2 local model(s)") == 1
@@ -226,6 +231,7 @@ def test_local_chat_streams_answer_and_labels_provider(page, fake_ollama):
 
 def test_stop_button_cancels_generation_and_upstream(page, fake_ollama):
     open_chat(page)
+    open_model_settings(page)
     page.fill("#atlasmodel", "fake-slow:1b")
     page.fill("textarea[aria-label=Message]", "long answer please")
     page.click("button:has-text('Send')")
@@ -239,6 +245,7 @@ def test_stop_button_cancels_generation_and_upstream(page, fake_ollama):
 
 def test_provider_errors_are_shown_as_errors_not_answers(page):
     open_chat(page)
+    open_model_settings(page)
     page.fill("#atlasmodel", "fake-missing")
     page.fill("textarea[aria-label=Message]", "hello")
     page.click("button:has-text('Send')")
@@ -249,6 +256,7 @@ def test_provider_errors_are_shown_as_errors_not_answers(page):
 def test_cloud_provider_requires_key_and_billing_acknowledgement(page, fake_ollama):
     open_chat(page)
     before = len(fake_ollama.chat_requests)
+    open_model_settings(page)
     page.select_option("#atlasprovider", "groq")
     page.fill("#atlasmodel", "some-model")
     page.fill("textarea[aria-label=Message]", "hello")
@@ -269,10 +277,34 @@ def test_mobile_layout_has_no_horizontal_scroll(browser, server):
     pg.goto(server + "/")
     pg.wait_for_selector("#topstatus:has-text('API online')")
     assert pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
-    pg.get_by_role("button", name="AI Chat").click()
-    pg.wait_for_selector("#atlasprovider")
-    assert pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
+    # Every screen, reached the way a phone user would: bottom tabs, then the More sheet.
+    for name in ("AI Chat", "Tasks", "Memory", "Home"):
+        pg.locator(".tabbar").get_by_role("button", name=name).click()
+        pg.wait_for_timeout(300)
+        assert pg.evaluate(OVERFLOW_JS) == [], name
+    for name in ("Agents", "Integrations", "Devices"):
+        pg.locator("#morebtn").click()
+        playwright_sync.expect(pg.locator("#sidebar")).to_be_visible()
+        pg.locator("#sidebar").get_by_role("button", name=name).click()
+        playwright_sync.expect(pg.locator("#sidebar")).to_be_hidden()
+        pg.wait_for_timeout(300)
+        assert pg.evaluate(OVERFLOW_JS) == [], name
+    assert pg.locator(".search").is_hidden()  # the desktop quick-plan bar is not squeezed onto phones
     context.close()
+
+
+# Lists visible controls and text blocks that stick out past the right edge of the screen.
+OVERFLOW_JS = """() => {
+  const w = document.documentElement.clientWidth;
+  const out = [];
+  if (document.documentElement.scrollWidth > w + 1) out.push('page scrolls sideways');
+  for (const n of document.querySelectorAll('button, input, select, textarea, .panel, .task, h1, h2, p')) {
+    const r = n.getBoundingClientRect();
+    if (!r.width || n.closest('.cards, .chips-row, #sidebar:not(.open)')) continue;
+    if (r.right > w + 1 || r.left < -1) out.push((n.id || n.className || n.tagName) + ' ' + Math.round(r.left) + '-' + Math.round(r.right));
+  }
+  return out;
+}"""
 
 
 def test_keyboard_users_can_reach_navigation(page):

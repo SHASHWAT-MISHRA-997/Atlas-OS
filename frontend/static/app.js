@@ -552,10 +552,9 @@
   async function renderChat(v) {
     await ensureStatus();
     v.replaceChildren();
-    v.append(el('h2', { text: 'ATLAS AI Chat' }), el('p', {
-      class: 'muted',
-      text: 'Local-first: Ollama on the machine running the ATLAS backend is the default. Cloud providers are optional and use your own key. When memory is on, saved memories and recent turns are included in each request.',
-    }));
+    const pill = el('span', { class: 'modelpill', id: 'modelpill', text: 'Model settings' });
+    const routeBadge = el('span', { class: 'routebadge' });
+    v.append(el('div', { class: 'chathead' }, [el('h2', { text: 'ATLAS AI Chat' }), routeBadge]));
 
     let catalogue;
     try {
@@ -580,7 +579,9 @@
     const routing = el('p', { class: 'notice', role: 'status' });
     const modelStatus = el('p', { class: 'tiny muted' });
 
-    const settings = el('div', { class: 'panel', style: 'margin-top:14px' }, [
+    const settings = el('details', { class: 'panel settings', id: 'chatsettings' }, [
+      el('summary', {}, [el('span', { class: 'tiny muted', text: 'MODEL' }), pill]),
+      el('p', { class: 'tiny muted', text: 'Local-first: Ollama on the machine running ATLAS is the default. Cloud providers are optional and use your own key. When memory is on, saved memories and recent turns are included in each request.' }),
       el('div', { class: 'grid-fields' }, [
         el('label', { class: 'field' }, ['PROVIDER', providerSelect]),
         el('label', { class: 'field' }, ['MODEL', modelInput]),
@@ -591,28 +592,39 @@
       modelStatus, billingBox, routing,
     ]);
 
-    const transcript = el('div', { class: 'panel transcript', 'aria-live': 'polite', 'aria-label': 'Conversation' });
-    const prompt = el('textarea', { rows: '3', maxlength: '12000', placeholder: 'Ask ATLAS something…', 'aria-label': 'Message', style: 'display:block;width:100%;resize:vertical;padding:12px;border:1px solid #304771;border-radius:9px;background:#080f20;color:white' });
-    const send = el('button', { class: 'btn primary', type: 'submit', text: 'Send' });
-    const stop = el('button', { class: 'btn', type: 'button', text: '■ Stop', disabled: true, 'aria-label': 'Stop generating and speaking' });
-    const mic = el('button', { class: 'btn', type: 'button', text: '🎙 Dictate', 'aria-label': 'Dictate a message using browser speech recognition' });
-    const speak = el('button', { class: 'btn', type: 'button', text: '🔊 Read replies: Off', 'aria-pressed': 'false' });
-    const clear = el('button', { class: 'btn', type: 'button', text: 'Clear chat history' });
-    const status = el('p', { class: 'notice', role: 'status', style: 'margin-top:10px', text: 'No message sent yet.' });
-    const form = el('form', { class: 'panel', style: 'margin-top:12px' }, [
-      prompt, el('div', { class: 'row', style: 'margin-top:9px' }, [send, stop, mic, speak, clear]), status,
-      el('p', { class: 'tiny muted', text: 'Dictation uses your browser\'s speech service. In Chrome and Edge this sends audio to the browser vendor\'s servers; it is not local speech recognition.' }),
+    const transcript = el('div', { class: 'transcript', 'aria-live': 'polite', 'aria-label': 'Conversation' });
+    const prompt = el('textarea', { rows: '1', maxlength: '12000', placeholder: 'Ask ATLAS something…', 'aria-label': 'Message', class: 'composer-input' });
+    const send = el('button', { class: 'btn primary sendbtn', type: 'submit', text: 'Send' });
+    const stop = el('button', { class: 'btn chip', type: 'button', text: '■ Stop', disabled: true, 'aria-label': 'Stop generating and speaking' });
+    const mic = el('button', { class: 'btn chip', type: 'button', text: '🎙 Dictate', 'aria-label': 'Dictate a message using browser speech recognition' });
+    const speak = el('button', { class: 'btn chip', type: 'button', text: '🔊 Read replies: Off', 'aria-pressed': 'false' });
+    const clear = el('button', { class: 'btn chip', type: 'button', text: 'Clear chat history' });
+    const status = el('p', { class: 'chatstatus tiny muted', role: 'status', text: 'No message sent yet.' });
+    prompt.addEventListener('input', () => { prompt.style.height = 'auto'; prompt.style.height = Math.min(prompt.scrollHeight, 180) + 'px'; });
+    prompt.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); form.requestSubmit(); } });
+    const form = el('form', { class: 'composer' }, [
+      el('div', { class: 'composer-row' }, [prompt, send]),
+      el('div', { class: 'chips-row' }, [stop, mic, speak, clear]), status,
+      el('p', { class: 'tiny muted dictnote', text: 'Dictation uses your browser\'s speech service. In Chrome and Edge this sends audio to the browser vendor\'s servers; it is not local speech recognition.' }),
     ]);
     v.append(settings, transcript, form);
 
     const current = () => providers.find((p) => p.id === providerSelect.value);
 
+    function updatePill() {
+      pill.textContent = current().label + (modelInput.value.trim() ? ' · ' + modelInput.value.trim() : ' · choose a model');
+    }
+
     function refreshProviderUi() {
       const p = current();
+      updatePill();
       keyField.classList.toggle('hidden', !p.key_required);
       keyInput.placeholder = p.server_key_configured ? 'Optional: server key configured' : 'Paste key for this page session';
       billingBox.classList.toggle('hidden', p.local);
       billingLabel.textContent = 'I understand that requests to ' + p.label + ' leave this machine and may be billed to my account. Free tiers and prices are set by the provider and change.';
+      routeBadge.textContent = p.local ? '🔒 Local · stays on your PC' : '☁ Sends to ' + p.label;
+      routeBadge.classList.toggle('cloud', !p.local);
+      if (!p.local) settings.open = true;
       routing.textContent = p.local
         ? 'Data routing: messages go to Ollama on the machine running the ATLAS backend. Nothing is sent to a cloud provider.'
         : 'Data routing: messages, saved memories and recent turns are sent to ' + p.label + '. See ' + p.docs_url + ' for models and terms.';
@@ -636,9 +648,11 @@
         } else {
           modelStatus.textContent = data.models.length + ' model(s) available. Start typing to pick one.';
           if (!modelInput.value || (p.local && !data.models.includes(modelInput.value))) modelInput.value = data.models[0];
+          updatePill();
         }
       } catch (err) {
         modelStatus.textContent = (p.local ? 'Ollama: ' : '') + err.message;
+        settings.open = true;
       } finally {
         loadModels.disabled = false;
       }
@@ -654,7 +668,13 @@
       }
       transcript.replaceChildren();
       if (!items.length) {
-        transcript.append(el('p', { class: 'muted', text: 'Your conversation will appear here. History is stored in ' + store.label + '.' }));
+        transcript.append(el('div', { class: 'emptychat' }, [
+          el('div', { class: 'emptylogo', 'aria-hidden': 'true', text: '△' }),
+          el('strong', { text: 'Namaste! What should we work on?' }),
+          el('p', { class: 'muted', text: 'History is stored in ' + store.label + '.' }),
+          el('div', { class: 'chips-row' }, ['Explain DBMS normalization simply', 'Plan my study week', 'Write a polite leave email'].map((t) =>
+            el('button', { class: 'btn chip', type: 'button', text: t, onclick: () => { prompt.value = t; prompt.focus(); } }))),
+        ]));
         return;
       }
       items.forEach((m) => transcript.append(bubble(m.role, m.content, m.meta)));
@@ -689,6 +709,7 @@
       storageSet(CHAT_SETTINGS_KEY, { provider: providerSelect.value, model: '' });
       discoverModels(true);
     });
+    modelInput.addEventListener('input', updatePill);
     modelInput.addEventListener('change', () => storageSet(CHAT_SETTINGS_KEY, { provider: providerSelect.value, model: modelInput.value.trim() }));
     loadModels.addEventListener('click', () => discoverModels(false));
 
@@ -861,7 +882,7 @@
     }
     const providers = catalogue.providers.filter((p) => p.enabled);
     const saved = storageGet(CHAT_SETTINGS_KEY, {});
-    const kind = el('select', { id: 'taskkind' }, [el('option', { value: 'plan', text: 'Plan a goal (model writes steps; nothing is executed)' }), el('option', { value: 'summarize_text', text: 'Summarize long text (split into parts)' })]);
+    const kind = el('select', { id: 'taskkind' }, [el('option', { value: 'plan', text: 'Plan a goal (nothing is executed)' }), el('option', { value: 'summarize_text', text: 'Summarize long text' })]);
     const provider = el('select', { id: 'taskprovider' }, providers.map((p) => el('option', { value: p.id, text: p.label + (p.local ? '' : ' · may bill') })));
     provider.value = providers.some((p) => p.id === saved.provider) ? saved.provider : catalogue.default_provider;
     const model = el('input', { id: 'taskmodel', placeholder: 'Model ID', value: saved.model || '', autocomplete: 'off' });
@@ -1162,12 +1183,23 @@
     refresh();
   }
 
+  function setSheet(open) {
+    $('sidebar').classList.toggle('open', open);
+    $('sheetbackdrop').classList.toggle('hidden', !open);
+    $('morebtn').setAttribute('aria-expanded', String(open));
+    $('morebtn').classList.toggle('active', open);
+  }
+
   function showSection(button) {
-    document.querySelectorAll('[data-section]').forEach((x) => {
-      x.classList.toggle('active', x === button);
-      if (x === button) x.setAttribute('aria-current', 'page'); else x.removeAttribute('aria-current');
-    });
     const page = button.dataset.section;
+    setSheet(false);
+    document.querySelectorAll('[data-section]').forEach((x) => {
+      const on = x.dataset.section === page;
+      x.classList.toggle('active', on);
+      if (on) x.setAttribute('aria-current', 'page'); else x.removeAttribute('aria-current');
+    });
+    window.scrollTo({ top: 0 });
+    document.body.dataset.page = page;
     stopTaskPolling();
     const v = $('subview');
     if (page === 'home') {
@@ -1196,6 +1228,10 @@
   $('analyzecsv').addEventListener('click', analyzeCsv);
   $('downloadreport').addEventListener('click', downloadReport);
   $('refreshstatus').addEventListener('click', refreshStatus);
+  $('morebtn').addEventListener('click', () => setSheet(!$('sidebar').classList.contains('open')));
+  $('sheetbackdrop').addEventListener('click', () => setSheet(false));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setSheet(false); });
+  document.body.dataset.page = 'home';
   document.querySelectorAll('[data-section]').forEach((b) => b.addEventListener('click', () => showSection(b)));
 
   log('ATLAS UI loaded');

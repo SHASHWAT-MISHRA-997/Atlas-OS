@@ -97,6 +97,7 @@ Last updated: 2026-10-23 (v0.4.0), branch `atlas/v7-foundation`.
 | Task types | Implemented | Only `plan` (model writes steps; nothing executed) and `summarize_text`. No action-executing tasks exist |
 | Device pairing (same LAN) | Verified (Linux, Chromium) | Plain HTTP on the LAN; no TLS, relay or internet access (rest of Milestone H) |
 | Remote access outside the home network (TLS, relay/tunnel) | Not implemented | Milestone H |
+| Mobile layout (tab bar, More sheet, sticky chat composer, no cut-off content at 390 px) | Verified (Chromium, 390×844) | e2e `test_mobile_layout_*` walks every screen; not yet tried on a real phone |
 | Live system status panel | Verified (Linux, Chromium) | `/api/system/status`; e2e |
 | Tasks screen (live progress, approve/cancel/pause/resume/retry) | Verified (Chromium, fake Ollama) | e2e `test_plan_task_*`, `test_task_can_be_cancelled_*`, `test_cloud_task_needs_approval_*` |
 | Responsive layout at 390 px | Verified (Chromium) | Was 747 px wide before the fix |
