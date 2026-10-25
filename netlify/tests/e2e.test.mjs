@@ -314,3 +314,19 @@ test('auto-switch: when one free provider hits its limit, another saved key answ
   assert.deepEqual(page.errors.filter((e) => !/status of 429/.test(e)), []);
   await page.context().close();
 });
+
+test('every screen opens on a phone with no console errors or warnings', async () => {
+  const page = await phone();
+  const warnings = [];
+  page.on('console', (m) => { if (m.type() === 'warning') warnings.push(m.text()); });
+  await page.goto(base + '/');
+  await page.waitForSelector('#topstatus >> text=Cloud');
+  for (const s of ['chat', 'tasks', 'memory', 'automations', 'integrations', 'devices', 'home']) {
+    await go(page, s);
+    await page.waitForSelector('#' + (s === 'home' ? 'home' : 'subview') + ':not(.hidden)');
+    await noSideScroll(page);
+  }
+  assert.deepEqual(page.errors, []);
+  assert.deepEqual(warnings, []);
+  await page.context().close();
+});
