@@ -1,8 +1,7 @@
-// ATLAS OS service worker: lets the app open (read-only shell) when the
-// computer running ATLAS is unreachable. It never caches /api responses,
-// so chat, memory and tasks are never stored here.
-const CACHE = 'atlas-shell-v1';
-const SHELL = ['/', '/static/app.css', '/static/app.js', '/static/icon.svg', '/static/manifest.webmanifest'];
+// ATLAS OS service worker: lets the app open (read-only shell) without a connection.
+// It never caches /cloud responses, so chats and keys are never stored here.
+const CACHE = 'atlas-shell-v2';
+const SHELL = ['/', '/static/app.css', '/static/cloud.js', '/static/app.js', '/static/icon.svg', '/static/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -18,8 +17,8 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/cloud/') || url.pathname === '/health' || url.search.includes('pair=')) return;
-  // Network first, so a running ATLAS always serves the newest code; the cache is only a fallback.
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/cloud/') || url.pathname === '/version.json') return;
+  // Network first, so the newest code is always used online; the cache is only a fallback.
   event.respondWith(fetch(request).then((response) => {
     if (response.ok && (request.mode === 'navigate' || SHELL.includes(url.pathname) || url.pathname.startsWith('/static/'))) {
       const copy = response.clone();

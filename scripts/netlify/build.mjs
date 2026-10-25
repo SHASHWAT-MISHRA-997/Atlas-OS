@@ -1,4 +1,4 @@
-// Builds dist/ for the Netlify cloud edition: the normal frontend with frontend/cloud/ loaded first.
+// Builds dist/ for Netlify: the web app, with the version added to its script and style URLs.
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,26 +8,13 @@ const out = join(root, 'dist');
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out);
 cpSync(join(root, 'frontend', 'static'), join(out, 'static'), { recursive: true });
-// /cloud/* belongs to the function, so the cloud files are served from /static/.
-for (const name of ['cloud.js', 'cloud.css']) cpSync(join(root, 'frontend', 'cloud', name), join(out, 'static', name));
 cpSync(join(root, 'frontend', 'static', 'sw.js'), join(out, 'sw.js'));
 
 const version = readFileSync(join(root, 'VERSION'), 'utf8').trim();
-let html = readFileSync(join(root, 'frontend', 'index.html'), 'utf8');
-const appScript = '<script src="/static/app.js" defer></script>';
-if (!html.includes(appScript)) throw new Error('index.html no longer loads /static/app.js the expected way');
-// The online edition has no local models: say so in the page itself, before app.js runs.
-const swap = (from, to) => {
-  if (!html.includes(from)) throw new Error('index.html no longer contains: ' + from);
-  html = html.replace(from, to);
-};
-swap('<small>Local models (Ollama)</small>', '<small>Your AI keys</small>');
-swap('ATLAS asks your local model for a step-by-step plan', 'ATLAS asks your free cloud AI for a step-by-step plan');
-html = html
-  .replace(appScript, '<link rel="stylesheet" href="/static/cloud.css">\n<script src="/static/cloud.js" defer></script>\n' + appScript)
-  .replace('<title>ATLAS OS — Agentic Workspace</title>', '<title>ATLAS OS — Online</title>')
-  .replace(/(\/static\/(?:app|cloud)\.(?:js|css))/g, '$1?v=' + version);
-writeFileSync(join(out, 'index.html'), html);
+const html = readFileSync(join(root, 'frontend', 'index.html'), 'utf8');
+if (!html.includes('<script src="/static/app.js" defer></script>')) throw new Error('index.html no longer loads /static/app.js the expected way');
+// ?v= makes browsers fetch new files after an update; app.js also reads it to know its own version.
+writeFileSync(join(out, 'index.html'), html.replace(/(\/static\/(?:app|cloud)\.(?:js|css))/g, '$1?v=' + version));
 // The app compares this with its own version to show "New version available".
 writeFileSync(join(out, 'version.json'), JSON.stringify({ version }) + '\n');
-console.log('ATLAS cloud build ' + version + ' written to dist/');
+console.log('ATLAS build ' + version + ' written to dist/');

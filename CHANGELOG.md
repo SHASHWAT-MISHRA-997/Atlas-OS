@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.15.0 — 2026-10-25 (branch `atlas/universal-web`)
+
+ATLAS is now one web app for every device. The owner asked for a universal web app instead of separate Windows, Android, Linux and Mac versions, and chose to delete the PC version.
+- **Removed the PC version:** the FastAPI backend and its tests, the Windows installer, the Docker image, and the Windows, backend, Docker and backend browser CI jobs. It is still in the Git history.
+- **Removed PC-only parts of the app:** PC actions, local models (Ollama), document search, local Whisper/Piper voice, hands-free "Hey ATLAS", device pairing, and the placeholder Agents and Projects screens. Automations and Devices will come back as browser versions in the redesign.
+- **iPhone and iPad:** "Install app" now shows how to add ATLAS from Safari's Share menu (Safari has no install prompt). The app is no longer locked to portrait. Text says "this device" instead of "this phone". Layout checked at four iPad sizes in Chromium with no sideways scrolling; not yet on a real iPad.
+- `cloud.js` and its styles are part of the normal app now (`frontend/static/`); the build only adds version numbers.
+- CI is one job, `cloud`: syntax check, build, function, attack, size and browser tests, `npm audit` and a secret scan.
+- Docs rewritten for the web app: README, ARCHITECTURE, FEATURE_MATRIX, TEST_PLAN, THREAT_MODEL, SECURITY, CONTRIBUTING, HANDOFF; decision D-025.
+
 ## 0.14.0 — 2026-10-25 (branch `atlas/auto-route`)
 
 Online version:

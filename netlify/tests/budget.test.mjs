@@ -9,7 +9,7 @@ const dist = new URL('../../dist/', import.meta.url);
 const gz = (path) => gzipSync(readFileSync(new URL(path, dist))).length;
 
 test('code needed to open the app stays under 80 KB compressed', () => {
-  const files = ['index.html', 'static/app.js', 'static/app.css', 'static/cloud.js', 'static/cloud.css', 'static/icon.svg'];
+  const files = ['index.html', 'static/app.js', 'static/app.css', 'static/cloud.js', 'static/icon.svg'];
   const total = files.reduce((sum, f) => sum + gz(f), 0);
   assert.ok(total < 80_000, 'first load is ' + total + ' bytes gzipped');
 });

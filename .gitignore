@@ -1,24 +1,9 @@
 .env
 .env.*
 !.env.example
-.venv/
-__pycache__/
-.pytest_cache/
-*.py[cod]
 .DS_Store
 node_modules/
 dist/
 
 # Netlify CLI state (may contain project identifiers)
 .netlify/
-.ruff_cache/
-
-# ATLAS local data if ATLAS_DATA_DIR points inside the repo
-atlas-data/
-*.db
-*.db-wal
-*.db-shm
-
-# Written by scripts/windows/install.ps1 on the owner PC
-atlas-settings.cmd
-start-atlas.cmd

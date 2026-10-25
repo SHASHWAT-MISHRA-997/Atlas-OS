@@ -54,7 +54,7 @@ const noOllama = async (page) => assert.ok(!/ollama/i.test(await page.evaluate((
 test('a visitor gets a free key, chats, plans, and the key stays on their phone', async () => {
   const page = await phone();
   await page.goto(base + '/');
-  await page.waitForSelector('#topstatus >> text=Add your key · Cloud');
+  await page.waitForSelector('#topstatus >> text=Add your key');
   assert.equal(await page.locator('#cloudgate').count(), 0, 'no sign-in screen');
   // Home starts with a "get a free key" banner linking to the free providers' key pages.
   await page.waitForSelector('#keybanner >> text=Start here: get a free AI key');
@@ -121,14 +121,14 @@ test('a visitor gets a free key, chats, plans, and the key stays on their phone'
   await page.fill('.composer-input', 'namaste');
   await page.click('.sendbtn');
   await page.waitForSelector('.bubble >> text=FAKE reply to: namaste');
-  await page.waitForSelector('.bubble .meta >> text=Answered by Groq (cloud)');
+  await page.waitForSelector('.bubble .meta >> text=Answered by Groq');
   await shot(page, '3-chat');
   await noSideScroll(page);
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.cloud.key.groq'))), 'my-own-test-key-456');
 
-  // Remembered on this phone: after a reload the key and history are still there.
+  // Remembered on this device: after a reload the key and history are still there.
   await page.reload();
-  await page.waitForSelector('#topstatus >> text=AI ready · Cloud');
+  await page.waitForSelector('#topstatus >> text=AI ready');
   assert.equal(await page.locator('#keybanner').count(), 0, 'no banner once a key is added');
   await go(page, 'chat');
   await page.waitForSelector('.bubble >> text=FAKE reply to: namaste');
@@ -166,18 +166,15 @@ test('a visitor gets a free key, chats, plans, and the key stays on their phone'
   await page.fill('#command', 'Plan my exam week');
   await page.click('#run');
   await page.waitForSelector('#tasksteps >> text=FAKE step one');
-  assert.match(await page.textContent('#message'), /on Groq \(cloud\)/);
+  assert.match(await page.textContent('#message'), /on Groq\./);
 
-  // Tasks screen fills in the key; PC-only features say so.
+  // Tasks screen fills in the key. Nothing about a PC version is left in the app.
   await go(page, 'tasks');
-  await page.waitForSelector('text=need ATLAS installed on your Windows PC');
-  assert.equal(await page.inputValue('#taskkey'), 'my-own-test-key-456');
-  await go(page, 'automations');
-  await page.waitForSelector('text=Scheduled tasks need ATLAS running on your PC');
-  await go(page, 'devices');
-  await page.waitForSelector('text=there is no sign-in or pairing');
+  await page.waitForFunction(() => document.querySelector('#taskkey')?.value === 'my-own-test-key-456');
   await go(page, 'integrations');
-  await page.waitForSelector('text=Free cloud AI with your own key');
+  await page.waitForSelector('text=AI with your own key');
+  for (const gone of ['automations', 'devices', 'agents', 'projects']) assert.equal(await page.locator('[data-section="' + gone + '"]').count(), 0, gone);
+  assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /\bPC\b|Windows|backend/);
   await noOllama(page);
 
   // Untick "Remember": the key is removed from this browser.
@@ -203,7 +200,7 @@ test('a new version is announced with "Update now", and "Check for update" works
   const page = await phone({ serviceWorkers: 'block' });
   const version = (await import('node:fs')).readFileSync(root + 'VERSION', 'utf8').trim();
   await page.goto(base + '/');
-  await page.waitForSelector('#topstatus >> text=Cloud');
+  await page.waitForSelector('#topstatus .dot');
   // Same version as the page: nothing to update.
   await page.click('#morebtn');
   await page.click('#checkupdate');
@@ -320,8 +317,8 @@ test('every screen opens on a phone with no console errors or warnings', async (
   const warnings = [];
   page.on('console', (m) => { if (m.type() === 'warning') warnings.push(m.text()); });
   await page.goto(base + '/');
-  await page.waitForSelector('#topstatus >> text=Cloud');
-  for (const s of ['chat', 'tasks', 'memory', 'automations', 'integrations', 'devices', 'home']) {
+  await page.waitForSelector('#topstatus .dot');
+  for (const s of ['chat', 'tasks', 'memory', 'integrations', 'home']) {
     await go(page, s);
     await page.waitForSelector('#' + (s === 'home' ? 'home' : 'subview') + ':not(.hidden)');
     await noSideScroll(page);

@@ -1,5 +1,7 @@
 # Research (Milestone K)
 
+> Historical: this describes the PC version, which was removed in 0.15.0 (see D-025). The files it names are in the Git history.
+
 This file reports what was measured, how, and what the numbers do not show. The questions come from `DECISIONS.md` D-008.
 
 **Environment for every result below:** a cloud Linux container (x86_64, 4 CPUs, Python 3.13.16), 2026-10-25, commit on branch `atlas/v0.7`. This is not the owner's Windows PC. No real model was used.
