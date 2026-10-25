@@ -110,6 +110,12 @@ def create_app() -> FastAPI:
     if static_dir.is_dir():
         application.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+    @application.get("/sw.js", include_in_schema=False)
+    def service_worker():
+        # Served from the root so it may control "/". no-cache: a new version is picked up on the next visit.
+        return FileResponse(FRONTEND / "static" / "sw.js", media_type="text/javascript",
+                            headers={"Cache-Control": "no-cache"})
+
     @application.get("/", include_in_schema=False)
     def frontend(request: Request, pair: str | None = None):
         if pair is not None:

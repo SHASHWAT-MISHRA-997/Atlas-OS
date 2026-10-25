@@ -482,3 +482,18 @@ def test_pc_action_waits_for_approval_then_searches_files(page):
     playwright_sync.expect(card.locator(".task-state")).to_have_text("SUCCEEDED", timeout=5000)
     playwright_sync.expect(card).to_contain_text("college/dbms-notes.pdf")
     assert page.errors == []
+
+
+def test_app_shell_opens_offline_after_first_visit(browser, server):
+    context = browser.new_context()
+    pg = context.new_page()
+    pg.goto(server + "/")
+    pg.evaluate("() => navigator.serviceWorker.ready")
+    pg.wait_for_function("() => navigator.serviceWorker.controller !== null", timeout=15000)
+    context.set_offline(True)
+    pg.reload()
+    # The cached shell renders; live data shows as offline instead of pretending to work.
+    playwright_sync.expect(pg.locator(".tabbar, .sidebar").first).to_be_attached()
+    playwright_sync.expect(pg.locator("#topstatus")).to_contain_text("Offline", timeout=10000)
+    context.set_offline(False)
+    context.close()

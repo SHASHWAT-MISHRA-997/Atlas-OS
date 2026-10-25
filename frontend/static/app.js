@@ -1290,6 +1290,28 @@
   document.body.dataset.page = 'home';
   document.querySelectorAll('[data-section]').forEach((b) => b.addEventListener('click', () => showSection(b)));
 
+  // Installable app. Service workers need HTTPS or this same computer (localhost); over plain
+  // HTTP on Wi-Fi the phone can still "Add to Home screen", it just won't open offline.
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    navigator.serviceWorker.register('/sw.js').then(() => log('offline shell ready'))
+      .catch((err) => log('offline shell not available: ' + err.message));
+  }
+  let installPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installPrompt = e;
+    $('installapp').classList.remove('hidden');
+  });
+  $('installapp').addEventListener('click', async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const choice = await installPrompt.userChoice.catch(() => null);
+    log('install ' + (choice ? choice.outcome : 'dismissed'));
+    installPrompt = null;
+    $('installapp').classList.add('hidden');
+  });
+  window.addEventListener('appinstalled', () => { $('installapp').classList.add('hidden'); log('ATLAS installed as an app'); });
+
   log('ATLAS UI loaded');
   refreshStatus().then(updateMemoryStat);
 })();

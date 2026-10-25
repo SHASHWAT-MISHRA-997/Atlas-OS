@@ -33,7 +33,7 @@ from urllib.parse import urlparse
 from . import devices, storage
 
 COOKIE = "atlas_session"
-PUBLIC_PATHS = {"/", "/health", "/favicon.ico"}
+PUBLIC_PATHS = {"/", "/health", "/favicon.ico", "/sw.js"}
 PUBLIC_PREFIXES = ("/static/",)
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
