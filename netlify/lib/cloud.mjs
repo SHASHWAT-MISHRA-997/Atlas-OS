@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.13.3';
+export const VERSION = '0.14.0';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -28,15 +28,22 @@ export const PROVIDERS = {
   },
   gemini: {
     label: 'Google Gemini', kind: 'gemini', base: 'https://generativelanguage.googleapis.com', keyUrl: 'https://aistudio.google.com/apikey',
-    note: 'Free tier with limits.', prefer: [/flash-lite/, /flash/], skip: /image|tts|embedding|aqa|live|audio|vision|learnlm|gemma/i,
+    note: 'Free tier with limits. A paid Google key also lists paid models such as Gemini 4 Argon, billed to your Google account.', prefer: [/flash-lite/, /flash/], skip: /image|tts|embedding|aqa|live|audio|vision|learnlm|gemma/i,
     suggested: ['gemini-2.5-flash'],
   },
   openrouter: {
     label: 'OpenRouter', kind: 'openai', base: 'https://openrouter.ai/api/v1', keyUrl: 'https://openrouter.ai/settings/keys',
     note: 'Only its free models (IDs ending in ":free") are offered.', prefer: [/llama|deepseek|qwen|gemma/], skip: /^$/, only: /:free$/,
   },
+  // Optional and paid (the owner chose to offer it): never a default, never an auto-switch target.
+  openai: {
+    label: 'OpenAI (paid)', kind: 'openai', base: 'https://api.openai.com/v1', keyUrl: 'https://platform.openai.com/api-keys', paid: true,
+    note: 'Paid, no free tier: every message is billed to your own OpenAI account. GPT-6 Astra costs far more per message than the free providers.',
+    prefer: [/^gpt-6-astra$/, /^gpt-6/, /^gpt-5/], tokensField: 'max_completion_tokens',
+    skip: /embedding|tts|whisper|dall-e|image|audio|realtime|moderation|transcribe|search|babbage|davinci|instruct|codex/i,
+  },
 };
-export const PROVIDER_ORDER = ['groq', 'gemini', 'openrouter'];
+export const PROVIDER_ORDER = ['groq', 'gemini', 'openrouter', 'openai'];
 
 const MAX_BODY = 400_000;
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
@@ -112,7 +119,7 @@ function requestFor(p, model, messages, maxTokens) {
     return {
       url: p.base + '/chat/completions',
       headers: { Authorization: 'Bearer ' + p.key },
-      body: { model, messages, stream: true, max_tokens: maxTokens },
+      body: { model, messages, stream: true, [p.tokensField || 'max_tokens']: maxTokens },
     };
   }
   return {
@@ -252,7 +259,7 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
         version: VERSION,
         key_mode: 'bring-your-own',
         providers: PROVIDER_ORDER.filter((id) => providers[id]).map((id) => ({
-          id, label: providers[id].label, key_url: providers[id].keyUrl, note: providers[id].note,
+          id, label: providers[id].label, key_url: providers[id].keyUrl, note: providers[id].note, paid: !!providers[id].paid,
         })),
       });
     }

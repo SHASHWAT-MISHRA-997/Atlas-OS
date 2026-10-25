@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { createHandler } from '../lib/cloud.mjs';
 
 const KEY = 'visitor-key-not-real-123';
-const OFFICIAL_HOSTS = new Set(['api.groq.com', 'generativelanguage.googleapis.com', 'openrouter.ai']);
+const OFFICIAL_HOSTS = new Set(['api.groq.com', 'generativelanguage.googleapis.com', 'openrouter.ai', 'api.openai.com']);
 
 function setup() {
   const calls = [];
@@ -34,7 +34,7 @@ test('header injection through the key is refused (CR/LF, spaces, control and no
 test('the function cannot be turned into a proxy to other hosts or paths', async () => {
   const t = setup();
   const models = ['../../../v1/files', 'x/../../admin', '..', 'a?key=stolen', 'a#frag', 'http://evil.example/x', '//evil.example', 'm\r\nHost: evil', 'a b', 'a%2F..'];
-  for (const provider of ['groq', 'gemini', 'openrouter']) {
+  for (const provider of ['groq', 'gemini', 'openrouter', 'openai']) {
     for (const model of models) {
       const r = await t.call('chat', chat({ provider, model }));
       await r.text();
@@ -44,7 +44,7 @@ test('the function cannot be turned into a proxy to other hosts or paths', async
   for (const c of t.calls) {
     assert.ok(OFFICIAL_HOSTS.has(c.url.hostname), 'called ' + c.url);
     assert.equal(c.url.protocol, 'https:');
-    assert.ok(/^\/(openai\/v1\/chat\/completions|api\/v1\/chat\/completions|v1beta\/models\/[^/]+:streamGenerateContent)$/.test(c.url.pathname), 'path ' + c.url.pathname);
+    assert.ok(/^\/(openai\/v1\/chat\/completions|api\/v1\/chat\/completions|v1\/chat\/completions|v1beta\/models\/[^/]+:streamGenerateContent)$/.test(c.url.pathname), 'path ' + c.url.pathname);
   }
 });
 

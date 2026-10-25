@@ -59,7 +59,7 @@ test('a visitor gets a free key, chats, plans, and the key stays on their phone'
   // Home starts with a "get a free key" banner linking to the free providers' key pages.
   await page.waitForSelector('#keybanner >> text=Start here: get a free AI key');
   assert.deepEqual(await page.$$eval('#keybanner a', (as) => as.map((a) => a.href)),
-    ['https://console.groq.com/keys', 'https://aistudio.google.com/apikey', 'https://openrouter.ai/settings/keys']);
+    ['https://console.groq.com/keys', 'https://aistudio.google.com/apikey', 'https://openrouter.ai/settings/keys'], 'free providers only, no paid OpenAI');
   await noOllama(page);
   await shot(page, '1-home');
   await noSideScroll(page);
@@ -73,11 +73,17 @@ test('a visitor gets a free key, chats, plans, and the key stays on their phone'
   await page.click('#keybanner >> text=Set up my free key');
   await page.waitForSelector('#keycard:not(.hidden)');
   assert.equal(await page.inputValue('#atlasprovider'), 'groq');
-  assert.deepEqual(await page.$$eval('#keycardprovider option', (os) => os.map((o) => o.value)), ['groq', 'gemini', 'openrouter']);
+  assert.deepEqual(await page.$$eval('#keycardprovider option', (os) => os.map((o) => o.value)), ['groq', 'gemini', 'openrouter', 'openai']);
+  assert.equal(await page.textContent('#keycardprovider option[value=openai]'), 'OpenAI (paid)');
   assert.equal(await page.getAttribute('#getkeylink', 'href'), 'https://console.groq.com/keys');
   await page.selectOption('#keycardprovider', 'gemini');
   await page.waitForSelector('#getkeylink[href="https://aistudio.google.com/apikey"]');
   assert.equal(await page.inputValue('#atlasprovider'), 'gemini');
+  await page.selectOption('#keycardprovider', 'groq');
+  await page.selectOption('#keycardprovider', 'openai');
+  await page.waitForSelector('#keycard h3 >> text=Add your paid OpenAI key');
+  await page.waitForSelector('#keycard >> text=Every message is billed to your own account');
+  await shot(page, '2b-paid-key-card');
   await page.selectOption('#keycardprovider', 'groq');
   await page.waitForSelector('#getkeylink >> text=Open Groq key page');
   await noOllama(page);
@@ -249,5 +255,62 @@ test('attacks in the browser: script in a reply or memory never runs, and the ke
   assert.ok(!JSON.stringify(body.messages).includes('attack-test-key-789'), 'the key was put into the prompt the model sees');
   assert.equal(body.api_key, 'attack-test-key-789', 'the key is only in its own field, for the provider call');
   assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+test('auto-switch: when one free provider hits its limit, another saved key answers, and each key goes only to its own provider', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  const sent = [];
+  await page.route('**/cloud/chat', async (route) => { sent.push(JSON.parse(route.request().postData())); await route.continue(); });
+  await page.goto(base + '/');
+  await go(page, 'chat');
+  // A Groq key that is "rate limited" (FAKE) and an OpenRouter key that works.
+  await page.fill('#keycardinput', 'busy-key-429');
+  await page.click('#keycardsave');
+  await page.waitForSelector('#keycard', { state: 'hidden' });
+  await page.click('#chatsettings summary');
+  await page.selectOption('#atlasprovider', 'openrouter');
+  await page.waitForSelector('#keycard:not(.hidden)');
+  await page.fill('#keycardinput', 'router-key-456');
+  await page.click('#keycardsave');
+  await page.waitForSelector('#keycard', { state: 'hidden' });
+  await page.selectOption('#atlasprovider', 'groq');
+  await page.waitForFunction(() => /^fake-/.test(document.querySelector('#atlasmodel')?.value || ''));
+  assert.equal(await page.isChecked('#atlasfallback'), true, 'auto-switch is on by default online');
+  // A paid OpenAI key is also saved; auto-switch must never use it (checked below).
+  await page.evaluate(() => localStorage.setItem('atlas.cloud.key.openai', JSON.stringify('sk-paid-key-000')));
+  if (!(await page.isChecked('#atlasbilling'))) await page.check('#atlasbilling');
+
+  await page.fill('.composer-input', 'switch please');
+  await page.click('.sendbtn');
+  const reply = page.locator('.bubble', { hasText: 'FAKE reply to: switch please' });
+  await reply.waitFor();
+  await page.waitForSelector('.bubble .meta >> text=OpenRouter (auto-switched: Groq hit its free limit)');
+  await page.waitForSelector('.chatstatus >> text=Reply received from OpenRouter.');
+  await shot(page, '7-auto-switch');
+
+  assert.deepEqual(sent.map((b) => [b.provider, b.api_key]), [['groq', 'busy-key-429'], ['openrouter', 'router-key-456']]);
+  assert.ok(sent.every((b) => !('fallback_keys' in b)), 'other keys never leave the browser together');
+  assert.equal(sent[1].model, 'fake-free:free', 'only a free OpenRouter model is used');
+
+  // Switched off: the limit error is shown instead.
+  await page.uncheck('#atlasfallback');
+  await page.fill('.composer-input', 'no switch');
+  await page.click('.sendbtn');
+  await page.waitForSelector('.bubble.error >> text=Rate limit');
+
+  // Only the paid key is left besides the busy one: no switch into paid, the limit error is shown.
+  await page.check('#atlasfallback');
+  await page.evaluate(() => localStorage.removeItem('atlas.cloud.key.openrouter'));
+  await page.reload();
+  await go(page, 'chat');
+  await page.waitForFunction(() => /^fake-/.test(document.querySelector('#atlasmodel')?.value || ''));
+  if (!(await page.isChecked('#atlasbilling'))) await page.check('#atlasbilling');
+  await page.fill('.composer-input', 'never paid');
+  await page.click('.sendbtn');
+  await page.waitForFunction(() => document.querySelectorAll('.bubble.error').length >= 1 && document.body.innerText.includes('never paid'));
+  await page.waitForSelector('.chatstatus >> text=Chat failed');
+  assert.ok(sent.every((b) => b.provider !== 'openai'), 'a paid provider was used without the visitor choosing it');
+  assert.deepEqual(page.errors.filter((e) => !/status of 429/.test(e)), []);
   await page.context().close();
 });

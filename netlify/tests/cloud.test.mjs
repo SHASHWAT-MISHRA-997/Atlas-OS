@@ -38,7 +38,9 @@ const chatBody = (extra = {}) => ({ provider: 'groq', api_key: KEY, model: 'llam
 test('status lists the providers a visitor can use with their own key', async () => {
   const s = await (await setup().call('status')).json();
   assert.equal(s.key_mode, 'bring-your-own');
-  assert.deepEqual(s.providers.map((p) => p.id), ['groq', 'gemini', 'openrouter'], 'only providers with a free tier');
+  assert.deepEqual(s.providers.map((p) => p.id), ['groq', 'gemini', 'openrouter', 'openai']);
+  assert.deepEqual(s.providers.filter((p) => p.paid).map((p) => p.id), ['openai'], 'the free providers come first; OpenAI is marked paid');
+  assert.match(s.providers.find((p) => p.id === 'openai').note, /billed to your own OpenAI account/);
   assert.ok(s.providers.every((p) => p.key_url.startsWith('https://') && p.label && p.note));
 });
 
@@ -105,7 +107,6 @@ test('chat input is validated before any provider call', async () => {
   const t = setup();
   const bad = [
     chatBody({ provider: 'ollama' }),
-    chatBody({ provider: 'openai' }),
     chatBody({ provider: 'anthropic' }),
     chatBody({ provider: '__proto__' }),
     chatBody({ provider: 'toString' }),
@@ -188,4 +189,14 @@ test('only status (GET) and chat/models (POST) exist; bad JSON is refused', asyn
   assert.equal((await t.call('chat', { method: 'POST', raw: '{nope' })).status, 400);
   assert.equal((await t.call('chat', { method: 'POST', raw: 'null' })).status, 400);
   assert.equal(t.calls.length, 0);
+});
+
+test('paid OpenAI (optional) uses its official URL, the visitor\'s key and max_completion_tokens', async () => {
+  const t = setup();
+  await (await t.call('chat', { method: 'POST', body: chatBody({ provider: 'openai', model: 'gpt-6-astra', max_tokens: 99999 }) })).text();
+  assert.equal(t.calls[0].url, 'https://api.openai.com/v1/chat/completions');
+  assert.equal(t.calls[0].init.headers.Authorization, 'Bearer ' + KEY);
+  const sent = JSON.parse(t.calls[0].init.body);
+  assert.equal(sent.max_completion_tokens, 2048);
+  assert.equal('max_tokens' in sent, false);
 });

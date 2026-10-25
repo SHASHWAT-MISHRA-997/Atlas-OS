@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.14.0 — 2026-10-25 (branch `atlas/auto-route`)
+
+Online version:
+- **Auto-switch between free providers (like an AI gateway such as OmniRoute).** If the chosen provider hits its free limit (HTTP 429) or is down (5xx), the same message goes to the next free provider you added a key for, and the reply says so (for example "OpenRouter (auto-switched: Groq hit its free limit)").
+  - It is on by default and can be turned off in Model settings.
+  - Each key is still sent only to its own provider, in its own request.
+  - It never switches into a paid provider.
+- **Optional paid OpenAI key (for GPT-6 Astra).** The owner chose to offer paid keys as an option.
+  - OpenAI is listed last as "OpenAI (paid)". Its key card warns that there is no free tier and every message is billed to the visitor's own account.
+  - It is never a default, never shown in the "free key" banner, and never used by auto-switch or by Home plans unless the visitor picked it.
+  - Requests use OpenAI's `max_completion_tokens`, capped at 2,048.
+  - A paid Google key works with the existing Gemini provider and lists paid models such as Gemini 4 Argon.
+- Tests:
+  - The browser test covers the auto-switch, turning it off, and never switching into paid.
+  - The function tests cover the OpenAI request shape.
+  - The attack tests include the OpenAI host.
+
 ## 0.13.3 — 2026-10-25 (branch `atlas/security-pass`)
 
 Security pass: I attacked the app myself, then fixed what got through. Every attack is now a test.

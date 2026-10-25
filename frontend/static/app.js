@@ -93,7 +93,7 @@
   // browser when the visitor ticks "Remember". They are sent only with that visitor's own requests.
   const CLOUD_KEY_PREFIX = 'atlas.cloud.key.';
   /** How each free provider's keys begin, to spot a key pasted under the wrong provider. */
-  const KEY_PREFIX = { groq: 'gsk_', gemini: 'AIza', openrouter: 'sk-or-' };
+  const KEY_PREFIX = { groq: 'gsk_', gemini: 'AIza', openrouter: 'sk-or-', openai: 'sk-' };
   /** A pasted key without spaces, line breaks, invisible characters or surrounding quotes. */
   const cleanKey = (text) => String(text || '').replace(/[\s\u200b-\u200d\u2060\ufeff]/g, '').replace(/^["'`]+|["'`]+$/g, '');
   const sessionKeys = {};
@@ -254,9 +254,10 @@
   }
 
   /** Online, with no key yet: a "Start here" banner on Home that leads to the free key pages. */
-  function showKeyBanner(providers) {
+  function showKeyBanner(all) {
     const old = $('keybanner');
-    if (!providers) { if (old) old.remove(); return; }
+    if (!all) { if (old) old.remove(); return; }
+    const providers = all.filter((p) => !p.paid);
     if (old) return;
     const openChat = () => {
       const tab = document.querySelector('.tabbar [data-section="chat"]');
@@ -292,7 +293,8 @@
     }
     const providers = systemStatus.cloud.providers;
     const saved = storageGet(CHAT_SETTINGS_KEY, {});
-    const p = providers.find((x) => x.id === saved.provider) || providers.find((x) => cloudKey.get(x.id)) || providers[0];
+    // A paid provider is used only when the visitor picked it in AI Chat, never as a guess.
+    const p = providers.find((x) => x.id === saved.provider) || providers.find((x) => !x.paid && cloudKey.get(x.id)) || providers[0];
     const apiKey = cloudKey.get(p.id);
     if (!apiKey) throw new Error('Add your own ' + p.label + ' API key first: open AI Chat and use "Get your free AI key".');
     let model = p.id === saved.provider ? saved.model : '';
@@ -960,9 +962,13 @@
     const billingBox = el('label', { class: 'check' }, [billingAck, billingLabel]);
     const routing = el('p', { class: 'notice', role: 'status' });
     const fb = catalogue.fallback;
-    const fallbackToggle = el('input', { type: 'checkbox', id: 'atlasfallback', checked: !!storageGet(CHAT_SETTINGS_KEY, {}).fallback });
+    // Online the auto-switch is on unless the visitor turned it off; on the PC the owner's fallback is opt-in.
+    const savedFallback = storageGet(CHAT_SETTINGS_KEY, {}).fallback;
+    const fallbackToggle = el('input', { type: 'checkbox', id: 'atlasfallback', checked: fb && fb.auto ? savedFallback !== false : !!savedFallback });
     const fallbackBox = el('label', { class: 'check' + (fb ? '' : ' hidden') }, [fallbackToggle,
-      fb ? 'If the chosen model fails (not running, out of memory, busy), answer with ' + fb.label + ' · ' + fb.model + (fb.local ? ' on this machine' : ', using the server\'s key: leaves this PC and may bill the owner') : '']);
+      !fb ? '' : fb.auto
+        ? 'Auto-switch: if this provider hits its free limit or is down, answer with another provider you added a key for. Each key still goes only to its own provider.'
+        : 'If the chosen model fails (not running, out of memory, busy), answer with ' + fb.label + ' · ' + fb.model + (fb.local ? ' on this machine' : ', using the server\'s key: leaves this PC and may bill the owner')]);
     fallbackToggle.addEventListener('change', () => storageSet(CHAT_SETTINGS_KEY, { ...storageGet(CHAT_SETTINGS_KEY, {}), fallback: fallbackToggle.checked }));
     const docsToggle = el('input', { type: 'checkbox', id: 'atlasdocs', checked: storageGet(DOCS_KEY, false) === true });
     const docsNote = el('p', { class: 'tiny muted', id: 'docsnote' });
@@ -1143,11 +1149,14 @@
     const cardSave = el('button', { id: 'keycardsave', class: 'btn primary', type: 'button', text: 'Save key' });
     const cardNote = el('p', { class: 'tiny muted' });
     const cardStatus = el('p', { class: 'tiny', role: 'status' });
+    const cardTitle = el('h3');
+    const cardIntro = el('p', { class: 'muted' });
+    const cardStep = el('p', { class: 'keystep' });
     const keyCard = isCloud() ? el('section', { id: 'keycard', class: 'panel keycard hidden', 'aria-label': 'Get your free AI key' }, [
-      el('h3', { text: 'Get your free AI key' }),
-      el('p', { class: 'muted', text: 'ATLAS online uses your own key. These providers have a free tier with daily limits; the limits are set by the provider and can change.' }),
-      el('label', { class: 'field' }, ['1. CHOOSE A FREE PROVIDER', cardProvider]),
-      el('p', { class: 'keystep', text: '2. Open the key page, sign in (Google sign-in works), tap "Create API key" and copy the key.' }),
+      cardTitle,
+      cardIntro,
+      el('label', { class: 'field' }, ['1. CHOOSE A PROVIDER', cardProvider]),
+      cardStep,
       cardLink,
       el('label', { class: 'field', style: 'margin-top:12px', for: 'keycardinput' }, ['3. PASTE YOUR KEY']),
       el('div', { class: 'keyrow' }, [cardKey, cardPaste]),
@@ -1351,6 +1360,14 @@
       cardLink.textContent = 'Open ' + p.label + ' key page ↗';
       cardKey.placeholder = KEY_PREFIX[p.id] ? 'Starts with ' + KEY_PREFIX[p.id] : 'Paste your key here';
       cardNote.textContent = 'Your messages go to ' + p.label + '. ' + (p.billing || '');
+      cardTitle.textContent = p.paid ? 'Add your paid ' + p.label.replace(' (paid)', '') + ' key' : 'Get your free AI key';
+      cardIntro.textContent = p.paid
+        ? 'This provider has no free tier. Every message is billed to your own account. Groq, Gemini and OpenRouter in the list are free.'
+        : 'ATLAS online uses your own key. Groq, Gemini and OpenRouter have a free tier with daily limits; the limits are set by the provider and can change.';
+      cardIntro.classList.toggle('warn', !!p.paid);
+      cardStep.textContent = p.paid
+        ? '2. Open the key page, sign in, add a payment method and a spending limit, then create a key and copy it.'
+        : '2. Open the key page, sign in (Google sign-in works), tap "Create API key" and copy the key.';
     }
     if (keyCard) {
       cardProvider.addEventListener('change', () => {
@@ -1626,6 +1643,9 @@
       items.push({ role: 'user', content: text });
       const built = await buildMessages(items, docsToggle.checked);
       const payload = { provider: p.id, model, api_key: keyInput.value.trim(), messages: built.messages, allow_fallback: !!fb && fallbackToggle.checked };
+      // Online: the other providers' keys stay in this browser; cloud.js uses each only for its own provider.
+      // Never switches into a paid provider: paid use is always the visitor's explicit choice.
+      if (isCloud() && payload.allow_fallback) payload.fallback_keys = providers.filter((x) => x.id !== p.id && !x.paid && cloudKey.get(x.id)).map((x) => ({ provider: x.id, api_key: cloudKey.get(x.id) }));
       storageSet(CHAT_SETTINGS_KEY, { provider: p.id, model, fallback: fallbackToggle.checked });
       const saveTurn = (message) => store.appendChat(message).catch((err) => log('could not save chat turn: ' + err.message));
       const userSaved = saveTurn({ role: 'user', content: text });
@@ -1646,6 +1666,7 @@
       let answer = '';
       let meta = null;
       let failure = null;
+      let switched = null;
 
       try {
         if (streamToggle.checked && !streamToggle.disabled) {
@@ -1664,7 +1685,10 @@
               reply.metaLine.textContent = 'Streaming from ' + p.label + '…';
               scrollChat();
             } else if (event === 'fallback') {
-              reply.metaLine.textContent = data.from.label + ' failed (' + data.from.detail + '). Answering with the fallback ' + data.label + '…';
+              switched = data;
+              reply.metaLine.textContent = data.auto === false || !fb || !fb.auto
+                ? data.from.label + ' failed (' + data.from.detail + '). Answering with the fallback ' + data.label + '…'
+                : data.from.label + (data.from.code === 'rate_limited' ? ' hit its free limit' : ' is not answering') + '. Switching to ' + data.label + '…';
             } else if (event === 'done') {
               meta = data;
             } else if (event === 'error') {
@@ -1678,7 +1702,11 @@
           answer = data.answer;
           meta = data;
         }
-        const answeredBy = meta.fallback_from ? fb.label + ' (fallback: ' + meta.fallback_from.label + ' failed, ' + meta.fallback_from.code.replace(/_/g, ' ') + ')' : p.label;
+        const from = meta.fallback_from || (switched && switched.from);
+        const answeredLabel = !from ? p.label : fb && fb.auto ? (meta.fallback_label || switched.label) : fb.label;
+        const answeredBy = !from ? p.label
+          : fb && fb.auto ? answeredLabel + ' (auto-switched: ' + from.label + ' ' + (from.code === 'rate_limited' ? 'hit its free limit' : 'was not answering') + ')'
+            : fb.label + ' (fallback: ' + from.label + ' failed, ' + from.code.replace(/_/g, ' ') + ')';
         const metaText = describeAnswer(meta, answeredBy) + ' · ' + memoryNote(built.memoriesUsed) +
           (docsToggle.checked ? ' · ' + built.excerptsUsed.length + ' document excerpt' + (built.excerptsUsed.length === 1 ? '' : 's') + ' sent' : '');
         reply.body.textContent = answer;
@@ -1697,7 +1725,7 @@
         }
         await userSaved;  // keep turns in order
         withActions(reply, 'assistant', answer, saveTurn({ role: 'assistant', content: answer, meta: metaText }));
-        status.textContent = 'Reply received from ' + p.label + '.';
+        status.textContent = 'Reply received from ' + answeredLabel + '.';
         log('chat reply from ' + p.id + '/' + model + (meta.latency_ms != null ? ' in ' + meta.latency_ms + ' ms' : ''));
         speakText(answer);
       } catch (err) {

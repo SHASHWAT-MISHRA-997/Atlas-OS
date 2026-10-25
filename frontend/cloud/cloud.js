@@ -52,12 +52,58 @@
   async function providers() {
     const s = await status();
     const list = s.providers.map((p) => ({
-      id: p.id, label: p.label, key_required: true, local: false, enabled: true, server_key_configured: false,
-      billing: 'Uses your own ' + p.label + ' key and account. ' + p.note + ' Limits and prices are set by ' + p.label + ' and can change.',
+      id: p.id, label: p.label, key_required: true, local: false, enabled: true, server_key_configured: false, paid: !!p.paid,
+      billing: (p.paid ? 'PAID. ' : '') + 'Uses your own ' + p.label + ' key and account. ' + p.note + ' Limits and prices are set by the provider and can change.',
       capabilities: { streaming: true }, docs_url: p.key_url, key_url: p.key_url,
     }));
-    return { default_provider: list[0].id, external_providers_enabled: true, providers: list, fallback: null,
+    return { default_provider: list[0].id, external_providers_enabled: true, providers: list, fallback: { label: 'your other free provider', auto: true },
       note: 'Model IDs, availability, pricing and free tiers are provider-controlled and can change.' };
+  }
+
+  // ------------------------------------------------------------ auto-switch between free providers
+  // Like an AI gateway (OmniRoute): when the chosen provider is rate limited or down, the same chat
+  // goes to the next provider the visitor added a key for. Each key still goes only to its own
+  // provider, in its own request; the function never sees two keys at once.
+  const SWITCH_ON = /HTTP (429|5\d\d)\b|rate limit|quota|overloaded|unavailable|timed? ?out|empty answer/i;
+  const firstModels = new Map();
+  async function firstModel(provider, apiKey) {
+    if (!firstModels.has(provider)) {
+      const data = await cloudJson('models', { method: 'POST', body: { provider, api_key: apiKey } });
+      if (!data.models.length) return null;
+      firstModels.set(provider, data.models[0]);
+    }
+    return firstModels.get(provider);
+  }
+
+  async function chatWithSwitch(body, stream) {
+    const send = (provider, apiKey, model) => cloud('chat', { method: 'POST', body: { provider, api_key: apiKey, model, messages: body.messages, stream } });
+    const first = await send(body.provider, body.api_key || '', body.model);
+    const others = body.allow_fallback && Array.isArray(body.fallback_keys)
+      ? body.fallback_keys.filter((f) => f && typeof f.provider === 'string' && f.provider !== body.provider && typeof f.api_key === 'string' && f.api_key) : [];
+    if (first.ok || !others.length || (first.status !== 429 && first.status < 500)) return first;
+    const detail = String((await first.clone().json().catch(() => ({}))).detail || 'HTTP ' + first.status);
+    if (!SWITCH_ON.test(detail)) return first;
+    const catalogue = (await status()).providers;
+    const labelOf = (id) => (catalogue.find((p) => p.id === id) || { label: id }).label;
+    const from = { label: labelOf(body.provider), detail: detail.slice(0, 200), code: /429|rate limit|quota/i.test(detail) ? 'rate_limited' : 'provider_down' };
+    for (const f of others) {
+      if ((catalogue.find((p) => p.id === f.provider) || { paid: true }).paid) continue; // never switch into a paid provider
+      let model;
+      try { model = await firstModel(f.provider, f.api_key); } catch { continue; }
+      if (!model) continue;
+      const next = await send(f.provider, f.api_key, model);
+      if (!next.ok) continue;
+      const switched = { from, label: labelOf(f.provider), provider: f.provider, model };
+      if (!stream) return json({ ...(await next.json()), fallback_from: from, fallback_label: switched.label });
+      const head = new TextEncoder().encode('event: fallback\ndata: ' + JSON.stringify(switched) + '\n\n');
+      const reader = next.body.getReader();
+      return new Response(new ReadableStream({
+        start(c) { c.enqueue(head); },
+        async pull(c) { const { value, done } = await reader.read(); if (done) c.close(); else c.enqueue(value); },
+        cancel() { reader.cancel(); },
+      }), { headers: { 'Content-Type': 'text/event-stream' } });
+    }
+    return first;
   }
 
   async function ask(provider, apiKey, model, messages, maxTokens) {
@@ -176,7 +222,7 @@
       return cloud('models', { method: 'POST', body: { provider: body.provider || url.searchParams.get('provider'), api_key: body.api_key || '' } });
     }
     if (path === '/api/llm/chat/stream' || path === '/api/llm/chat') {
-      return cloud('chat', { method: 'POST', body: { provider: body.provider, api_key: body.api_key || '', model: body.model, messages: body.messages, stream: path.endsWith('stream') } });
+      return chatWithSwitch(body, path.endsWith('stream'));
     }
     if (path === '/api/tasks/plan') {
       return json({ mode: 'simulation', command: body.command, steps: ['Understand goal and constraints', 'Assign relevant specialist roles', 'Prepare execution and verification checklist', 'Request permissions before real external actions'],
