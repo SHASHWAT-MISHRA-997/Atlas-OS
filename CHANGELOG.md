@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.16.0 — 2026-10-25 (branch `atlas/cyber-ui`)
+
+Redesign the owner asked for: every screen looked and worked the same, status, refresh and update were all in one corner, there was no light theme, and no effects or motion.
+- **Neon cyberpunk look:** a moving perspective grid, drifting neon glows and scanlines in the background; glass panels with HUD corner brackets; neon buttons with a shine sweep; a glitch effect on the Home title now and then; a typing cursor while a reply streams.
+- **Dark and light theme:** a switch in the top bar (phone) or sidebar, and Dark / Light / Auto on the System screen. The choice is applied before the page paints (`theme.js`), so it never flashes.
+- **Every screen is different:** its own colour (Home cyan, AI Chat magenta, Tasks green, Automations orange, Memory violet, Integrations blue, Devices teal, System yellow), its own header with icon and a "decrypting" title, and its own layout (terminal-style chat, task form beside the task list, memory cards, integration tiles, automation timeline).
+- **Screen transitions:** each screen wipes in and its parts rise in one after another. "Reduce motion" turns all of this off.
+- **System screen (new):** status tiles (connection, version, AI keys, data, offline shell, app), Check for update, Refresh status, Install app, theme, and the activity log. The sidebar keeps one small status chip.
+- **Automations (back, as a web version):** plans and reminders every day, every week, every few hours or once. They run while ATLAS is open in the browser; a missed run happens once when ATLAS opens again. Reminders can use system notifications.
+- **Devices (back, as a web version):** what this device is, how much ATLAS stores, export everything to a file (AI keys left out unless you tick it), import on another device, ask the browser to keep the data, and erase ATLAS from the device.
+- Tests: 33 pass (new browser tests for the theme, automations and devices).
+
 ## 0.15.0 — 2026-10-25 (branch `atlas/universal-web`)
 
 ATLAS is now one web app for every device. The owner asked for a universal web app instead of separate Windows, Android, Linux and Mac versions, and chose to delete the PC version.

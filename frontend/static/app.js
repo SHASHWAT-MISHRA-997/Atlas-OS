@@ -52,6 +52,20 @@
     link: 'M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1',
     file: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6',
     send: 'M22 2 11 13M22 2l-7 20-4-9-9-4z',
+    repeat: 'M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5',
+    phone: 'M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2',
+    tablet: 'M5 2h14a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2',
+    laptop: 'M4 5h16v10H4zM2 19h20',
+    cpu: 'M7 7h10v10H7zM10 10h4v4h-4zM9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4',
+    sun: 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4',
+    moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
+    clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
+    download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
+    upload: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12',
+    trash: 'M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15',
+    bolt: 'M13 2 3 14h9l-1 8 10-12h-9z',
+    bell: 'M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0',
+    globe: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20',
   };
 
   function icon(name, cls) {
@@ -69,10 +83,13 @@
 
   document.querySelectorAll('[data-icon]').forEach((n) => n.replaceChildren(icon(n.dataset.icon)));
 
+  // Activity log, shown on the System screen.
+  const logLines = [];
   function log(message) {
+    logLines.push('[' + new Date().toLocaleTimeString() + '] ' + message);
+    if (logLines.length > 200) logLines.shift();
     const box = $('log');
-    box.textContent += (box.textContent ? '\n' : '') + '[' + new Date().toLocaleTimeString() + '] ' + message;
-    box.scrollTop = box.scrollHeight;
+    if (box) { box.textContent = logLines.join('\n'); box.scrollTop = box.scrollHeight; }
   }
 
   function storageGet(key, fallback) {
@@ -188,26 +205,26 @@
   }
 
   async function refreshStatus() {
-    const box = $('sysstatus');
+    const chip = $('statuschip');
     try {
       systemStatus = await api('/api/system/status');
       const s = systemStatus;
       const withKey = s.cloud.providers.filter((p) => cloudKey.get(p.id)).map((p) => p.label);
-      box.replaceChildren(
-        statusRow('', 'ATLAS online (v' + s.api.version + ')'),
-        statusRow(withKey.length ? 'warn' : 'off', withKey.length ? 'AI: your ' + withKey.join(', ') + ' key' : 'AI: add your API key in AI Chat'),
-        statusRow('off', 'Memory and keys: this browser only'),
-      );
+      chip.firstElementChild.className = 'dot' + (withKey.length ? '' : ' warn');
+      $('statuschiptext').textContent = 'ONLINE · v' + s.api.version;
       $('keystat').textContent = String(withKey.length).padStart(2, '0');
       showKeyBanner(withKey.length ? null : s.cloud.providers);
       $('topstatus').replaceChildren(el('span', { class: 'dot ' + (withKey.length ? '' : 'off'), 'aria-hidden': 'true' }), el('span', { text: withKey.length ? 'AI ready' : 'Add your key' }));
       $('topstatus').title = withKey.length ? 'Using your own key: ' + withKey.join(', ') : 'Open AI Chat and add your free API key';
     } catch (err) {
       systemStatus = null;
-      box.replaceChildren(statusRow('off', 'ATLAS online unreachable: ' + err.message));
+      chip.firstElementChild.className = 'dot off';
+      $('statuschiptext').textContent = 'OFFLINE';
       $('keystat').textContent = '—';
       $('topstatus').replaceChildren(el('span', { class: 'dot off', 'aria-hidden': 'true' }), el('span', { text: 'Offline' }));
+      log('status check failed: ' + err.message);
     }
+    if ($('systiles')) fillSystemTiles();
   }
 
   /** Online, with no key yet: a "Start here" banner on Home that leads to the free key pages. */
@@ -490,38 +507,38 @@
   async function renderMemory(v) {
     await ensureStatus();
     v.replaceChildren();
-    v.append(el('h2', { text: 'Memory' }), el('p', {
+    v.append(screenHead('memory'), el('p', {
       class: 'muted',
       text: 'Facts and preferences you choose to save. Stored in ' + store.label + '. When memory is on, saved memories are added to AI Chat requests, so they are sent to whichever provider you chat with. Nothing is saved automatically.',
     }));
     const enabled = el('input', { type: 'checkbox', id: 'memoryenabled' });
-    const input = el('textarea', { id: 'memorytext', maxlength: '1000', rows: '3', placeholder: 'Example: Prefer answers in Hinglish; ATLAS OS should prioritize free AI models.', style: 'display:block;width:100%;margin:8px 0;padding:12px;border:1px solid var(--line-strong);border-radius:9px;background:var(--field);color:white' });
+    const input = el('textarea', { id: 'memorytext', class: 'plain', maxlength: '1000', rows: '3', placeholder: 'Example: Prefer answers in Hinglish; ATLAS OS should prioritize free AI models.', style: 'margin:8px 0' });
     const save = el('button', { class: 'btn primary', type: 'submit', text: 'Save memory' });
     const clear = el('button', { class: 'btn', type: 'button', text: 'Delete all memories' });
     const exportBtn = el('button', { class: 'btn', type: 'button', text: 'Export JSON' });
-    const search = el('input', { type: 'search', id: 'memorysearch', placeholder: 'Search memories', 'aria-label': 'Search memories', style: 'padding:9px;border:1px solid var(--line-strong);border-radius:8px;background:var(--field);color:white;min-width:0;flex:1' });
-    const form = el('form', { class: 'panel', style: 'margin-top:16px' }, [
+    const search = el('input', { type: 'search', id: 'memorysearch', class: 'plain', placeholder: 'Search memories', 'aria-label': 'Search memories', style: 'min-width:0;flex:1' });
+    const form = el('form', { class: 'panel hud', style: 'margin-top:16px' }, [
       el('label', { class: 'check', style: 'margin:0 0 10px' }, [enabled, 'Use saved memories in AI Chat']),
-      el('label', { for: 'memorytext', text: 'Memory to save' }), input, el('div', { class: 'row' }, [save, exportBtn, clear]),
+      el('label', { class: 'field', for: 'memorytext', text: '> MEMORY TO SAVE' }), input, el('div', { class: 'row' }, [save, exportBtn, clear]),
     ]);
     const status = el('p', { class: 'notice', role: 'status', style: 'margin-top:12px', text: 'Stored in ' + store.label + '.' });
-    const list = el('div', { class: 'tasklist', style: 'margin-top:14px' });
+    const list = el('div', { class: 'memgrid' });
 
     async function refresh() {
       let data;
       try {
         data = await store.memories(search.value.trim());
       } catch (err) {
-        list.replaceChildren(el('div', { class: 'task', text: 'Could not load memories: ' + err.message }));
+        list.replaceChildren(el('div', { class: 'warn', text: 'Could not load memories: ' + err.message }));
         return;
       }
       enabled.checked = data.enabled;
       list.replaceChildren();
       if (!data.items.length) {
-        list.append(el('div', { class: 'task', text: search.value.trim() ? 'No memories match that search.' : 'No memories saved yet. Add a preference or project fact above.' }));
+        list.append(el('div', { class: 'notice', text: search.value.trim() ? 'No memories match that search.' : 'No memories saved yet. Add a preference or project fact above.' }));
         return;
       }
-      data.items.forEach((item) => {
+      data.items.forEach((item, i) => {
         const edit = el('button', {
           class: 'btn', type: 'button', text: 'Edit',
           onclick: () => { input.value = item.text; input.focus(); form.dataset.editId = item.id; save.textContent = 'Update memory'; },
@@ -534,10 +551,10 @@
             updateMemoryStat();
           },
         });
-        list.append(el('div', { class: 'task', style: 'display:block' }, [
-          el('p', { text: item.text, style: 'white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 10px;color:var(--text)' }),
-          el('div', { class: 'tiny muted', text: 'Saved ' + new Date(item.createdAt).toLocaleString() }),
-          el('div', { class: 'row', style: 'margin-top:9px' }, [edit, del]),
+        list.append(el('div', { class: 'memcard', 'data-idx': '#' + String(i + 1).padStart(2, '0') }, [
+          el('p', { text: item.text }),
+          el('div', { class: 'tiny muted mono', text: 'saved ' + new Date(item.createdAt).toLocaleString() }),
+          el('div', { class: 'row' }, [edit, del]),
         ]));
       });
     }
@@ -688,7 +705,7 @@
     v.replaceChildren();
     const pill = el('span', { class: 'modelpill', id: 'modelpill', text: 'Model settings' });
     const routeBadge = el('span', { class: 'routebadge' });
-    v.append(el('div', { class: 'chathead' }, [el('h2', { text: 'ATLAS AI Chat' }), routeBadge]));
+    v.append(screenHead('chat', routeBadge));
 
     let catalogue;
     try {
@@ -1139,7 +1156,7 @@
 
       if (transcript.querySelector('p.muted, .emptychat')) transcript.replaceChildren();
       transcript.append(withActions(bubble('user', text), 'user', text, userSaved));
-      const reply = bubble('assistant', '', 'Waiting for ' + p.label + '…');
+      const reply = bubble('assistant', '', 'Waiting for ' + p.label + '…', 'typing');
       transcript.append(reply);
       scrollChat();
       prompt.value = '';
@@ -1219,6 +1236,7 @@
           log('chat failed: ' + err.message);
         }
       } finally {
+        reply.classList.remove('typing');
         activeGeneration = null;
         send.disabled = false;
         stop.disabled = !('speechSynthesis' in window && window.speechSynthesis.speaking);
@@ -1242,10 +1260,7 @@
   async function renderTasks(v) {
     await ensureStatus();
     v.replaceChildren();
-    v.append(el('h2', { text: 'Tasks' }), el('p', {
-      class: 'muted',
-      text: 'Plans and summaries written by the AI model you choose. They run while this page is open and are saved in this browser.',
-    }));
+    v.append(screenHead('tasks'));
     let catalogue;
     try {
       catalogue = await api('/api/llm/providers');
@@ -1261,17 +1276,18 @@
     const model = el('input', { id: 'taskmodel', placeholder: 'Model ID', value: saved.model || '', autocomplete: 'off' });
     const key = el('input', { id: 'taskkey', type: 'password', placeholder: 'API key (kept in memory only until the task ends)', autocomplete: 'off' });
     const keyField = el('label', { class: 'field' }, ['API KEY', key]);
-    const input = el('textarea', { id: 'taskinput', rows: '4', 'aria-label': 'Task input', style: 'display:block;width:100%;margin-top:8px;padding:12px;border:1px solid var(--line-strong);border-radius:9px;background:var(--field);color:white' });
+    const input = el('textarea', { id: 'taskinput', class: 'plain', rows: '4', 'aria-label': 'Task input', style: 'margin-top:12px' });
     const submit = el('button', { class: 'btn primary', type: 'submit', text: 'Start task' });
-    const status = el('p', { class: 'notice', role: 'status', text: 'No task started from this screen yet.' });
-    const form = el('form', { class: 'panel', style: 'margin-top:14px' }, [
+    const status = el('p', { class: 'notice', role: 'status', style: 'margin-top:12px', text: 'No task started from this screen yet.' });
+    const form = el('form', { class: 'panel hud' }, [
+      el('div', { class: 'sectionhead' }, [el('h3', { text: 'New task' }), el('span', { class: 'badge', text: 'RUNS IN THIS BROWSER' })]),
       el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['TASK', kind]), el('label', { class: 'field' }, ['PROVIDER', provider]), el('label', { class: 'field' }, ['MODEL', model]), keyField]),
       input,
       el('div', { class: 'row', style: 'margin-top:9px' }, [submit]),
       status,
     ]);
-    const list = el('div', { class: 'tasklist', id: 'tasklist', style: 'margin-top:14px', 'aria-live': 'polite' });
-    v.append(form, list);
+    const list = el('div', { class: 'tasklist', id: 'tasklist', 'aria-live': 'polite' });
+    v.append(el('div', { class: 'tasksplit' }, [form, list]));
 
     const current = () => providers.find((p) => p.id === provider.value);
     function refreshForm() {
@@ -1352,7 +1368,7 @@
       }
       if (task.output && task.output.summary) children.push(el('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text)', text: task.output.summary }));
       if (buttons.length) children.push(el('div', { class: 'row', style: 'margin-top:8px' }, buttons));
-      return el('div', { class: 'task', style: 'display:block', 'data-task-id': task.id }, children);
+      return el('div', { class: 'task taskcard', 'data-state': task.state, 'data-task-id': task.id }, children);
     }
 
     async function refreshList() {
@@ -1364,7 +1380,7 @@
         return;
       }
       const detailed = await Promise.all(tasks.map((t) => (t.output || t.error ? api('/api/tasks/' + t.id).catch(() => t) : t)));
-      list.replaceChildren(...(detailed.length ? detailed.map(card) : [el('div', { class: 'task', text: 'No tasks yet.' })]));
+      list.replaceChildren(...(detailed.length ? detailed.map(card) : [el('div', { class: 'notice', text: 'No tasks yet. Start one on the left, or plan a goal on Home.' })]));
     }
 
     stopTaskPolling();
@@ -1375,15 +1391,455 @@
     }, 1000);
   }
 
-  // ---------------------------------------------------------------- simple pages
+  // ---------------------------------------------------------------- screen headers
+  // Each screen has its own colour (see app.css), icon and header, so they are easy to tell apart.
+  const SCREENS = {
+    chat: ['chat', '01', 'AI Chat', 'Talk to the AI model you pick, with your own key.'],
+    tasks: ['tasks', '02', 'Tasks', 'Plans and summaries, written by your model while this page is open.'],
+    automations: ['repeat', '03', 'Automations', 'Plans and reminders on a schedule, run by this browser.'],
+    memory: ['memory', '04', 'Memory', 'Notes ATLAS remembers about you, kept in this browser.'],
+    integrations: ['plug', '05', 'Integrations', 'What ATLAS is connected to, and what it cannot do.'],
+    devices: ['phone', '06', 'Devices', 'This device, its data, and moving to another device.'],
+    system: ['cpu', '07', 'System', 'Status, updates, theme and the activity log.'],
+  };
+
+  function screenHead(page, extra) {
+    const [ic, n, title, desc] = SCREENS[page];
+    const h2 = el('h2', { text: title });
+    scramble(h2, title);
+    return el('div', { class: 'screenhead' }, [
+      el('div', { class: 'shicon' }, icon(ic)),
+      el('div', { class: 'shtext' }, [el('p', { class: 'code', text: 'ATLAS://' + page + ' · module ' + n }), h2, el('p', { text: desc })]),
+      extra || null,
+    ]);
+  }
+
+  /** A short "decrypting" effect on a title. Screen readers get the real title at once. */
+  function scramble(node, text) {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const glyphs = '01<>/\\|#$%&*+=?';
+    const steps = 12;
+    let frame = 0;
+    node.setAttribute('aria-label', text);
+    const timer = setInterval(() => {
+      frame += 1;
+      const shown = Math.floor((text.length * frame) / steps);
+      node.textContent = text.slice(0, shown) + Array.from(text.slice(shown), (c) => (c === ' ' ? ' ' : glyphs[Math.floor(Math.random() * glyphs.length)])).join('');
+      if (frame >= steps) { clearInterval(timer); node.textContent = text; node.removeAttribute('aria-label'); }
+    }, 28);
+  }
+
+  // ---------------------------------------------------------------- integrations
   function renderIntegrations(v) {
     const s = systemStatus;
-    const rows = s ? [
-      'AI with your own key: ' + s.cloud.providers.map((p) => p.label).join(', '),
-      'Calendar / email / messaging: not implemented', 'Other devices: open the same link; each one adds its own key',
-    ] : ['ATLAS online unreachable: integration status unknown'];
-    v.append(el('h2', { text: 'Integrations' }), el('p', { class: 'muted', text: 'What ATLAS can and cannot do.' }));
-    rows.forEach((t) => v.append(el('div', { class: 'task', text: t })));
+    const keys = s ? s.cloud.providers.filter((p) => cloudKey.get(p.id)) : [];
+    const tile = (ic, title, state, stateText, text) => el('div', { class: 'tile' }, [
+      el('div', { class: 'tiletop' }, [icon(ic), el('span', { class: 'state ' + state, text: stateText })]),
+      el('strong', { text: title }), el('p', { text: text }),
+    ]);
+    v.append(screenHead('integrations'), el('div', { class: 'tilegrid' }, [
+      tile('cloud', 'AI providers', keys.length ? 'on' : 'off', keys.length ? 'CONNECTED' : 'NO KEY',
+        s ? (keys.length ? 'Your key: ' + keys.map((p) => p.label).join(', ') + '. ' : 'Add a key in AI Chat. ') + 'Available: ' + s.cloud.providers.map((p) => p.label).join(', ') + '.' : 'ATLAS online is unreachable.'),
+      tile('repeat', 'Auto-switch', 'on', 'ON', 'If one free provider hits its limit, another free key you added answers. Never a paid one.'),
+      tile('memory', 'Memory', 'on', 'BROWSER', 'Saved in this browser and sent with chats when memory is on.'),
+      tile('send', 'Voice', 'on', 'BROWSER', 'Dictation and read-aloud use this browser\'s speech service.'),
+      tile('globe', 'Other devices', 'on', 'SAME LINK', 'Open the same link anywhere. Move your data with Devices → Export and Import.'),
+      tile('bell', 'Calendar, email, messaging', 'plan', 'NOT YET', 'Not connected. ATLAS will say so instead of pretending.'),
+    ]));
+  }
+
+  // ---------------------------------------------------------------- automations
+  // Run by this browser: a check every 30 seconds while ATLAS is open, and once when it opens again
+  // (a missed run happens then, once). Nothing runs while every ATLAS tab is closed.
+  const AUTO_KEY = 'atlas.os.automations.v1';
+  const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const readAutomations = () => { const list = storageGet(AUTO_KEY, []); return Array.isArray(list) ? list.filter((a) => a && typeof a.id === 'string') : []; };
+  const saveAutomations = (list) => storageSet(AUTO_KEY, list.slice(0, 50));
+
+  /** The next time an automation is due after `from` (ms), or null if it has none. */
+  function nextRun(a, from) {
+    const [h, m] = String(a.time || '08:00').split(':').map(Number);
+    const at = new Date(from);
+    if (a.every === 'hours') return from + Math.max(1, Math.min(24, Number(a.hours) || 1)) * 3600000;
+    if (a.every === 'once') { const t = Date.parse(a.at); return t > from ? t : null; }
+    at.setHours(h, m, 0, 0);
+    if (a.every === 'week') {
+      const want = (Number(a.day) + 1) % 7;  // Monday = 0 here, 1 in Date
+      at.setDate(at.getDate() + ((want - at.getDay() + 7) % 7));
+      if (at.getTime() <= from) at.setDate(at.getDate() + 7);
+    } else if (at.getTime() <= from) at.setDate(at.getDate() + 1);
+    return at.getTime();
+  }
+
+  function remind(a) {
+    const text = a.text || a.name;
+    try {
+      if ('Notification' in window && Notification.permission === 'granted') new Notification('ATLAS · ' + a.name, { body: text, icon: '/static/icon-192.png' });
+    } catch { /* some browsers only notify from an installed app; the banner below still shows */ }
+    const old = $('remindbanner');
+    if (old) old.remove();
+    const banner = el('div', { id: 'remindbanner', class: 'updatebanner', role: 'alert' }, [
+      el('div', {}, [el('strong', { text: '⏰ ' + a.name }), el('span', { class: 'tiny', text: text })]),
+      el('div', { class: 'row' }, [el('button', { class: 'btn', type: 'button', text: 'OK', onclick: () => banner.remove() })]),
+    ]);
+    document.querySelector('header.top').after(banner);
+  }
+
+  async function runAutomation(a) {
+    a.last_run = new Date().toISOString();
+    a.last_error = null;
+    try {
+      if (a.kind === 'reminder') {
+        remind(a);
+        a.last_result = 'Reminder shown';
+      } else {
+        await ensureStatus();
+        const target = await planTarget();
+        const task = await api('/api/tasks', { method: 'POST', body: { kind: 'plan', provider: target.provider, model: target.model, api_key: target.apiKey, goal: a.goal } });
+        a.last_task_id = task.id;
+        a.last_result = 'Plan started with ' + target.model + ' (see Tasks)';
+      }
+      log('automation "' + a.name + '": ' + a.last_result);
+    } catch (err) {
+      a.last_error = err.message;
+      log('automation "' + a.name + '" failed: ' + err.message);
+    }
+  }
+
+  let automationsBusy = false;
+  async function tickAutomations() {
+    if (automationsBusy) return;
+    automationsBusy = true;
+    try {
+      const list = readAutomations();
+      const now = Date.now();
+      let changed = false;
+      for (const a of list) {
+        if (!a.enabled || !a.next_run || Date.parse(a.next_run) > now) continue;
+        await runAutomation(a);
+        const next = a.every === 'once' ? null : nextRun(a, Date.now());
+        a.next_run = next ? new Date(next).toISOString() : null;
+        if (!next) a.enabled = false;
+        changed = true;
+      }
+      if (changed) {
+        saveAutomations(list);
+        if ($('automationlist')) $('automationlist').dispatchEvent(new Event('refresh'));
+      }
+    } finally {
+      automationsBusy = false;
+    }
+  }
+
+  function renderAutomations(v) {
+    v.append(screenHead('automations'), el('p', { class: 'warn', text: 'Automations run only while ATLAS is open in this browser (a tab or the installed app). A run that was missed happens once, the next time you open ATLAS. Plans use your AI Chat provider and key.' }));
+    const name = el('input', { id: 'autoname', maxlength: '100', placeholder: 'e.g. Morning plan' });
+    const kind = el('select', { id: 'autokind' }, [el('option', { value: 'plan', text: 'Plan a goal (AI)' }), el('option', { value: 'reminder', text: 'Reminder' })]);
+    const goal = el('input', { id: 'autogoal', maxlength: '2000', placeholder: 'e.g. Plan my study day' });
+    const text = el('input', { id: 'autotext', maxlength: '300', placeholder: 'e.g. Drink water and stretch' });
+    const every = el('select', { id: 'autoevery' }, [['day', 'Every day'], ['week', 'Every week'], ['hours', 'Every few hours'], ['once', 'Once']].map(([value, t]) => el('option', { value, text: t })));
+    const time = el('input', { id: 'autotime', type: 'time', value: '08:00' });
+    const day = el('select', { id: 'autoday' }, DAYS.map((d, i) => el('option', { value: String(i), text: d })));
+    const hours = el('input', { id: 'autohours', type: 'number', min: '1', max: '24', value: '4' });
+    const at = el('input', { id: 'autoat', type: 'datetime-local' });
+    const fields = {
+      goal: el('label', { class: 'field' }, ['GOAL', goal]), text: el('label', { class: 'field' }, ['REMINDER TEXT', text]),
+      time: el('label', { class: 'field' }, ['TIME', time]), day: el('label', { class: 'field' }, ['DAY', day]),
+      hours: el('label', { class: 'field' }, ['EVERY (HOURS)', hours]), at: el('label', { class: 'field' }, ['DATE AND TIME', at]),
+    };
+    const note = el('p', { class: 'notice', role: 'status', style: 'margin-top:12px', text: 'Create your first automation.' });
+    const create = el('button', { class: 'btn primary', type: 'submit', text: 'Create automation' });
+    const notify = el('button', { class: 'btn', type: 'button', text: 'Allow notifications' });
+    const form = el('form', { class: 'panel hud', 'aria-label': 'New automation' }, [
+      el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['NAME', name]), el('label', { class: 'field' }, ['WHAT', kind]), fields.goal, fields.text,
+        el('label', { class: 'field' }, ['WHEN', every]), fields.time, fields.day, fields.hours, fields.at]),
+      el('div', { class: 'row', style: 'margin-top:12px' }, [create, 'Notification' in window ? notify : null].filter(Boolean)), note,
+    ]);
+    const list = el('div', { class: 'timeline', id: 'automationlist' });
+    v.append(form, list);
+    function sync() {
+      fields.goal.classList.toggle('hidden', kind.value !== 'plan');
+      fields.text.classList.toggle('hidden', kind.value !== 'reminder');
+      fields.time.classList.toggle('hidden', every.value === 'hours' || every.value === 'once');
+      fields.day.classList.toggle('hidden', every.value !== 'week');
+      fields.hours.classList.toggle('hidden', every.value !== 'hours');
+      fields.at.classList.toggle('hidden', every.value !== 'once');
+      notify.classList.toggle('hidden', !('Notification' in window) || Notification.permission !== 'default');
+    }
+    kind.addEventListener('change', sync);
+    every.addEventListener('change', sync);
+    sync();
+    notify.addEventListener('click', async () => {
+      const result = await Notification.requestPermission().catch(() => 'denied');
+      note.textContent = result === 'granted' ? 'Notifications are on for reminders.' : 'Notifications are off; reminders show inside ATLAS instead.';
+      sync();
+    });
+    const when = (iso) => (iso ? new Date(iso).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+    const schedule = (a) => (a.every === 'day' ? 'Every day ' + a.time : a.every === 'week' ? 'Every ' + DAYS[a.day] + ' ' + a.time : a.every === 'hours' ? 'Every ' + a.hours + ' h' : 'Once');
+    function refresh() {
+      const items = readAutomations();
+      list.replaceChildren(...(items.length ? items.map((a) => {
+        const update = (change) => {
+          const all = readAutomations();
+          const found = all.find((x) => x.id === a.id);
+          if (found) Object.assign(found, change(found) || {});
+          saveAutomations(all.filter((x) => !x._delete));
+          refresh();
+        };
+        return el('div', { class: 'task' + (a.enabled ? '' : ' paused'), 'data-automation': a.id }, [
+          el('div', { class: 'agenttop' }, [el('strong', { text: a.name }), el('span', { class: 'badge', text: a.enabled ? schedule(a).toUpperCase() : 'PAUSED' })]),
+          el('div', { class: 'tiny muted', text: a.kind === 'plan' ? 'Plan: ' + a.goal : 'Reminder: ' + (a.text || a.name) }),
+          el('div', { class: 'tiny muted mono', text: 'next ' + (a.enabled ? when(a.next_run) : 'paused') + ' · last ' + when(a.last_run) + (a.last_result ? ' · ' + a.last_result : '') }),
+          a.last_error ? el('p', { class: 'warn', style: 'margin-top:6px', text: 'Last run failed: ' + a.last_error }) : null,
+          el('div', { class: 'row', style: 'margin-top:8px' }, [
+            el('button', { class: 'btn', type: 'button', text: 'Run now', onclick: async () => { await runAutomation(a); update(() => ({ last_run: a.last_run, last_result: a.last_result, last_error: a.last_error, last_task_id: a.last_task_id })); } }),
+            el('button', { class: 'btn', type: 'button', text: a.enabled ? 'Pause' : 'Resume', onclick: () => update((x) => {
+              const next = x.enabled ? null : nextRun(x, Date.now());
+              return { enabled: !x.enabled && !!next, next_run: next ? new Date(next).toISOString() : null };
+            }) }),
+            el('button', { class: 'btn danger', type: 'button', text: 'Delete', 'aria-label': 'Delete automation ' + a.name, onclick: () => { if (confirm('Delete "' + a.name + '"?')) update(() => ({ _delete: true })); } }),
+          ]),
+        ].filter(Boolean));
+      }) : [el('div', { class: 'notice', text: 'No automations yet.' })]));
+    }
+    list.addEventListener('refresh', refresh);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const a = { id: newId(), name: name.value.trim(), kind: kind.value, every: every.value, enabled: true, created_at: new Date().toISOString() };
+      if (!a.name) { note.textContent = 'Give it a name.'; name.focus(); return; }
+      if (a.kind === 'plan') { a.goal = goal.value.trim(); if (!a.goal) { note.textContent = 'Write the goal to plan.'; goal.focus(); return; } }
+      else a.text = text.value.trim();
+      if (a.every === 'day' || a.every === 'week') a.time = time.value || '08:00';
+      if (a.every === 'week') a.day = Number(day.value);
+      if (a.every === 'hours') a.hours = Math.max(1, Math.min(24, Number(hours.value) || 1));
+      if (a.every === 'once') a.at = at.value;
+      const next = nextRun(a, Date.now());
+      if (!next) { note.textContent = 'Pick a date and time in the future.'; return; }
+      a.next_run = new Date(next).toISOString();
+      const all = readAutomations();
+      if (all.length >= 50) { note.textContent = 'You can have up to 50 automations. Delete one first.'; return; }
+      saveAutomations([a, ...all]);
+      note.textContent = 'Created "' + a.name + '". Next run: ' + when(a.next_run) + '.';
+      name.value = ''; goal.value = ''; text.value = '';
+      log('automation created: ' + a.name);
+      refresh();
+    });
+    refresh();
+  }
+
+  // ---------------------------------------------------------------- devices
+  function describeDevice() {
+    const ua = navigator.userAgent;
+    const ipad = /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const os = ipad ? 'iPadOS' : /iPhone|iPod/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android' : /CrOS/.test(ua) ? 'ChromeOS'
+      : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : 'Unknown';
+    const browser = /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Firefox|FxiOS/.test(ua) ? 'Firefox'
+      : /CriOS|Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : 'Browser';
+    const small = Math.min(screen.width, screen.height);
+    const kind = ipad || (navigator.maxTouchPoints > 1 && small >= 600) ? 'Tablet' : navigator.maxTouchPoints > 1 && small < 600 ? 'Phone' : 'Computer';
+    return { os, browser, kind, icon: kind === 'Phone' ? 'phone' : kind === 'Tablet' ? 'tablet' : 'laptop' };
+  }
+
+  const isInstalled = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const atlasKeys = () => { try { return Object.keys(localStorage).filter((k) => k.startsWith('atlas.')); } catch { return []; } };
+
+  function renderDevices(v) {
+    const d = describeDevice();
+    const count = (key) => { const x = storageGet(key, []); return Array.isArray(x) ? x.length : 0; };
+    const keysSaved = atlasKeys().filter((k) => k.startsWith(CLOUD_KEY_PREFIX)).length;
+    const bytes = atlasKeys().reduce((n, k) => n + (k.length + (localStorage.getItem(k) || '').length) * 2, 0);
+    const meter = el('span');
+    const storageNote = el('p', { class: 'tiny muted mono', text: 'ATLAS data: ' + (bytes / 1024).toFixed(1) + ' KB' });
+    v.append(screenHead('devices'), el('div', { class: 'panel hud devicecard' }, [
+      el('div', { class: 'devicebig' }, icon(d.icon)),
+      el('div', {}, [
+        el('div', { class: 'sectionhead', style: 'margin-bottom:8px' }, [el('h3', { text: 'This device' }), el('span', { class: 'badge', text: isInstalled() ? 'INSTALLED APP' : 'IN BROWSER' })]),
+        el('dl', { class: 'spec' }, [
+          ['Type', d.kind], ['System', d.os], ['Browser', d.browser], ['Screen', screen.width + ' × ' + screen.height],
+          ['Memories', String(count(MEMORY_KEY))], ['Chat messages', String(count(CHAT_KEY))], ['Tasks', String(count('atlas.cloud.tasks.v1'))],
+          ['Automations', String(count(AUTO_KEY))], ['Keys saved', String(keysSaved)],
+        ].flatMap(([k, val]) => [el('dt', { text: k }), el('dd', { text: val })])),
+        el('div', { class: 'meter', 'aria-hidden': 'true' }, meter), storageNote,
+      ]),
+    ]));
+    if (navigator.storage && navigator.storage.estimate) {
+      navigator.storage.estimate().then((est) => {
+        if (!est.quota) return;
+        meter.style.width = Math.max(1, Math.min(100, (est.usage / est.quota) * 100)) + '%';
+        storageNote.textContent = 'ATLAS data: ' + (bytes / 1024).toFixed(1) + ' KB · this site uses ' + (est.usage / 1048576).toFixed(1) + ' MB of ' + (est.quota / 1048576).toFixed(0) + ' MB allowed';
+      }).catch(() => {});
+    }
+
+    const status = el('p', { class: 'notice', role: 'status', style: 'margin-top:12px', text: 'Nothing is synced. Each device keeps its own data.' });
+    const withKeys = el('input', { type: 'checkbox', id: 'exportkeys' });
+    const exportBtn = el('button', { class: 'btn primary', type: 'button', id: 'exportall' }, [icon('download'), 'Export everything']);
+    const file = el('input', { type: 'file', id: 'importfile', accept: '.json,application/json', class: 'hidden' });
+    const importBtn = el('button', { class: 'btn', type: 'button', id: 'importall' }, [icon('upload'), 'Import from a file']);
+    const share = el('button', { class: 'btn', type: 'button' }, [icon('link'), 'Share the ATLAS link']);
+    const keep = el('button', { class: 'btn', type: 'button', text: 'Protect my data from cleanup' });
+    const erase = el('button', { class: 'btn danger', type: 'button', id: 'eraseall' }, [icon('trash'), 'Erase ATLAS from this device']);
+    v.append(el('div', { class: 'panel', style: 'margin-top:14px' }, [
+      el('h3', { text: 'Move to another device' }),
+      el('ol', { class: 'steps' }, [
+        el('li', { text: 'Here: tap "Export everything". A .json file is saved.' }),
+        el('li', { text: 'Send that file to the other device (AirDrop, Files, Drive or a chat to yourself).' }),
+        el('li', { text: 'There: open the same ATLAS link → Devices → "Import from a file".' }),
+      ]),
+      el('label', { class: 'check' }, [withKeys, 'Include my AI keys in the file (anyone who gets the file can use them)']),
+      el('div', { class: 'row', style: 'margin-top:12px' }, [exportBtn, importBtn, share, file]),
+      status,
+    ]), el('div', { class: 'panel', style: 'margin-top:14px' }, [
+      el('h3', { text: 'Keep or remove data' }),
+      el('p', { class: 'muted', style: 'margin-top:6px', text: 'Browsers can clear site data when space runs low (Safari after weeks without use). "Protect" asks the browser to keep it.' }),
+      el('div', { class: 'row' }, [navigator.storage && navigator.storage.persist ? keep : null, erase].filter(Boolean)),
+    ]));
+
+    exportBtn.addEventListener('click', () => {
+      const data = {};
+      for (const k of atlasKeys()) if (withKeys.checked || !k.startsWith(CLOUD_KEY_PREFIX)) data[k] = localStorage.getItem(k);
+      downloadJson({ format: 'atlas-os-backup', version: runningVersion, exported_at: new Date().toISOString(), device: d.kind + ' · ' + d.os + ' · ' + d.browser, data }, 'atlas-backup-' + new Date().toISOString().slice(0, 10) + '.json');
+      status.textContent = 'Exported ' + Object.keys(data).length + ' items' + (withKeys.checked ? ', including your keys. Keep the file private.' : ' (keys not included).');
+      log('exported device data');
+    });
+    importBtn.addEventListener('click', () => file.click());
+    file.addEventListener('change', () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      if (f.size > 5 * 1024 * 1024) { status.textContent = 'That file is larger than 5 MB; it is not an ATLAS backup.'; return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        let backup;
+        try { backup = JSON.parse(String(reader.result)); } catch { status.textContent = 'That file is not valid JSON.'; return; }
+        if (!backup || backup.format !== 'atlas-os-backup' || typeof backup.data !== 'object' || !backup.data) { status.textContent = 'That file is not an ATLAS backup.'; return; }
+        const entries = Object.entries(backup.data).filter(([k, val]) => k.startsWith('atlas.') && k.length < 100 && typeof val === 'string' && val.length < 2000000);
+        if (!confirm('Import ' + entries.length + ' items from ' + (backup.device || 'another device') + '? Items with the same name on this device are replaced.')) return;
+        try { for (const [k, val] of entries) localStorage.setItem(k, val); } catch { status.textContent = 'Browser storage is full or turned off.'; return; }
+        log('imported ' + entries.length + ' items');
+        location.reload();
+      };
+      reader.readAsText(f);
+    });
+    share.addEventListener('click', async () => {
+      const url = location.origin + '/';
+      try {
+        if (navigator.share) await navigator.share({ title: 'ATLAS OS', url });
+        else { await navigator.clipboard.writeText(url); status.textContent = 'Link copied: ' + url; }
+      } catch { status.textContent = 'Open ' + url + ' on the other device.'; }
+    });
+    keep.addEventListener('click', async () => {
+      const ok = await navigator.storage.persist().catch(() => false);
+      status.textContent = ok ? 'This browser will keep ATLAS data unless you clear it yourself.' : 'This browser did not agree. Installing ATLAS as an app usually helps.';
+    });
+    erase.addEventListener('click', () => {
+      if (!confirm('Erase all ATLAS data on this device: keys, memories, chat history, tasks and automations? This cannot be undone. Export first if you want a copy.')) return;
+      for (const k of atlasKeys()) localStorage.removeItem(k);
+      location.reload();
+    });
+  }
+
+  // ---------------------------------------------------------------- system
+  let installPrompt = null;
+  const appleTouch = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  let swReady = false;
+
+  function fillSystemTiles() {
+    const s = systemStatus;
+    const keys = s ? s.cloud.providers.filter((p) => cloudKey.get(p.id)).map((p) => p.label) : [];
+    const tile = (label, dot, value, note) => el('div', { class: 'systile' }, [
+      el('span', { class: 'label' }, [el('span', { class: 'dot' + (dot ? (dot === true ? '' : ' ' + dot) : ' off'), 'aria-hidden': 'true' }), label]),
+      el('span', { class: 'value', text: value }), note ? el('span', { class: 'tiny', text: note }) : null,
+    ]);
+    $('systiles').replaceChildren(
+      tile('Connection', s ? true : false, s ? 'ONLINE' : 'OFFLINE', s ? 'ATLAS online answered' : 'Check your internet'),
+      tile('Version', true, 'v' + (runningVersion || (s && s.api.version) || '?'), 'Checked for updates automatically'),
+      tile('AI keys', keys.length ? true : 'warn', keys.length ? String(keys.length) : 'NONE', keys.length ? keys.join(', ') : 'Add one in AI Chat'),
+      tile('Your data', true, 'THIS BROWSER', 'Memory, history and keys stay here'),
+      tile('Offline shell', swReady ? true : false, swReady ? 'READY' : 'NOT YET', 'Opens without internet'),
+      tile('App', isInstalled() ? true : 'warn', isInstalled() ? 'INSTALLED' : 'IN BROWSER', isInstalled() ? 'Running as an app' : installPrompt || appleTouch ? 'Install it below' : 'Install from the browser menu'),
+    );
+  }
+
+  function renderSystem(v) {
+    const refresh = el('button', { class: 'btn', type: 'button', id: 'refreshstatus' }, [icon('repeat'), 'Refresh status']);
+    const check = el('button', { class: 'btn primary', type: 'button', id: 'checkupdate' }, [icon('download'), 'Check for update']);
+    const install = el('button', { class: 'btn', type: 'button', id: 'installapp' }, [icon('phone'), 'Install app']);
+    const note = el('p', { class: 'tiny muted', id: 'updatenote', role: 'status' });
+    install.classList.toggle('hidden', isInstalled() || !(installPrompt || appleTouch));
+    const seg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Theme' }, [['dark', 'moon', 'Dark'], ['light', 'sun', 'Light'], ['auto', 'cpu', 'Auto']].map(([value, ic, label]) =>
+      el('button', { type: 'button', 'data-theme-choice': value, 'aria-pressed': String(themeChoice() === value) }, [icon(ic), label])));
+    const logBox = el('pre', { class: 'log', id: 'log', 'aria-live': 'polite', text: logLines.join('\n') });
+    v.append(screenHead('system'),
+      el('div', { class: 'sysgrid', id: 'systiles' }),
+      el('div', { class: 'panel hud', style: 'margin-top:14px' }, [
+        el('h3', { text: 'Updates and app' }),
+        el('div', { class: 'row', style: 'margin-top:10px' }, [check, refresh, install]), note,
+      ]),
+      el('div', { class: 'panel', style: 'margin-top:14px' }, [
+        el('div', { class: 'sectionhead' }, [el('h3', { text: 'Theme' }), seg]),
+        el('p', { class: 'muted', style: 'margin:0', text: 'Auto follows your device\'s light or dark setting.' }),
+      ]),
+      el('div', { class: 'panel', style: 'margin-top:14px' }, [el('h3', { text: 'Activity log', style: 'margin-bottom:10px' }), logBox]),
+    );
+    fillSystemTiles();
+    logBox.scrollTop = logBox.scrollHeight;
+    refresh.addEventListener('click', async () => { refresh.disabled = true; await refreshStatus(); refresh.disabled = false; note.textContent = 'Status refreshed.'; });
+    check.addEventListener('click', async () => {
+      check.disabled = true;
+      note.textContent = 'Checking…';
+      try {
+        const latest = await checkForUpdate();
+        note.textContent = latest ? 'Version ' + latest + ' is available. Tap "Update now".' : 'You have the latest version (' + runningVersion + ').';
+      } catch (err) {
+        note.textContent = 'Could not check for updates (' + err.message + '). Are you online?';
+      } finally {
+        check.disabled = false;
+      }
+    });
+    install.addEventListener('click', async () => {
+      if (!installPrompt) {
+        note.textContent = 'In Safari, tap the Share button (square with an arrow), then "Add to Home Screen".';
+        return;
+      }
+      installPrompt.prompt();
+      const choice = await installPrompt.userChoice.catch(() => null);
+      log('install ' + (choice ? choice.outcome : 'dismissed'));
+      installPrompt = null;
+      install.classList.add('hidden');
+    });
+    seg.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-theme-choice]');
+      if (!b) return;
+      setTheme(b.dataset.themeChoice === 'auto' ? null : b.dataset.themeChoice);
+      seg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    });
+  }
+
+  // ---------------------------------------------------------------- theme
+  const THEME_KEY = 'atlas.theme';
+  const themeChoice = () => { try { const t = localStorage.getItem(THEME_KEY); return t === 'light' || t === 'dark' ? t : 'auto'; } catch { return 'auto'; } };
+  const effectiveTheme = () => (themeChoice() !== 'auto' ? themeChoice() : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+
+  function paintThemeButtons() {
+    const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
+    for (const id of ['themetoggle', 'themetoggle2']) {
+      const b = $(id);
+      b.setAttribute('aria-label', 'Switch to ' + next + ' theme');
+      b.querySelector('.icwrap').replaceChildren(icon(next === 'light' ? 'sun' : 'moon'));
+      const label = b.querySelector('span');
+      if (label) label.textContent = next === 'light' ? 'Light' : 'Dark';
+    }
+    const color = effectiveTheme() === 'light' ? '#eef2fb' : '#04060d';
+    document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', color));
+  }
+
+  function setTheme(choice) {
+    const root = document.documentElement;
+    root.classList.add('themeswap');
+    try { if (choice) localStorage.setItem(THEME_KEY, choice); else localStorage.removeItem(THEME_KEY); } catch { /* storage off: this visit only */ }
+    if (choice) root.dataset.theme = choice; else delete root.dataset.theme;
+    paintThemeButtons();
+    setTimeout(() => root.classList.remove('themeswap'), 400);
+    log('theme: ' + (choice || 'auto'));
   }
 
   function setSheet(open, returnFocus = true) {
@@ -1415,15 +1871,27 @@
     if (page === 'home') {
       $('home').classList.remove('hidden');
       v.classList.add('hidden');
+      replay($('home'));
       return;
     }
     $('home').classList.add('hidden');
     v.classList.remove('hidden');
     v.replaceChildren();
+    replay(v);
     if (page === 'memory') return renderMemory(v);
     if (page === 'chat') return renderChat(v);
     if (page === 'tasks') return renderTasks(v);
+    if (page === 'automations') return renderAutomations(v);
     if (page === 'integrations') return renderIntegrations(v);
+    if (page === 'devices') return renderDevices(v);
+    if (page === 'system') return renderSystem(v);
+  }
+
+  /** Restart the screen-change animation. */
+  function replay(node) {
+    node.classList.remove('enter');
+    void node.offsetWidth;
+    node.classList.add('enter');
   }
 
   // ---------------------------------------------------------------- wiring
@@ -1433,22 +1901,6 @@
   document.querySelectorAll('[data-example]').forEach((b) => b.addEventListener('click', () => { $('command').value = b.dataset.example; $('command').focus(); }));
   $('analyzecsv').addEventListener('click', analyzeCsv);
   $('downloadreport').addEventListener('click', downloadReport);
-  $('refreshstatus').addEventListener('click', refreshStatus);
-  $('checkupdate').addEventListener('click', async () => {
-    const button = $('checkupdate');
-    const note = $('updatenote');
-    button.disabled = true;
-    note.textContent = 'Checking…';
-    try {
-      const latest = await checkForUpdate();
-      note.textContent = latest ? 'Version ' + latest + ' is available. Tap "Update now".' : 'You have the latest version (' + runningVersion + ').';
-      if (latest) setSheet(false);
-    } catch (err) {
-      note.textContent = 'Could not check for updates (' + err.message + '). Are you online?';
-    } finally {
-      button.disabled = false;
-    }
-  });
   setTimeout(autoCheckForUpdate, 4000);
   setInterval(autoCheckForUpdate, 30 * 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') autoCheckForUpdate(); });
@@ -1461,32 +1913,26 @@
   // Installable app on every platform: Android, iPhone, iPad, Windows, Mac, Linux, ChromeOS.
   // Service workers need HTTPS (or localhost while developing).
   if ('serviceWorker' in navigator && window.isSecureContext) {
-    navigator.serviceWorker.register('/sw.js').then(() => log('offline shell ready'))
+    navigator.serviceWorker.register('/sw.js').then(() => { swReady = true; log('offline shell ready'); if ($('systiles')) fillSystemTiles(); })
       .catch((err) => log('offline shell not available: ' + err.message));
   }
-  let installPrompt = null;
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     installPrompt = e;
-    $('installapp').classList.remove('hidden');
+    if ($('installapp')) $('installapp').classList.remove('hidden');
   });
-  // Safari on iPhone and iPad has no install prompt; the app is added from the Share menu instead.
-  // iPadOS Safari reports itself as a Mac, so touch points tell the two apart.
-  const appleTouch = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  const installed = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  if (appleTouch && !installed) $('installapp').classList.remove('hidden');
-  $('installapp').addEventListener('click', async () => {
-    if (!installPrompt) {
-      $('updatenote').textContent = 'In Safari, tap the Share button (square with an arrow), then "Add to Home Screen".';
-      return;
-    }
-    installPrompt.prompt();
-    const choice = await installPrompt.userChoice.catch(() => null);
-    log('install ' + (choice ? choice.outcome : 'dismissed'));
-    installPrompt = null;
-    $('installapp').classList.add('hidden');
+  window.addEventListener('appinstalled', () => { if ($('installapp')) $('installapp').classList.add('hidden'); log('ATLAS installed as an app'); });
+
+  for (const id of ['themetoggle', 'themetoggle2']) $(id).addEventListener('click', () => {
+    setTheme(effectiveTheme() === 'dark' ? 'light' : 'dark');
+    document.querySelectorAll('[data-theme-choice]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.themeChoice === themeChoice())));
   });
-  window.addEventListener('appinstalled', () => { $('installapp').classList.add('hidden'); log('ATLAS installed as an app'); });
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', paintThemeButtons);
+  paintThemeButtons();
+
+  tickAutomations();
+  setInterval(tickAutomations, 30000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tickAutomations(); });
 
   log('ATLAS UI loaded');
   refreshStatus().then(updateMemoryStat);

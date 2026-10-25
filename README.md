@@ -7,7 +7,7 @@ screen as an app. It is **not** an operating system and **not** production-ready
 describes only what exists today; see [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the
 status of every feature.
 
-## What it does today (v0.15.0)
+## What it does today (v0.16.0)
 
 - **AI Chat** with your own key. Free providers come first: Groq, Google Gemini and OpenRouter
   (free models only). Paid OpenAI is optional and clearly marked. Replies stream, can be stopped,
@@ -18,7 +18,10 @@ status of every feature.
 - **Tasks:** plan a goal or summarize long text with the model you choose.
 - **Home:** a quick step-by-step plan for a goal, and a CSV analyzer that works in the browser.
 - **Voice:** dictation and read-aloud with your browser's speech service.
-- **Updates:** a banner tells you when a new version is out; "Check for update" is in the menu.
+- **Automations:** plans and reminders on a schedule, while ATLAS is open in the browser.
+- **Devices:** see what is stored on this device, export it, import it on another device, or erase it.
+- **System:** status, updates, install, theme (dark, light or auto) and the activity log.
+- **Updates:** a banner tells you when a new version is out; "Check for update" is on the System screen.
 
 Everything you save (key if you tick "Remember", memories, chat history, tasks) stays in that
 browser on that device. Nothing is synced. There is no sign-in.

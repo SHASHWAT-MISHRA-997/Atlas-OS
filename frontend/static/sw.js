@@ -1,7 +1,7 @@
 // ATLAS OS service worker: lets the app open (read-only shell) without a connection.
 // It never caches /cloud responses, so chats and keys are never stored here.
-const CACHE = 'atlas-shell-v2';
-const SHELL = ['/', '/static/app.css', '/static/cloud.js', '/static/app.js', '/static/icon.svg', '/static/manifest.webmanifest'];
+const CACHE = 'atlas-shell-v3';
+const SHELL = ['/', '/static/theme.js', '/static/app.css', '/static/cloud.js', '/static/app.js', '/static/icon.svg', '/static/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));

@@ -14,7 +14,8 @@ browser                                         Netlify
 ```
 
 - `frontend/index.html`, `frontend/static/app.js`, `app.css`: the screens (Home, AI Chat, Tasks,
-  Memory, Integrations). Plain JavaScript, no framework, no build step besides copying.
+  Automations, Memory, Integrations, Devices, System). `theme.js` applies the saved theme before
+  the page paints. Automations run in `app.js` every 30 seconds while the page is open. Plain JavaScript, no framework, no build step besides copying.
 - `frontend/static/cloud.js`: loaded before `app.js`. It answers the app's `/api/*` calls in the
   browser: chat and model lists go to the function; tasks run in the page and are saved in
   localStorage; auto-switch between free providers happens here, so each key only ever travels to
