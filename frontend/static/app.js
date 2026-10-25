@@ -777,16 +777,48 @@
 
 
     // Voice: language for dictation and read-aloud, and which installed voice reads replies.
-    const voicePrefs = { lang: '', voice: '', ...storageGet(VOICE_KEY, {}) };
+    const voicePrefs = { lang: '', voice: '', engine: 'browser', ...storageGet(VOICE_KEY, {}) };
     const LANGS = [['', 'Same as this browser'], ['en-IN', 'English (India)'], ['hi-IN', 'Hindi'], ['en-US', 'English (US)'], ['en-GB', 'English (UK)']];
     const langSelect = el('select', { id: 'voicelang' }, LANGS.map(([value, text]) => el('option', { value, text })));
     langSelect.value = voicePrefs.lang;
     const voiceSelect = el('select', { id: 'voicename' });
     const voiceNote = el('p', { class: 'tiny muted', text: 'Dictation uses your browser\'s speech service; in Chrome and Edge the audio goes to the browser vendor. Voices marked "online" also send the text out. The microphone is the one your phone or browser uses by default.' });
+    const engineSelect = el('select', { id: 'voiceengine' }, [el('option', { value: 'browser', text: 'Browser speech service' }), el('option', { value: 'local', text: 'ATLAS on this PC (local)' })]);
+    engineSelect.value = voicePrefs.engine === 'local' ? 'local' : 'browser';
+    const localVoice = el('div', { id: 'localvoice', class: 'tiny muted' });
     const voiceBox = el('div', { class: 'voicebox' }, [
-      el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['VOICE LANGUAGE', langSelect]), el('label', { class: 'field' }, ['READ-ALOUD VOICE', voiceSelect])]),
-      voiceNote,
+      el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['VOICE LANGUAGE', langSelect]), el('label', { class: 'field' }, ['READ-ALOUD VOICE', voiceSelect]), el('label', { class: 'field' }, ['DICTATION ENGINE', engineSelect])]),
+      voiceNote, localVoice,
     ]);
+    let localStt = null;
+    async function refreshLocalVoice() {
+      if (engineSelect.value !== 'local') { localVoice.replaceChildren(); return; }
+      let st;
+      try { st = await api('/api/voice/status'); } catch (err) { localVoice.replaceChildren(el('p', { class: 'warn', text: 'Could not check local speech-to-text: ' + err.message })); return; }
+      localStt = st;
+      if (!st.engine_installed) {
+        localVoice.replaceChildren(el('p', { class: 'warn', text: 'Local speech-to-text is not installed on the PC running ATLAS. On that PC run: pip install -r backend/requirements-voice.txt (about 100 MB), then restart ATLAS. Until then, Dictate uses the browser.' }));
+        return;
+      }
+      const parts = [el('p', { text: st.models.length ? 'Ready: speech model ' + st.models.join(', ') + ' is on the PC. Your recording is sent only to ATLAS, transcribed there and not stored.' : 'No speech model is downloaded yet. Dictate uses the browser until you download one.' })];
+      if (st.download.running) parts.push(el('p', { role: 'status', text: 'Downloading the ' + st.download.size + ' model…' }));
+      if (st.download.error) parts.push(el('p', { class: 'warn', text: st.download.error }));
+      const me = await api('/api/devices/current').catch(() => ({}));
+      if (me.kind !== 'device' && !st.download.running) {
+        parts.push(el('div', { class: 'row' }, st.available.filter((m) => !st.models.includes(m.size)).map((m) => el('button', {
+          class: 'btn', type: 'button', text: 'Download ' + m.size + ' (~' + m.approx_mb + ' MB)',
+          onclick: async () => {
+            if (!confirm('Download the ' + m.size + ' speech model (about ' + m.approx_mb + ' MB) from Hugging Face to this PC?')) return;
+            try { await api('/api/voice/download', { method: 'POST', body: { size: m.size, confirm: true } }); } catch (err) { status.textContent = 'Download did not start: ' + err.message; }
+            refreshLocalVoice();
+          },
+        }))));
+      }
+      localVoice.replaceChildren(...parts);
+      if (st.download.running) setTimeout(() => { if (document.body.contains(localVoice)) refreshLocalVoice(); }, 2000);
+    }
+    engineSelect.addEventListener('change', () => { voicePrefs.engine = engineSelect.value; storageSet(VOICE_KEY, voicePrefs); refreshLocalVoice(); });
+    refreshLocalVoice();
     const speechLang = () => voicePrefs.lang || navigator.language || 'en-US';
     function fillVoices() {
       const all = 'speechSynthesis' in window ? window.speechSynthesis.getVoices() : [];
@@ -830,7 +862,7 @@
     const form = el('form', { class: 'composer' }, [
       el('div', { class: 'composer-row' }, [prompt, send]),
       el('div', { class: 'chips-row' }, [stop, mic, speak, clear]), status,
-      el('p', { class: 'tiny muted dictnote', text: 'Dictation uses your browser\'s speech service. In Chrome and Edge this sends audio to the browser vendor\'s servers; it is not local speech recognition.' }),
+      el('p', { class: 'tiny muted dictnote', text: 'Dictation uses your browser\'s speech service unless you pick "ATLAS on this PC" under Model settings → Dictation engine. In Chrome and Edge the browser service sends audio to the browser vendor\'s servers.' }),
     ]);
     v.append(settings, transcript, form);
 
@@ -862,7 +894,7 @@
       const p = current();
       if (!docsToggle.checked) { docsNote.textContent = ''; return; }
       const where = p.local ? 'They stay on the machine running ATLAS.' : 'With ' + p.label + ' selected, these excerpts from your files leave this PC.';
-      docsNote.textContent = (docsIndexed === null ? '' : docsIndexed ? docsIndexed + ' indexed file(s) can be searched. ' : 'No documents are indexed yet: run "Index documents for search" in Tasks → PC actions. ') + where;
+      docsNote.textContent = (docsIndexed === null ? '' : docsIndexed ? docsIndexed + ' indexed file(s) can be searched. ' : 'No documents are indexed yet: run "Index documents" in Tasks → PC actions. ') + where;
       docsNote.classList.toggle('warn', !p.local);
       if (docsIndexed === null) api('/api/docs/status').then((d) => { docsIndexed = d.files; refreshDocsNote(); }).catch(() => {});
     }
@@ -973,7 +1005,44 @@
         : 'Voice output off.';
     });
 
+    let recorder = null;
+    async function dictateLocally() {
+      if (recorder) { recorder.stop(); return; }
+      let stream;
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { status.textContent = 'Microphone permission is blocked or no microphone was found.'; return; }
+      const chunks = [];
+      recorder = new MediaRecorder(stream);
+      const limit = setTimeout(() => recorder && recorder.stop(), 60000);
+      recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      recorder.onstop = async () => {
+        clearTimeout(limit);
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        recorder = null;
+        mic.textContent = '🎙 Dictate';
+        mic.disabled = true;
+        status.textContent = 'Transcribing on the PC running ATLAS…';
+        const lang = (voicePrefs.lang || '').split('-')[0];
+        try {
+          const r = await fetch('/api/voice/transcribe?language=' + (lang === 'hi' || lang === 'en' ? lang : 'auto'), { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'HTTP ' + r.status);
+          prompt.value = (prompt.value + ' ' + data.text).trim();
+          prompt.focus();
+          status.textContent = data.text ? 'Transcribed locally (' + data.model + ', ' + data.seconds + ' s). Review your message, then press Send.' : 'No speech heard. Try again.';
+        } catch (err) {
+          status.textContent = 'Local transcription failed: ' + err.message;
+        } finally {
+          mic.disabled = false;
+        }
+      };
+      recorder.start();
+      mic.textContent = '⏹ Stop recording';
+      status.textContent = 'Recording on this device (up to 60 s). Press Stop recording when done.';
+    }
+
     mic.addEventListener('click', () => {
+      if (engineSelect.value === 'local' && localStt && localStt.engine_installed && localStt.models.length && window.MediaRecorder) { dictateLocally(); return; }
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) { status.textContent = 'Speech recognition is not supported in this browser. Try Chrome or Edge and allow microphone access.'; return; }
       const recognition = new SR();

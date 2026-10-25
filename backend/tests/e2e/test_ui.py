@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -558,6 +559,15 @@ def test_file_goes_to_atlas_trash_and_comes_back(page, server):
     page.get_by_role("button", name="Ask for approval").click()
     card = approve_action(page, "Restore")
     playwright_sync.expect(card).to_contain_text("Restored docs/budget.xlsx")
+    assert page.errors == []
+
+
+def test_local_dictation_engine_explains_what_it_needs(page):
+    open_chat(page)
+    open_model_settings(page)
+    page.select_option("#voiceengine", "local")
+    playwright_sync.expect(page.locator("#localvoice")).to_contain_text(re.compile("not installed|No speech model is downloaded"))
+    page.select_option("#voiceengine", "browser")
     assert page.errors == []
 
 

@@ -371,15 +371,15 @@ ACTIONS = {
     "open_app": {"label": "Open an app", "risk": "Starts a program on this PC (allowlisted apps only)."},
     "list_folder": {"label": "List a folder", "risk": "Read-only: shows file names, sizes and dates in an approved folder."},
     "search_files": {"label": "Search file names", "risk": "Read-only: searches file and folder names in an approved folder."},
-    "index_documents": {"label": "Index documents for search",
+    "index_documents": {"label": "Index documents",
                         "risk": "Reads the text of .txt, .md, .csv, .pdf and .docx files in an approved folder into ATLAS's "
                                 "local database. Nothing leaves this PC unless you turn on 'Use my documents' in chat."},
     "create_note": {"label": "Create a note", "risk": "Writes a new .txt or .md file. Never overwrites an existing file."},
-    "create_document": {"label": "Create a Word or Excel file",
+    "create_document": {"label": "Create Word/Excel",
                         "risk": "Writes a new .docx or .xlsx file. Never overwrites an existing file."},
-    "move_to_trash": {"label": "Move a file to ATLAS trash",
+    "move_to_trash": {"label": "Move file to trash",
                       "risk": "Moves one file out of the folder into ATLAS's trash. It is not deleted and can be restored."},
-    "restore_from_trash": {"label": "Restore from ATLAS trash", "risk": "Moves a trashed file back to where it was."},
+    "restore_from_trash": {"label": "Restore from trash", "risk": "Moves a trashed file back to where it was."},
     "media_key": {"label": "Media control", "risk": "Presses a media key (play/pause, next, volume). Windows only."},
 }
 

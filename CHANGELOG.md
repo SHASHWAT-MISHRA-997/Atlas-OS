@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0 — 2026-10-25 (branch `atlas/v0.8`)
+
+### Added
+- **Document search.** An approved "Index documents" PC action reads .txt, .md, .csv, .pdf and .docx files in an approved folder into a local full-text index. Memory → Documents searches or clears it. In chat, "Use my documents" sends matching excerpts with your message and lists the source files under the answer. A warning shows when the provider is a cloud one.
+- **Writing files, safely.** New PC actions: create a note (.txt or .md), create a Word or Excel file, move a file to ATLAS trash, and restore it. ATLAS never overwrites a file and never deletes one permanently.
+- **Media keys** (play/pause, next, previous, volume, mute) as an approved action on Windows.
+- **Local speech-to-text (optional).** Pick "ATLAS on this PC" as the dictation engine. After `pip install -r requirements-voice.txt`, the owner can download a Whisper model (tiny, base or small) from the PC; audio is transcribed on the PC and not stored.
+- **Windows installer:** `scripts/windows/install.ps1`, with `-StartOnLogin` and `-RemoveStartOnLogin`. CI runs it on Windows.
+- 20 more red-team cases (50 in total) for writing, trash, indexing and search.
+
+### Changed
+- Approval cards for restore show the file's original place, not just an id.
+- File names that Windows reserves for devices (`CON`, `NUL`, `COM1`…) are refused.
+
+
 ## 0.7.0 — 2026-10-25 (branch `atlas/v0.7`)
 
 ### Added

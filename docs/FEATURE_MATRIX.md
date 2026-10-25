@@ -4,7 +4,7 @@ States: **Not implemented** · **Partially implemented** · **Implemented** (cod
 
 "Verified (Linux, mocked provider)" means automated tests passed on Linux with the model provider replaced by `httpx.MockTransport` or a fake Ollama server. It is **not** evidence that a real provider, a real Ollama install, or Windows works.
 
-Last updated: 2026-10-25 (v0.7.0), branch `atlas/v0.7`.
+Last updated: 2026-10-25 (v0.8.0), branch `atlas/v0.8`.
 
 ## Foundation and security
 
@@ -57,7 +57,7 @@ Last updated: 2026-10-25 (v0.7.0), branch `atlas/v0.7`.
 | Dictation | Partially implemented | Browser Web Speech API. Not local: Chrome/Edge send audio to the vendor. UI now says so |
 | Text-to-speech + Stop interrupts speech | Partially implemented | Browser `speechSynthesis`. Not tested on hardware |
 | Speech language (English India/US/UK, Hindi) and read-aloud voice choice; voices labelled on-device or online | Verified (Chromium, speech stubbed) | e2e `test_voice_language_and_voice_choice_*` uses a labelled stub of `speechSynthesis`; real voices depend on the phone or PC |
-| Local STT (Whisper-family) | Not implemented | |
+| Local STT (faster-whisper), opt-in | Implemented (plumbing verified with a mock engine) | `app/stt.py`, `/api/voice/*`, Model settings → Dictation engine. Optional install (`requirements-voice.txt`); the model (tiny ~75 MB, base ~145 MB, small ~484 MB) downloads only when the owner presses Download on the PC. `test_voice.py` checks limits, permissions and the flow with a labelled **mock** engine. **Not verified with a real model**: this workspace blocks Hugging Face downloads, so recognition quality and speed on Hindi/Hinglish are unmeasured |
 | Wake word "Hey ATLAS" | Not implemented | |
 | Microphone selection, VAD | Not implemented | The browser speech API always uses the default microphone |
 
@@ -67,10 +67,12 @@ Last updated: 2026-10-25 (v0.7.0), branch `atlas/v0.7`.
 |---|---|---|
 | Allowlisted app launch (Notepad/Calculator/File manager) | Verified (Windows CI runner) | `test_windows.py` launched real Notepad on the GitHub `windows` runner (Python 3.11.9), [run 39955295769](https://github.com/SHASHWAT-MISHRA-997/Atlas-OS/actions/runs/39955295769). Not tested on a personal Windows 11 PC. An approved task (`open_app`) in the Tasks screen; the old direct `/api/desktop/launch` is owner-only since v0.7 |
 | Typed actions with risk notes, per-action approval, audit log | Verified (Linux; Windows on CI pending) | `app/agent.py`: `open_app`, `list_folder`, `search_files` run as tasks that always start AwaitingApproval; approval is bound to a SHA-256 of the exact parameters; who approved (owner or which paired device) is in the task events. `test_agent.py`, e2e `test_pc_action_*` |
-| Scoped, read-only file access | Verified (Linux; Windows on CI pending) | Approved folders only (default Documents/Downloads/Desktop, or `ATLAS_AGENT_FOLDERS`); paths resolved incl. symlinks and must stay inside; links are never followed; list/search limits (500 entries, 100 results, 20k names, depth 8, 10 s). No reading file contents, no writes, no deletes |
-| Office document generation | Not implemented | |
-| Browser/media control | Not implemented | |
-| Startup on login | Not implemented | |
+| Scoped file access | Verified (Linux; Windows on CI pending) | Approved folders only (default Documents/Downloads/Desktop, or `ATLAS_AGENT_FOLDERS`); paths resolved incl. symlinks and must stay inside; links are never followed; list/search limits (500 entries, 100 results, 20k names, depth 8, 10 s). Writing is limited to the new-file and trash actions below; there is no overwrite and no permanent delete |
+| Create notes, Word (.docx) and Excel (.xlsx) files | Verified (Linux, Chromium) | `create_note`, `create_document` approved actions. New files only: an existing name is refused (409), and the write is exclusive so a file appearing meanwhile is never replaced. Word: `#` headings and `-` bullets; Excel: CSV text, every cell stored as text (no formulas run). `test_file_actions.py`, e2e `test_note_is_written_*`, `test_file_goes_to_atlas_trash_*`. Not yet opened in real Microsoft Office |
+| Move to ATLAS trash and restore | Verified (Linux, Chromium) | `move_to_trash` moves one regular file (not folders or links) into ATLAS's own trash folder; `restore_from_trash` puts it back and never overwrites. Nothing is permanently deleted by ATLAS. Trash is not emptied automatically |
+| Media keys (play/pause, next, previous, volume, mute) | Implemented (Windows only) | `media_key` approved action via `keybd_event`. Refused with `unsupported_os` elsewhere (tested on Linux). Not tested on a real Windows PC |
+| Browser control | Not implemented | |
+| Installer and start on login | Implemented (verified on Windows CI once the PR runs) | `scripts/windows/install.ps1`: checks Python 3.11+, makes `.venv`, installs `requirements.txt`, writes `start-atlas.cmd` and an editable `atlas-settings.cmd`; `-StartOnLogin` adds a Startup-folder shortcut, `-RemoveStartOnLogin` removes it. No admin rights, no model downloads. CI runs it, starts ATLAS and checks `/health` |
 
 ## Memory, tasks, remote, UI
 
@@ -86,7 +88,7 @@ Last updated: 2026-10-25 (v0.7.0), branch `atlas/v0.7`.
 | Chat history in SQLite, survives reload/restart | Verified (Linux, Chromium) | e2e + `test_chat_history_*`; capped at 500 per conversation |
 | Retention rules (auto-delete chat and memories after N days) | Verified (Linux, Chromium) | Off by default; `test_retention.py`, e2e `test_auto_delete_*`; applied on read and at start-up |
 | Show which memories were sent with an answer | Verified (Chromium, fake Ollama) | Each answer lists the memories actually sent (relevance first, max 30 / 6000 chars). It shows what was sent, not what the model used |
-| Document RAG | Not implemented | |
+| Document search (RAG) over approved folders | Verified (Linux, Chromium, fake Ollama) | `app/docsearch.py`. An approved `index_documents` task reads .txt, .md, .csv, .json, .log, .pdf (text layer) and .docx into a local FTS5 index (incremental by size and date; 10 MB per file, 5,000 files, 5 minutes). Memory → Documents searches and clears it. Chat → "Use my documents" sends up to 5 matching excerpts (5,000 chars) as untrusted data and lists the source files; a warning shows when the provider is cloud. Keyword search (bm25), not embeddings. Scanned PDFs are not read (no OCR). `test_docsearch.py`, e2e `test_note_is_written_indexed_searched_and_used_in_chat` |
 | Browser-local fallback storage | Implemented | Used only when server storage is off (e.g. production) |
 | CSV workbench (browser-only) | Implemented | Unchanged logic; no automated test yet |
 | Quick plan on Home | Partially implemented | Still the fixed 4-step simulation; points to Tasks for a real plan |
@@ -97,7 +99,7 @@ Last updated: 2026-10-25 (v0.7.0), branch `atlas/v0.7`.
 | Approval bound to parameters for cloud tasks | Verified (Linux, Chromium) | `test_cloud_tasks_wait_for_approval_*`, e2e |
 | Idempotency keys, bounded queue, timeouts, step retries | Verified (Linux, mocked provider) | |
 | Restart recovery (unfinished → Failed "interrupted", explicit Retry) | Verified (Linux) | `test_restart_*`, `test_recovery_after_crash_*` |
-| Task types | Implemented | Only `plan` (model writes steps; nothing executed) and `summarize_text`. No action-executing tasks exist |
+| Task types | Implemented | `plan` and `summarize_text` (model only), plus the approved PC actions in the Windows agent section |
 | Device pairing (same LAN) | Verified (Linux, Chromium) | Plain HTTP on the LAN; no TLS, relay or internet access (rest of Milestone H) |
 | HTTPS server option | Verified (Linux) | `python -m app.serve` with `ATLAS_TLS_CERT/KEY`; `test_serve.py` starts it and fetches over TLS |
 | Remote access outside the home network | Partially implemented | `docs/REMOTE_ACCESS.md` (Tailscale Serve recommended). **Not verified**: needs a real Tailscale account and devices |
@@ -118,4 +120,4 @@ Last updated: 2026-10-25 (v0.7.0), branch `atlas/v0.7`.
 | Q1 local vs cloud first-token latency | Not measured | Needs real Ollama and a real key on stated hardware |
 | ATLAS's own overhead (part of Q1) | Measured (Linux, fake model) | `docs/RESEARCH.md`: 7.5 ms median after fixing a 49 ms per-request TLS cost |
 | Q2 cancellation latency | Measured (Linux, fake model) | 3.5 ms median from Stop to the model server's connection closing, 0 of 100 missed |
-| Q3 permission policy | Measured (Linux), author-written cases | 30 of 30 attack cases blocked; found and fixed two real holes. Not an independent red team |
+| Q3 permission policy | Measured (Linux), author-written cases | 50 of 50 attack cases blocked (20 added in v0.8 for writing, trash, indexing and search); found and fixed two real holes in v0.7. Not an independent red team |

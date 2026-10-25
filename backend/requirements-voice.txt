@@ -1,0 +1,3 @@
+# Optional: local speech-to-text (AI Chat → Voice → "ATLAS on this PC").
+# About 100 MB of packages. Speech models are downloaded separately, only when you choose one.
+faster-whisper>=1.1,<2.0
