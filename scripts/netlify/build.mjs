@@ -16,6 +16,13 @@ const version = readFileSync(join(root, 'VERSION'), 'utf8').trim();
 let html = readFileSync(join(root, 'frontend', 'index.html'), 'utf8');
 const appScript = '<script src="/static/app.js" defer></script>';
 if (!html.includes(appScript)) throw new Error('index.html no longer loads /static/app.js the expected way');
+// The online edition has no local models: say so in the page itself, before app.js runs.
+const swap = (from, to) => {
+  if (!html.includes(from)) throw new Error('index.html no longer contains: ' + from);
+  html = html.replace(from, to);
+};
+swap('<small>Local models (Ollama)</small>', '<small>Your AI keys</small>');
+swap('ATLAS asks your local model for a plan', 'ATLAS asks your cloud AI model for a plan');
 html = html
   .replace(appScript, '<link rel="stylesheet" href="/static/cloud.css">\n<script src="/static/cloud.js" defer></script>\n' + appScript)
   .replace('<title>ATLAS OS — Agentic Workspace</title>', '<title>ATLAS OS — Online</title>')

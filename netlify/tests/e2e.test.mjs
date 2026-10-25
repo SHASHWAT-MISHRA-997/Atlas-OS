@@ -49,11 +49,18 @@ const go = async (page, section) => {
   await page.click('.nav [data-section="' + section + '"]');
 };
 
-test('a visitor adds their own key, chats, plans, and the key stays on their phone', async () => {
+const noOllama = async (page) => assert.ok(!/ollama/i.test(await page.evaluate(() => document.body.innerText)), 'the online app mentions Ollama');
+
+test('a visitor gets a free key, chats, plans, and the key stays on their phone', async () => {
   const page = await phone();
   await page.goto(base + '/');
   await page.waitForSelector('#topstatus >> text=Add your key · Cloud');
   assert.equal(await page.locator('#cloudgate').count(), 0, 'no sign-in screen');
+  // Home starts with a "get a free key" banner linking to the free providers' key pages.
+  await page.waitForSelector('#keybanner >> text=Start here: get a free AI key');
+  assert.deepEqual(await page.$$eval('#keybanner a', (as) => as.map((a) => a.href)),
+    ['https://console.groq.com/keys', 'https://aistudio.google.com/apikey', 'https://openrouter.ai/settings/keys']);
+  await noOllama(page);
   await shot(page, '1-home');
   await noSideScroll(page);
 
@@ -62,27 +69,38 @@ test('a visitor adds their own key, chats, plans, and the key stays on their pho
   await page.click('#run');
   await page.waitForSelector('#message >> text=Add your own Groq API key first');
 
-  // AI Chat: sending without a key asks for one; nothing is sent.
-  await go(page, 'chat');
-  await page.waitForSelector('#atlaskey');
+  // "Set up my free key" opens AI Chat with the key card.
+  await page.click('#keybanner >> text=Set up my free key');
+  await page.waitForSelector('#keycard:not(.hidden)');
   assert.equal(await page.inputValue('#atlasprovider'), 'groq');
-  await page.waitForSelector('.keyhelp a[href="https://console.groq.com/keys"]');
+  assert.deepEqual(await page.$$eval('#keycardprovider option', (os) => os.map((o) => o.value)), ['groq', 'gemini', 'openrouter']);
+  assert.equal(await page.getAttribute('#getkeylink', 'href'), 'https://console.groq.com/keys');
+  await page.selectOption('#keycardprovider', 'gemini');
+  await page.waitForSelector('#getkeylink[href="https://aistudio.google.com/apikey"]');
+  assert.equal(await page.inputValue('#atlasprovider'), 'gemini');
+  await page.selectOption('#keycardprovider', 'groq');
+  await page.waitForSelector('#getkeylink >> text=Open Groq key page');
+  await noOllama(page);
+  await shot(page, '2-keycard');
+  await noSideScroll(page);
+
+  // Sending without a key points to the card; nothing is sent.
   await page.fill('.composer-input', 'namaste');
   await page.click('.sendbtn');
-  await page.waitForSelector('.chatstatus >> text=Paste your own Groq API key');
+  await page.waitForSelector('.chatstatus >> text=Paste your own Groq API key first');
 
-  // A wrong key shows the provider's error, not a fake answer.
-  await page.fill('#atlaskey', 'wrong-key-123');
-  await page.dispatchEvent('#atlaskey', 'change');
-  await page.waitForSelector('text=Invalid API Key');
+  // A wrong key is checked with the provider and not saved.
+  await page.fill('#keycardinput', 'wrong-key-123');
+  await page.click('#keycardsave');
+  await page.waitForSelector('#keycard >> text=Invalid API Key');
+  assert.equal(await page.isVisible('#keycard'), true);
+  assert.equal(await page.evaluate(() => localStorage.getItem('atlas.cloud.key.groq')), null);
 
-  // The visitor's key: models load, chat works.
-  await page.fill('#atlaskey', 'my-own-test-key-456');
-  await page.check('#atlasremember');
-  await page.dispatchEvent('#atlaskey', 'change');
+  // The visitor's own key: saved, models load, chat works.
+  await page.fill('#keycardinput', 'my-own-test-key-456');
+  await page.click('#keycardsave');
+  await page.waitForSelector('#keycard', { state: 'hidden' });
   await page.waitForFunction(() => /^fake-/.test(document.querySelector('#atlasmodel')?.value || ''));
-  await page.click('#atlasbilling');
-  await shot(page, '2-key');
   await page.fill('.composer-input', 'namaste');
   await page.click('.sendbtn');
   await page.waitForSelector('.bubble >> text=FAKE reply to: namaste');
@@ -94,9 +112,11 @@ test('a visitor adds their own key, chats, plans, and the key stays on their pho
   // Remembered on this phone: after a reload the key and history are still there.
   await page.reload();
   await page.waitForSelector('#topstatus >> text=AI ready · Cloud');
+  assert.equal(await page.locator('#keybanner').count(), 0, 'no banner once a key is added');
   await go(page, 'chat');
   await page.waitForSelector('.bubble >> text=FAKE reply to: namaste');
   assert.equal(await page.inputValue('#atlaskey'), 'my-own-test-key-456');
+  assert.equal(await page.isVisible('#keycard'), false);
   assert.equal(await page.$eval('#chatsettings', (d) => d.open), false, 'notice already confirmed on this device');
 
   // Home plan uses the same key.
@@ -114,6 +134,9 @@ test('a visitor adds their own key, chats, plans, and the key stays on their pho
   await page.waitForSelector('text=Scheduled tasks need ATLAS running on your PC');
   await go(page, 'devices');
   await page.waitForSelector('text=there is no sign-in or pairing');
+  await go(page, 'integrations');
+  await page.waitForSelector('text=Free cloud AI with your own key');
+  await noOllama(page);
 
   // Untick "Remember": the key is removed from this browser.
   await go(page, 'chat');
@@ -125,7 +148,7 @@ test('a visitor adds their own key, chats, plans, and the key stays on their pho
   const other = await phone();
   await other.goto(base + '/');
   await go(other, 'chat');
-  await other.waitForSelector('#atlaskey');
+  await other.waitForSelector('#keycard:not(.hidden)');
   assert.equal(await other.inputValue('#atlaskey'), '');
   assert.equal(await other.locator('.bubble').count(), 0);
 

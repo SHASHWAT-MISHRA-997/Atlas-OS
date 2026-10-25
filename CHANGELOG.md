@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.0 — 2026-10-25 (branch `atlas/free-keys`)
+
+Online version (Netlify):
+- Only free cloud providers: Groq, Google Gemini and OpenRouter (free `:free` models only). OpenAI and Anthropic were removed online.
+- New "Get your free AI key" card in AI Chat: pick a provider, open its key page, paste the key, Save. The key is checked with the provider before it is saved.
+- Home shows a "Start here: get a free AI key" banner with direct links until a key is added.
+- No Ollama or local-model text in the online app (Home stat is now "Your AI keys"; Integrations and Chat texts updated).
+- A rejected key (401/403, or Gemini's "API key not valid") is now reported when listing models instead of falling back to a suggested model.
+- Chat composer background is fully opaque so text behind it no longer shows through on phones.
+- Tests: 13 function tests and the phone browser test updated (fake model, labelled FAKE). No real provider call has been made from this workspace.
+
 ## 0.11.0 — 2026-10-25 (branch `atlas/byok`)
 
 ### Changed

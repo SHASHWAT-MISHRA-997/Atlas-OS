@@ -38,7 +38,7 @@ const chatBody = (extra = {}) => ({ provider: 'groq', api_key: KEY, model: 'llam
 test('status lists the providers a visitor can use with their own key', async () => {
   const s = await (await setup().call('status')).json();
   assert.equal(s.key_mode, 'bring-your-own');
-  assert.deepEqual(s.providers.map((p) => p.id), ['groq', 'gemini', 'openrouter', 'openai', 'anthropic']);
+  assert.deepEqual(s.providers.map((p) => p.id), ['groq', 'gemini', 'openrouter'], 'only providers with a free tier');
   assert.ok(s.providers.every((p) => p.key_url.startsWith('https://') && p.label && p.note));
 });
 
@@ -50,9 +50,9 @@ test('the site owner\'s environment keys and AI Gateway are never used', async (
     const r = await t.call('chat', { method: 'POST', body: chatBody({ api_key: '' }) });
     assert.equal(r.status, 422);
     assert.match((await r.json()).detail, /Enter your Groq API key/);
-    await (await t.call('chat', { method: 'POST', body: chatBody({ provider: 'openai', model: 'gpt-5-mini' }) })).text();
+    await (await t.call('chat', { method: 'POST', body: chatBody() })).text();
     assert.equal(t.calls.length, 1);
-    assert.equal(t.calls[0].url, 'https://api.openai.com/v1/chat/completions', 'official URL, not the gateway');
+    assert.equal(t.calls[0].url, 'https://api.groq.com/openai/v1/chat/completions', 'official URL, not the gateway');
     assert.equal(t.calls[0].init.headers.Authorization, 'Bearer ' + KEY, 'the visitor\'s key, not the environment\'s');
   } finally {
     for (const k of ['GROQ_API_KEY', 'OPENAI_API_KEY', 'OPENAI_BASE_URL']) if (k in saved) process.env[k] = saved[k]; else delete process.env[k];
@@ -105,6 +105,8 @@ test('chat input is validated before any provider call', async () => {
   const t = setup();
   const bad = [
     chatBody({ provider: 'ollama' }),
+    chatBody({ provider: 'openai' }),
+    chatBody({ provider: 'anthropic' }),
     chatBody({ provider: '__proto__' }),
     chatBody({ provider: 'toString' }),
     chatBody({ api_key: 'short' }),
@@ -143,20 +145,6 @@ test('Gemini requests use the native API and its stream format', async () => {
   assert.deepEqual(sent.contents.map((c) => c.role), ['user', 'model', 'user']);
 });
 
-test('Anthropic requests use the Messages API', async () => {
-  const t = setup({
-    upstream: async () => sseResponse([JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hi' } }),
-      JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 3 } })]),
-  });
-  const data = await (await t.call('chat', { method: 'POST', body: chatBody({ provider: 'anthropic', model: 'claude-haiku-4-5', stream: false }) })).json();
-  assert.equal(data.answer, 'Hi');
-  assert.equal(t.calls[0].url, 'https://api.anthropic.com/v1/messages');
-  assert.equal(t.calls[0].init.headers['x-api-key'], KEY);
-  const sent = JSON.parse(t.calls[0].init.body);
-  assert.equal(sent.system, 'be brief');
-  assert.deepEqual(sent.messages, [{ role: 'user', content: 'hi' }]);
-});
-
 test('OpenRouter uses its OpenAI-compatible endpoint', async () => {
   const t = setup();
   await (await t.call('chat', { method: 'POST', body: chatBody({ provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' }) })).text();
@@ -167,18 +155,29 @@ test('model lists are filtered; listing errors fall back to a suggestion, bad ke
   const t = setup({
     upstream: async (url) => (url.includes('groq')
       ? Response.json({ data: [{ id: 'whisper-large-v3' }, { id: 'gemma2-9b-it' }, { id: 'llama-3.1-8b-instant' }, { id: 'llama-guard-4' }] })
-      : url.includes('anthropic') ? new Response('{"error":{"message":"invalid x-api-key"}}', { status: 401 }) : new Response('nope', { status: 404 })),
+      : url.includes('openrouter') ? Response.json({ data: [{ id: 'openai/gpt-5' }, { id: 'meta-llama/llama-3.3-70b-instruct:free' }, { id: 'mistralai/mistral-7b:free' }] })
+        : new Response('{"error":{"message":"not found"}}', { status: 404 })),
   });
-  const list = async (provider) => t.call('models', { method: 'POST', body: { provider, api_key: KEY } });
+  const list = async (provider, key = KEY) => t.call('models', { method: 'POST', body: { provider, api_key: key } });
   assert.deepEqual((await (await list('groq')).json()).models, ['llama-3.1-8b-instant', 'gemma2-9b-it']);
   assert.equal(t.calls[0].init.headers.Authorization, 'Bearer ' + KEY);
-  const fallback = await (await list('openai')).json();
-  assert.deepEqual(fallback.models, ['gpt-5-mini']);
+  assert.deepEqual((await (await list('openrouter')).json()).models, ['meta-llama/llama-3.3-70b-instruct:free', 'mistralai/mistral-7b:free'], 'free models only');
+  const fallback = await (await list('gemini')).json();
+  assert.deepEqual(fallback.models, ['gemini-2.5-flash']);
   assert.equal(fallback.suggested_only, true);
-  const badKey = await list('anthropic');
-  assert.equal(badKey.status, 502);
-  assert.match((await badKey.json()).detail, /invalid x-api-key/);
+  assert.match(fallback.warning, /not found/);
   assert.equal((await t.call('models', { method: 'POST', body: { provider: 'groq' } })).status, 422);
+});
+
+test('a rejected key is reported when listing models (Groq 401, Gemini 400)', async () => {
+  const t = setup({ upstream: async (url) => (url.includes('groq')
+    ? new Response('{"error":{"message":"Invalid API Key"}}', { status: 401 })
+    : new Response('[{"error":{"code":400,"message":"API key not valid. Please pass a valid API key."}}]', { status: 400 })) });
+  for (const [provider, text] of [['groq', /Invalid API Key\. Check your API key/], ['gemini', /API key not valid.*Check your API key/]]) {
+    const r = await t.call('models', { method: 'POST', body: { provider, api_key: KEY } });
+    assert.equal(r.status, 502, provider);
+    assert.match((await r.json()).detail, text);
+  }
 });
 
 test('only status (GET) and chat/models (POST) exist; bad JSON is refused', async () => {

@@ -148,7 +148,7 @@ body{font-size:15px}
 .emptychat{text-align:center;padding:28px 10px;display:grid;justify-items:center;gap:6px}
 .emptychat .chips-row{justify-content:center;margin-top:8px}
 .emptylogo{width:56px;height:56px;border-radius:18px;display:grid;place-items:center;font-size:28px;color:var(--blue);border:1px solid #3a6bd8;box-shadow:0 0 40px #3a6bd855,inset 0 0 20px #2464ff35}
-.composer{margin-top:12px;border:1px solid #27407a;border-radius:22px;background:#0b1430f2;padding:10px;box-shadow:0 -6px 30px #00000040}
+.composer{margin-top:12px;border:1px solid #27407a;border-radius:22px;background:#0b1430;padding:10px;box-shadow:0 -6px 30px #00000040}
 .composer-row{display:flex;gap:8px;align-items:flex-end}
 .composer-input{flex:1;min-width:0;resize:none;border:0;outline:0;background:transparent;color:var(--text);padding:10px 8px;font-size:16px;line-height:1.4;max-height:180px}
 .sendbtn{border-radius:14px;min-width:72px;min-height:44px}
