@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.13.0 — 2026-10-25 (branch `atlas/redesign`)
+
+Redesign (both the PC app and the online version):
+- New logo: an "A" with an orbit ring on a violet tile. New app icons (PWA, Apple touch, maskable) made from it.
+- Calmer theme: flat dark surfaces, one violet accent, no grid background or glows, consistent spacing and type sizes.
+- Simpler Home: goal box and plan first, then a short overview. The CSV analyzer and activity log fold away. The "agents" and "execution principles" blocks were removed from Home.
+- Phones: no boxes inside boxes, opaque chat composer, one-row chat buttons without emoji (some Android fonts cut them off).
+- Online: until a key is added, AI Chat shows only the key card; Agents and Projects (not built yet) are hidden from the menu.
+- Tests: a browser-test fixture now blocks the service worker so faked endpoints are always used; one selector follows the new layout. All suites pass; the look was checked from phone and desktop screenshots in Chromium, not on a real phone.
+
 ## 0.12.0 — 2026-10-25 (branch `atlas/free-keys`)
 
 Online version (Netlify):

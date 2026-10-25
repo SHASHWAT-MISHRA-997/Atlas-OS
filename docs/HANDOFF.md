@@ -1,9 +1,13 @@
-# Handoff — 2026-10-25 (v0.12.0)
+# Handoff — 2026-10-25 (v0.13.0)
 
 ## State
 
 - `main` holds v0.11.0 (PRs #1–#8 merged). Branch `atlas/free-keys` holds v0.12.0: free providers only and an easy "get a free key" flow online. Claude pushes as GitHub user `SRM100`, a Write collaborator.
 - The full app runs on the owner's own computer. The online version is the Netlify project `atlas-os-sm` (site id `d61caa99-389d-418d-8f50-f49928bf0c2c`), created from this workspace on 2026-10-25. The owner linked the GitHub repository on 2026-10-25, so Netlify deploys every merge to `main`. This workspace's network cannot reach Netlify or the live site; check deploys with the Netlify MCP tools or ask the owner for a screenshot.
+
+## New in v0.13
+
+- Redesign and new logo (see CHANGELOG 0.13.0). The owner said the old UI was confusing, overlapping and the logo boring; this is the response. Judged from Chromium screenshots at 360 px and 1280 px only.
 
 ## New in v0.12
 
