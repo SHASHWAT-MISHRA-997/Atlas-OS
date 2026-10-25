@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.11.0';
+export const VERSION = '0.12.0';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -18,7 +18,7 @@ const MAX_OUTPUT_TOKENS = 2048;
 const MODEL_RE = /^[\w.:/@-]{1,120}$/;
 const KEY_RE = /^[\x21-\x7e]{8,400}$/;
 
-// Official endpoints only. There is deliberately no way to point a provider at another URL, so the
+// Only providers with a free tier, at their official endpoints only. There is deliberately no way to point a provider at another URL, so the
 // function cannot be used to send keys or traffic to arbitrary hosts.
 export const PROVIDERS = {
   groq: {
@@ -33,19 +33,10 @@ export const PROVIDERS = {
   },
   openrouter: {
     label: 'OpenRouter', kind: 'openai', base: 'https://openrouter.ai/api/v1', keyUrl: 'https://openrouter.ai/settings/keys',
-    note: 'Some models are free (IDs ending in ":free").', prefer: [/:free$/], skip: /^$/,
-  },
-  openai: {
-    label: 'OpenAI', kind: 'openai', base: 'https://api.openai.com/v1', keyUrl: 'https://platform.openai.com/api-keys',
-    note: 'Paid per use.', prefer: [/mini/, /nano/], skip: /audio|realtime|image|tts|transcribe|search|embedding|moderation|dall-e|whisper|davinci|babbage|codex|instruct/i,
-    only: /^(gpt|o\d|chatgpt)/i, suggested: ['gpt-5-mini'],
-  },
-  anthropic: {
-    label: 'Anthropic Claude', kind: 'anthropic', base: 'https://api.anthropic.com', keyUrl: 'https://console.anthropic.com/settings/keys',
-    note: 'Paid per use.', prefer: [/haiku/], skip: /^$/, suggested: ['claude-haiku-4-5'],
+    note: 'Only its free models (IDs ending in ":free") are offered.', prefer: [/llama|deepseek|qwen|gemma/], skip: /^$/, only: /:free$/,
   },
 };
-export const PROVIDER_ORDER = ['groq', 'gemini', 'openrouter', 'openai', 'anthropic'];
+export const PROVIDER_ORDER = ['groq', 'gemini', 'openrouter'];
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
@@ -70,11 +61,13 @@ function upstreamError(status, text, key) {
     detail = typeof e === 'string' ? e : (e && e.message) || data.message || '';
   } catch { detail = ''; }
   detail = String(detail || text || '').split(key || '\u0000').join('[your key]').replace(/\s+/g, ' ').slice(0, 300);
-  const hint = status === 401 || status === 403 ? ' Check your API key.'
+  const badKey = status === 401 || status === 403 || (status === 400 && /api[ _-]?key/i.test(detail));
+  const hint = badKey ? ' Check your API key.'
     : status === 404 ? ' The model ID may be wrong or not available to this key.'
       : status === 429 ? ' Rate limit or free-tier quota reached; wait and try again.' : '';
   const err = new Error('Provider answered HTTP ' + status + (detail ? ': ' + detail : '') + '.' + hint);
   err.status = status;
+  err.badKey = badKey;
   return err;
 }
 
@@ -109,13 +102,6 @@ function requestFor(p, model, messages, maxTokens) {
       body: { model, messages, stream: true, max_tokens: maxTokens },
     };
   }
-  if (p.kind === 'anthropic') {
-    return {
-      url: p.base + '/v1/messages',
-      headers: { 'x-api-key': p.key, 'anthropic-version': '2023-06-01' },
-      body: { model, max_tokens: maxTokens, stream: true, ...(system ? { system } : {}), messages: turns },
-    };
-  }
   return {
     url: p.base + '/v1beta/models/' + encodeURIComponent(model) + ':streamGenerateContent?alt=sse',
     headers: { 'x-goog-api-key': p.key },
@@ -147,10 +133,6 @@ async function* generate(fetchImpl, p, model, messages, maxTokens, signal, resul
       if (choice && choice.finish_reason) result.finish_reason = choice.finish_reason;
       const usage = msg.usage || (msg.x_groq && msg.x_groq.usage);
       if (usage) result.usage = { total_tokens: usage.total_tokens };
-    } else if (p.kind === 'anthropic') {
-      if (msg.type === 'content_block_delta' && msg.delta && msg.delta.text) yield msg.delta.text;
-      if (msg.type === 'message_delta' && msg.delta && msg.delta.stop_reason) result.finish_reason = msg.delta.stop_reason;
-      if (msg.type === 'message_delta' && msg.usage) result.usage = { total_tokens: msg.usage.output_tokens };
     } else {
       const cand = msg.candidates && msg.candidates[0];
       for (const part of (cand && cand.content && cand.content.parts) || []) if (part.text && !part.thought) yield part.text;
@@ -164,7 +146,6 @@ async function listModels(fetchImpl, p) {
   let url = p.base + '/models';
   const headers = {};
   if (p.kind === 'openai') headers.Authorization = 'Bearer ' + p.key;
-  if (p.kind === 'anthropic') { url = p.base + '/v1/models?limit=100'; headers['x-api-key'] = p.key; headers['anthropic-version'] = '2023-06-01'; }
   if (p.kind === 'gemini') { url = p.base + '/v1beta/models?pageSize=200'; headers['x-goog-api-key'] = p.key; }
   const response = await fetchImpl(url, { headers });
   if (!response.ok) throw upstreamError(response.status, await response.text().catch(() => ''), p.key);
@@ -277,7 +258,7 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
       try {
         return json({ provider: p.id, models: await listModels(fetchImpl, p) });
       } catch (err) {
-        if (err.status === 401 || err.status === 403) return fail(502, 'provider_error', err.message);
+        if (err.badKey) return fail(502, 'provider_error', err.message);
         // Some providers do not list models for every key; offer the documented default so chat still works.
         return json({ provider: p.id, models: p.suggested || [], suggested_only: true, warning: 'Could not list models: ' + err.message });
       }

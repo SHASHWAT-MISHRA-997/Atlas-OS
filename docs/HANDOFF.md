@@ -1,9 +1,15 @@
-# Handoff — 2026-10-25 (v0.11.0)
+# Handoff — 2026-10-25 (v0.12.0)
 
 ## State
 
-- `main` holds v0.10.0 (PRs #1–#7 merged). Branch `atlas/byok` holds v0.11.0: the online version uses each visitor's own key. Claude pushes as GitHub user `SRM100`, a Write collaborator.
+- `main` holds v0.11.0 (PRs #1–#8 merged). Branch `atlas/free-keys` holds v0.12.0: free providers only and an easy "get a free key" flow online. Claude pushes as GitHub user `SRM100`, a Write collaborator.
 - The full app runs on the owner's own computer. The online version is the Netlify project `atlas-os-sm` (site id `d61caa99-389d-418d-8f50-f49928bf0c2c`), created from this workspace on 2026-10-25. The owner linked the GitHub repository on 2026-10-25, so Netlify deploys every merge to `main`. This workspace's network cannot reach Netlify or the live site; check deploys with the Netlify MCP tools or ask the owner for a screenshot.
+
+## New in v0.12
+
+- Online version offers only free cloud providers (Groq, Gemini, OpenRouter `:free` models) and no Ollama text.
+- "Get your free AI key" card in AI Chat and a "Start here" banner on Home link to each provider's key page. Save checks the key with the provider first.
+- Still unverified: a real provider call with a real free key, on the live site.
 
 ## New in v0.11
 

@@ -196,7 +196,9 @@ def browser():
 
 @pytest.fixture
 def page(browser, server):
-    context = browser.new_context()
+    # Tests here fake endpoints with page.route(), which does not see requests that pass through
+    # the app's service worker; whether the worker controls the page yet is timing-dependent.
+    context = browser.new_context(service_workers="block")
     pg = context.new_page()
     pg.errors = []
     pg.on("console", lambda m: pg.errors.append(m.text) if m.type == "error" else None)

@@ -116,15 +116,15 @@ Last updated: 2026-10-25 (v0.9.0), branch `atlas/v0.9`.
 | More sheet keeps focus inside and returns it | Verified (Chromium) | e2e `test_more_sheet_keeps_keyboard_focus_*` |
 | Reduced motion | Implemented | `prefers-reduced-motion` CSS (from v7) |
 
-## Online version on Netlify (v0.11, bring your own key)
+## Online version on Netlify (v0.12, bring your own free key)
 
 | Feature | Location | Status | Evidence / gap |
 |---|---|---|---|
 | Live site built by Netlify from `main` | https://atlas-os-sm.netlify.app | Verified (owner's phone) | The owner opened the v0.10 deploy on their phone on 2026-10-25 (screenshot in the project thread). This workspace cannot reach Netlify itself |
 | Static build with the online layer | `scripts/netlify/build.mjs`, `netlify.toml` | Verified (Linux, CI, Netlify) | Built in CI, in the browser tests and on Netlify |
-| Each visitor's own key: typed in Model settings, optional "Remember on this phone", removed when unticked | `app.js` (`cloudKey`), `cloud.js` | Verified (Chromium, FAKE model) | `netlify/tests/e2e.test.mjs` |
+| Each visitor's own key: "Get your free AI key" card (provider picker, key page link, key checked before saving), "Start here" banner on Home, optional "Remember on this phone", removed when unticked | `app.js` (`cloudKey`, key card, `showKeyBanner`), `cloud.js` | Verified (Chromium, FAKE model) | `netlify/tests/e2e.test.mjs`, which also checks that no page shown online mentions Ollama. Key page links not opened from this workspace |
 | Owner's environment keys and Netlify AI Gateway never used | `netlify/lib/cloud.mjs` | Verified (Node) | `the site owner's environment keys and AI Gateway are never used`: env keys set, request without key refused, request goes to the official URL with the visitor's key |
-| Chat to Groq, Gemini, OpenRouter, OpenAI and Anthropic, streamed, errors as messages, echoed key removed | `netlify/lib/cloud.mjs` | Verified (Node, **fake** provider responses) | Request and stream formats checked against stubs written from each provider's documented API. **No real provider call has been made from this workspace** |
+| Chat to the free providers only (Groq, Gemini, OpenRouter `:free` models), streamed, errors as messages, echoed key removed | `netlify/lib/cloud.mjs` | Verified (Node, **fake** provider responses) | Request and stream formats checked against stubs written from each provider's documented API. **No real provider call has been made from this workspace** |
 | Model lists per provider; suggested default when listing fails; bad key reported | `/cloud/models` | Verified (fake responses) | Live lists not checked |
 | Memory, chat history, tasks in the browser; plans and summaries | `cloud.js`, `app.js` | Verified (Chromium, FAKE model) | No sync between devices |
 | PC-only features clearly refused online | `cloud.js`, `app.js` | Verified (Chromium) | Tasks, Automations, Devices and voice settings say so |

@@ -6,7 +6,7 @@ ATLAS OS is an AI assistant you run on your own computer. It is **not** an opera
 
 ## What it does today (v0.11.0)
 
-**New: an online version for phones** at https://atlas-os-sm.netlify.app (Netlify). Anyone can use it with their own AI key (Groq, Gemini, OpenRouter, OpenAI or Claude): AI Chat, memory, plans and summaries, saved in their own browser. There is no PC control. See [docs/CLOUD.md](docs/CLOUD.md).
+**New: an online version for phones** at https://atlas-os-sm.netlify.app (Netlify). Anyone can use it with their own free AI key (Groq, Google Gemini or OpenRouter free models; the app links to each key page): AI Chat, memory, plans and summaries, saved in their own browser. There is no PC control. See [docs/CLOUD.md](docs/CLOUD.md).
 
 - **Chat with a local model through Ollama** (the default). Replies stream in, and the Stop button really cancels generation. Installed models are found automatically, and you get clear errors when Ollama or a model is missing.
 - **Optional cloud models** with your own key: OpenAI, Groq, OpenRouter, NVIDIA NIM, Together, Cerebras, Fireworks and DeepSeek. Each reply says which provider and model answered. Cloud use needs an explicit billing and data-routing acknowledgement, and can be switched off for the whole server.
