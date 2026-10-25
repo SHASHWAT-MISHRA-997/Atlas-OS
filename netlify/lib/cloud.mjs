@@ -1,131 +1,76 @@
-// ATLAS OS cloud edition: the server half that runs as one Netlify Function under /cloud/*.
+// ATLAS OS online edition: the server half, one Netlify Function under /cloud/*.
 //
-// It does three things only:
-//   1. Owner sign-in: the first visitor claims this ATLAS (optionally with an access code), then
-//      pairs other devices with one-time links. Only SHA-256 hashes of device tokens are stored.
-//   2. Chat: forwards a signed-in device's messages to a cloud model whose key is a Netlify
-//      environment variable (or injected by Netlify AI Gateway). Keys never reach the browser.
-//   3. Model lists for those providers.
-// Memories, chat history and tasks stay in the browser. Nothing here touches any computer.
+// Bring your own key: every visitor types their own AI provider key in the app. The key travels
+// with each request over HTTPS, is used for that one provider call, and is never stored or logged
+// here. The site owner's keys and Netlify AI Gateway credentials are never used, even if Netlify
+// injects them into the environment, so nobody can spend the owner's quota or credits.
 //
-// Everything is injected (store, env, fetch, clock) so tests run without Netlify or real models.
+// It only forwards chat messages and lists models. Memories, chat history and tasks stay in the
+// visitor's browser. Nothing here touches any computer.
+//
+// fetch and the provider table are injectable so tests run without Netlify or real models.
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+export const VERSION = '0.11.0';
 
-export const VERSION = '0.10.0';
-
-const OWNER_KEY = 'owner';
-const PAIRING_MINUTES = 10;
-const MAX_DEVICES = 10;
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
 const MAX_OUTPUT_TOKENS = 2048;
 const MODEL_RE = /^[\w.:/@-]{1,120}$/;
+const KEY_RE = /^[\x21-\x7e]{8,400}$/;
 
-// Provider presets. `baseEnv` is where Netlify AI Gateway injects its URL; when that URL is not the
-// provider's own, requests go through the gateway and are paid with Netlify credits.
+// Official endpoints only. There is deliberately no way to point a provider at another URL, so the
+// function cannot be used to send keys or traffic to arbitrary hosts.
 export const PROVIDERS = {
   groq: {
-    label: 'Groq', kind: 'openai', keyEnv: 'GROQ_API_KEY', baseEnv: null, base: 'https://api.groq.com/openai/v1',
-    docs: 'https://console.groq.com/keys', prefer: [/llama-3\.3-70b/, /llama-3\.1-8b/, /llama/],
+    label: 'Groq', kind: 'openai', base: 'https://api.groq.com/openai/v1', keyUrl: 'https://console.groq.com/keys',
+    note: 'Free tier with rate limits.', prefer: [/llama-3\.3-70b/, /llama-3\.1-8b/, /llama/],
     skip: /whisper|guard|tts|playai|orpheus|prompt|compound/i,
   },
   gemini: {
-    label: 'Google Gemini', kind: 'gemini', keyEnv: 'GEMINI_API_KEY', baseEnv: 'GOOGLE_GEMINI_BASE_URL', base: 'https://generativelanguage.googleapis.com',
-    docs: 'https://aistudio.google.com/apikey', prefer: [/flash-lite/, /flash/], skip: /image|tts|embedding|aqa|live|audio|vision|learnlm|gemma/i,
+    label: 'Google Gemini', kind: 'gemini', base: 'https://generativelanguage.googleapis.com', keyUrl: 'https://aistudio.google.com/apikey',
+    note: 'Free tier with limits.', prefer: [/flash-lite/, /flash/], skip: /image|tts|embedding|aqa|live|audio|vision|learnlm|gemma/i,
     suggested: ['gemini-2.5-flash'],
   },
+  openrouter: {
+    label: 'OpenRouter', kind: 'openai', base: 'https://openrouter.ai/api/v1', keyUrl: 'https://openrouter.ai/settings/keys',
+    note: 'Some models are free (IDs ending in ":free").', prefer: [/:free$/], skip: /^$/,
+  },
   openai: {
-    label: 'OpenAI', kind: 'openai', keyEnv: 'OPENAI_API_KEY', baseEnv: 'OPENAI_BASE_URL', base: 'https://api.openai.com/v1',
-    docs: 'https://platform.openai.com/api-keys', prefer: [/mini/, /nano/], skip: /audio|realtime|image|tts|transcribe|search|embedding|moderation|dall-e|whisper|davinci|babbage|codex|instruct/i,
+    label: 'OpenAI', kind: 'openai', base: 'https://api.openai.com/v1', keyUrl: 'https://platform.openai.com/api-keys',
+    note: 'Paid per use.', prefer: [/mini/, /nano/], skip: /audio|realtime|image|tts|transcribe|search|embedding|moderation|dall-e|whisper|davinci|babbage|codex|instruct/i,
     only: /^(gpt|o\d|chatgpt)/i, suggested: ['gpt-5-mini'],
   },
   anthropic: {
-    label: 'Anthropic Claude', kind: 'anthropic', keyEnv: 'ANTHROPIC_API_KEY', baseEnv: 'ANTHROPIC_BASE_URL', base: 'https://api.anthropic.com',
-    docs: 'https://console.anthropic.com/settings/keys', prefer: [/haiku/], skip: /^$/, suggested: ['claude-haiku-4-5'],
+    label: 'Anthropic Claude', kind: 'anthropic', base: 'https://api.anthropic.com', keyUrl: 'https://console.anthropic.com/settings/keys',
+    note: 'Paid per use.', prefer: [/haiku/], skip: /^$/, suggested: ['claude-haiku-4-5'],
   },
 };
-export const PROVIDER_ORDER = ['groq', 'gemini', 'openai', 'anthropic'];
+export const PROVIDER_ORDER = ['groq', 'gemini', 'openrouter', 'openai', 'anthropic'];
 
-const sha256 = (text) => createHash('sha256').update(text).digest('hex');
-const newToken = () => randomBytes(32).toString('base64url');
-const json = (body, status = 200) => new Response(status === 204 ? null : JSON.stringify(body), {
+const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
 });
 const fail = (status, code, detail) => json({ code, detail }, status);
-const cleanName = (value, fallback) => (typeof value === 'string' && value.trim() ? value.trim().replace(/[\u0000-\u001f]/g, '').slice(0, 40) : fallback);
 
-function sameSecret(a, b) {
-  const x = Buffer.from(sha256(String(a)));
-  const y = Buffer.from(sha256(String(b)));
-  return timingSafeEqual(x, y);
+/** The provider with the visitor's key for this one request, or an error message. */
+function withKey(providers, id, key) {
+  const preset = Object.hasOwn(providers, id) ? providers[id] : null;
+  if (!preset) return { error: 'Unknown provider.' };
+  if (typeof key !== 'string' || !KEY_RE.test(key.trim())) return { error: 'Enter your ' + preset.label + ' API key (Model settings → API key).' };
+  return { p: { id, ...preset, key: key.trim() } };
 }
-
-/** Provider settings that are usable with this deploy's environment, keys included (server side only). */
-export function activeProviders(env) {
-  const out = [];
-  for (const id of PROVIDER_ORDER) {
-    const p = PROVIDERS[id];
-    const key = env[p.keyEnv];
-    if (!key) continue;
-    const custom = p.baseEnv && env[p.baseEnv] ? env[p.baseEnv].replace(/\/+$/, '') : '';
-    const gateway = !!custom && custom !== p.base;
-    out.push({ id, ...p, key, base: custom || p.base, gateway });
-  }
-  return out;
-}
-
-function publicProvider(p) {
-  return {
-    id: p.id,
-    label: p.label + (p.gateway ? ' (via Netlify AI Gateway)' : ''),
-    gateway: p.gateway,
-    billing: p.gateway
-      ? 'Paid from your Netlify team\'s credits through Netlify AI Gateway. Check your allowance in Netlify → Billing.'
-      : 'Uses your own ' + p.label + ' key and account. Free tiers and prices are set by ' + p.label + ' and can change.',
-    docs_url: p.docs,
-  };
-}
-
-// ---------------------------------------------------------------- device records
-
-async function loadOwner(store) {
-  const found = await store.getWithMetadata(OWNER_KEY, { type: 'json' });
-  return found ? { record: found.data, etag: found.etag } : { record: null, etag: null };
-}
-
-/** Read-modify-write with an etag check, retried a few times if another request wrote first. */
-async function updateOwner(store, change) {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const { record, etag } = await loadOwner(store);
-    if (!record) return null;
-    const next = change(structuredClone(record));
-    if (!next) return record;
-    const { modified } = await store.setJSON(OWNER_KEY, next, { onlyIfMatch: etag });
-    if (modified) return next;
-  }
-  throw new Error('storage busy');
-}
-
-function findDevice(record, token) {
-  if (!record || !token) return null;
-  const hash = sha256(token);
-  return record.devices.find((d) => d.hash === hash) || null;
-}
-
-const publicDevice = (d) => ({ id: d.id, name: d.name, kind: d.kind, created_at: d.created_at, last_seen_at: d.last_seen_at || null });
 
 // ---------------------------------------------------------------- model calls
 
-function upstreamError(status, text) {
+function upstreamError(status, text, key) {
   let detail = '';
   try {
     const data = JSON.parse(text);
     const e = Array.isArray(data) ? data[0]?.error : data.error;
     detail = typeof e === 'string' ? e : (e && e.message) || data.message || '';
   } catch { detail = ''; }
-  detail = String(detail || text || '').replace(/\s+/g, ' ').slice(0, 300);
-  const hint = status === 401 || status === 403 ? ' Check the API key set in Netlify.'
+  detail = String(detail || text || '').split(key || '\u0000').join('[your key]').replace(/\s+/g, ' ').slice(0, 300);
+  const hint = status === 401 || status === 403 ? ' Check your API key.'
     : status === 404 ? ' The model ID may be wrong or not available to this key.'
       : status === 429 ? ' Rate limit or free-tier quota reached; wait and try again.' : '';
   const err = new Error('Provider answered HTTP ' + status + (detail ? ': ' + detail : '') + '.' + hint);
@@ -190,12 +135,12 @@ async function* generate(fetchImpl, p, model, messages, maxTokens, signal, resul
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...r.headers },
     body: JSON.stringify(r.body),
   });
-  if (!response.ok) throw upstreamError(response.status, await response.text().catch(() => ''));
+  if (!response.ok) throw upstreamError(response.status, await response.text().catch(() => ''), p.key);
   for await (const data of sseData(response.body)) {
     if (data === '[DONE]') break;
     let msg;
     try { msg = JSON.parse(data); } catch { continue; }
-    if (msg.error) throw upstreamError(502, JSON.stringify(msg));
+    if (msg.error) throw upstreamError(502, JSON.stringify(msg), p.key);
     if (p.kind === 'openai') {
       const choice = msg.choices && msg.choices[0];
       if (choice && choice.delta && choice.delta.content) yield choice.delta.content;
@@ -222,7 +167,7 @@ async function listModels(fetchImpl, p) {
   if (p.kind === 'anthropic') { url = p.base + '/v1/models?limit=100'; headers['x-api-key'] = p.key; headers['anthropic-version'] = '2023-06-01'; }
   if (p.kind === 'gemini') { url = p.base + '/v1beta/models?pageSize=200'; headers['x-goog-api-key'] = p.key; }
   const response = await fetchImpl(url, { headers });
-  if (!response.ok) throw upstreamError(response.status, await response.text().catch(() => ''));
+  if (!response.ok) throw upstreamError(response.status, await response.text().catch(() => ''), p.key);
   const data = await response.json();
   let ids;
   if (p.kind === 'gemini') {
@@ -237,8 +182,8 @@ async function listModels(fetchImpl, p) {
 }
 
 function validateChat(body, providers) {
-  const p = providers.find((x) => x.id === body.provider);
-  if (!p) return { error: 'This provider is not set up on this ATLAS. Add its API key in Netlify (see Settings).' };
+  const { p, error } = withKey(providers, body.provider, body.api_key);
+  if (error) return { error };
   if (typeof body.model !== 'string' || !MODEL_RE.test(body.model)) return { error: 'Enter a valid model ID.' };
   const msgs = body.messages;
   if (!Array.isArray(msgs) || !msgs.length || msgs.length > MAX_MESSAGES) return { error: 'Send between 1 and ' + MAX_MESSAGES + ' messages.' };
@@ -255,40 +200,15 @@ function validateChat(body, providers) {
 
 // ---------------------------------------------------------------- handler
 
-export function createHandler({ store, env, fetchImpl = fetch, now = () => new Date() }) {
-  const iso = () => now().toISOString();
-
-  async function signedIn(req) {
-    const header = req.headers.get('authorization') || '';
-    const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-    const { record } = await loadOwner(store);
-    const device = findDevice(record, token);
-    if (device && (!device.last_seen_at || now() - new Date(device.last_seen_at) > 3600e3)) {
-      // Coarse "last used" stamp: at most one write per device per hour.
-      await updateOwner(store, (r) => {
-        const d = r.devices.find((x) => x.id === device.id);
-        if (!d) return null;
-        d.last_seen_at = iso();
-        return r;
-      }).catch(() => {});
-    }
-    return { record, device };
-  }
-
-  async function readBody(req) {
-    const text = await req.text();
-    if (text.length > 400_000) return { tooBig: true };
-    try { return text ? JSON.parse(text) : {}; } catch { return { invalid: true }; }
-  }
-
-  async function chat(req, body, providers) {
+export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {}) {
+  async function chat(req, body) {
     const v = validateChat(body, providers);
     if (v.error) return fail(422, 'invalid_request', v.error);
     const { p, msgs, maxTokens } = v;
     const model = body.model;
     const started = Date.now();
     const result = {};
-    const meta = () => ({ provider: p.id, model, local: false, gateway: p.gateway, latency_ms: Date.now() - started, ...result });
+    const meta = () => ({ provider: p.id, model, local: false, latency_ms: Date.now() - started, ...result });
 
     if (body.stream === false) {
       let answer = '';
@@ -314,7 +234,7 @@ export function createHandler({ store, env, fetchImpl = fetch, now = () => new D
     const firstTokenMs = Date.now() - started;
     const stream = new ReadableStream({
       async start(controller) {
-        send(controller, 'start', { provider: p.id, model, local: false, gateway: p.gateway });
+        send(controller, 'start', { provider: p.id, model, local: false });
         try {
           if (!first.done) send(controller, 'delta', { text: first.value });
           if (!first.done) for await (const piece of { [Symbol.asyncIterator]: () => iterator }) send(controller, 'delta', { text: piece });
@@ -332,138 +252,38 @@ export function createHandler({ store, env, fetchImpl = fetch, now = () => new D
     const url = new URL(req.url);
     const path = url.pathname.replace(/^\/cloud/, '').replace(/\/+$/, '') || '/';
     const method = req.method.toUpperCase();
-    const providers = activeProviders(env);
-    let body = {};
-    if (method === 'POST' || method === 'DELETE') {
-      body = await readBody(req);
-      if (body.tooBig) return fail(413, 'too_large', 'Request too large.');
-      if (body.invalid) return fail(400, 'invalid_json', 'Request body must be JSON.');
+
+    if (path === '/status' && method === 'GET') {
+      return json({
+        version: VERSION,
+        key_mode: 'bring-your-own',
+        providers: PROVIDER_ORDER.filter((id) => providers[id]).map((id) => ({
+          id, label: providers[id].label, key_url: providers[id].keyUrl, note: providers[id].note,
+        })),
+      });
     }
+    if (method !== 'POST' || !['/chat', '/models'].includes(path)) return fail(404, 'not_found', 'Unknown ATLAS cloud endpoint.');
+
+    const text = await req.text();
+    if (text.length > 400_000) return fail(413, 'too_large', 'Request too large.');
+    let body;
+    try { body = text ? JSON.parse(text) : {}; } catch { return fail(400, 'invalid_json', 'Request body must be JSON.'); }
+    if (!body || typeof body !== 'object') return fail(400, 'invalid_json', 'Request body must be a JSON object.');
 
     try {
-      const { record, device } = await signedIn(req);
-
-      if (path === '/status' && method === 'GET') {
-        return json({
-          version: VERSION,
-          claimed: !!record,
-          access_code_required: !!env.ATLAS_ACCESS_CODE,
-          me: device ? { kind: device.kind, name: device.name } : null,
-          providers: providers.map(publicProvider),
-          setup: { netlify_env_url: env.SITE_NAME ? 'https://app.netlify.com/projects/' + env.SITE_NAME + '/configuration/env' : null },
-        });
+      if (path === '/chat') return await chat(req, body);
+      const { p, error } = withKey(providers, body.provider, body.api_key);
+      if (error) return fail(422, 'invalid_request', error);
+      try {
+        return json({ provider: p.id, models: await listModels(fetchImpl, p) });
+      } catch (err) {
+        if (err.status === 401 || err.status === 403) return fail(502, 'provider_error', err.message);
+        // Some providers do not list models for every key; offer the documented default so chat still works.
+        return json({ provider: p.id, models: p.suggested || [], suggested_only: true, warning: 'Could not list models: ' + err.message });
       }
-
-      if (path === '/claim' && method === 'POST') {
-        if (record) return fail(409, 'already_claimed', 'This ATLAS already has an owner. Open a pairing link from the owner\'s device to sign in here.');
-        if (env.ATLAS_ACCESS_CODE && !sameSecret(body.access_code || '', env.ATLAS_ACCESS_CODE)) return fail(403, 'bad_access_code', 'Wrong access code.');
-        const token = newToken();
-        const owner = { id: randomBytes(6).toString('hex'), name: cleanName(body.name, 'Owner phone'), kind: 'owner', hash: sha256(token), created_at: iso(), last_seen_at: iso() };
-        const { modified } = await store.setJSON(OWNER_KEY, { created_at: iso(), devices: [owner], pairings: [] }, { onlyIfNew: true });
-        if (!modified) return fail(409, 'already_claimed', 'This ATLAS was just claimed by another device.');
-        return json({ token, me: { kind: 'owner', name: owner.name } }, 201);
-      }
-
-      if (path === '/join' && method === 'POST') {
-        if (!record) return fail(409, 'not_claimed', 'This ATLAS has no owner yet.');
-        const code = typeof body.code === 'string' ? body.code : '';
-        const hash = sha256(code);
-        const token = newToken();
-        let joined = null;
-        let refusal = 'This pairing link is invalid, already used or expired. Create a new one on the owner\'s device.';
-        await updateOwner(store, (r) => {
-          r.pairings = (r.pairings || []).filter((x) => new Date(x.expires_at) > now());
-          const pairing = code && r.pairings.find((x) => x.hash === hash);
-          if (!pairing) return null;
-          if (r.devices.length >= MAX_DEVICES) { refusal = 'Too many devices are paired. Remove one first.'; return null; }
-          r.pairings = r.pairings.filter((x) => x !== pairing);
-          joined = { id: randomBytes(6).toString('hex'), name: cleanName(body.name, pairing.name || 'Paired device'), kind: 'device', hash: sha256(token), created_at: iso(), last_seen_at: iso() };
-          r.devices.push(joined);
-          return r;
-        });
-        if (!joined) return fail(403, 'bad_pairing', refusal);
-        return json({ token, me: { kind: 'device', name: joined.name } }, 201);
-      }
-
-      if (!device) return fail(401, 'unauthorized', record ? 'This device is not signed in to this ATLAS.' : 'This ATLAS has no owner yet. Open it and claim it first.');
-
-      if (path === '/chat' && method === 'POST') return chat(req, body, providers);
-
-      if (path === '/models' && method === 'GET') {
-        const p = providers.find((x) => x.id === url.searchParams.get('provider'));
-        if (!p) return fail(422, 'unknown_provider', 'This provider is not set up on this ATLAS.');
-        try {
-          return json({ provider: p.id, models: await listModels(fetchImpl, p) });
-        } catch (err) {
-          // Some gateways do not list models; offer the documented default so chat still works.
-          return json({ provider: p.id, models: p.suggested || [], suggested_only: true, warning: 'Could not list models: ' + err.message });
-        }
-      }
-
-      if (path === '/me' && method === 'DELETE') {
-        if (device.kind === 'owner') {
-          if (body.confirm !== 'RESET') return fail(422, 'confirm_required', 'Send confirm: "RESET" to remove the owner and every paired device.');
-          await store.delete(OWNER_KEY);
-          return json(null, 204);
-        }
-        await updateOwner(store, (r) => { r.devices = r.devices.filter((d) => d.id !== device.id); return r; });
-        return json(null, 204);
-      }
-
-      if (device.kind !== 'owner') return fail(403, 'owner_only', 'Only the owner\'s device can manage devices.');
-
-      if (path === '/pairing' && method === 'POST') {
-        const code = newToken();
-        const expires = new Date(now().getTime() + PAIRING_MINUTES * 60e3).toISOString();
-        await updateOwner(store, (r) => {
-          r.pairings = [...(r.pairings || []).filter((x) => new Date(x.expires_at) > now()), { hash: sha256(code), name: cleanName(body.name, null), expires_at: expires }].slice(-5);
-          return r;
-        });
-        return json({ code, expires_at: expires }, 201);
-      }
-
-      if (path === '/devices' && method === 'GET') {
-        return json({ devices: record.devices.filter((d) => d.kind !== 'owner').map(publicDevice) });
-      }
-
-      const m = path.match(/^\/devices\/([0-9a-f]{12})$/);
-      if (m && method === 'DELETE') {
-        let removed = false;
-        await updateOwner(store, (r) => {
-          const before = r.devices.length;
-          r.devices = r.devices.filter((d) => d.kind === 'owner' || d.id !== m[1]);
-          removed = r.devices.length !== before;
-          return removed ? r : null;
-        });
-        return removed ? json(null, 204) : fail(404, 'not_found', 'No such device.');
-      }
-
-      return fail(404, 'not_found', 'Unknown ATLAS cloud endpoint.');
     } catch (err) {
-      console.error('atlas cloud error:', err && err.message);
+      console.error('atlas cloud error:', err && err.name);
       return fail(500, 'server_error', 'ATLAS cloud had a problem. Try again.');
     }
-  };
-}
-
-/** In-memory store with the same calls this file uses from @netlify/blobs (tests and the local dev server). */
-export function memoryStore() {
-  const items = new Map();
-  let counter = 0;
-  return {
-    async getWithMetadata(key) {
-      const item = items.get(key);
-      return item ? { data: JSON.parse(item.value), etag: item.etag, metadata: {} } : null;
-    },
-    async setJSON(key, value, opts = {}) {
-      const item = items.get(key);
-      if (opts.onlyIfNew && item) return { modified: false };
-      if (opts.onlyIfMatch && (!item || item.etag !== opts.onlyIfMatch)) return { modified: false };
-      counter += 1;
-      const etag = '"' + counter + '"';
-      items.set(key, { value: JSON.stringify(value), etag });
-      return { modified: true, etag };
-    },
-    async delete(key) { items.delete(key); },
   };
 }

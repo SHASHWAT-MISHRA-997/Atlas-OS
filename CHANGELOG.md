@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.0 — 2026-10-25 (branch `atlas/byok`)
+
+### Changed
+- **ATLAS online now uses each visitor's own API key.** There is no sign-in, owner claim or pairing any more. Each person pastes their key in AI Chat → Model settings, and can tick "Remember my key on this phone". The function never reads Netlify environment variables or Netlify AI Gateway credentials, so the site owner's keys and credits are never used.
+- Providers online: Groq, Google Gemini, OpenRouter (new), OpenAI and Anthropic, always at their official addresses.
+- Provider error messages that repeat the key show "[your key]" instead.
+- Tasks keep the key in memory for that task only; it is never saved with the task.
+
+### Removed
+- Netlify Blobs device records, the claim screen, the "Set up AI" card and the `@netlify/blobs` dependency.
+
 ## 0.10.0 — 2026-10-25 (branch `atlas/cloud`)
 
 ### Added
