@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.14.0 — 2026-10-25 (branch `atlas/auto-route`)
+
+Online version:
+- **Auto-switch between free providers (like an AI gateway such as OmniRoute).** If the chosen provider hits its free limit (HTTP 429) or is down (5xx), the same message goes to the next free provider you added a key for, and the reply says so (for example "OpenRouter (auto-switched: Groq hit its free limit)").
+  - It is on by default and can be turned off in Model settings.
+  - Each key is still sent only to its own provider, in its own request.
+  - It never switches into a paid provider.
+- **Optional paid OpenAI key (for GPT-6 Astra).** The owner chose to offer paid keys as an option.
+  - OpenAI is listed last as "OpenAI (paid)". Its key card warns that there is no free tier and every message is billed to the visitor's own account.
+  - It is never a default, never shown in the "free key" banner, and never used by auto-switch or by Home plans unless the visitor picked it.
+  - Requests use OpenAI's `max_completion_tokens`, capped at 2,048.
+  - A paid Google key works with the existing Gemini provider and lists paid models such as Gemini 4 Argon.
+- Tests:
+  - The browser test covers the auto-switch, turning it off, and never switching into paid.
+  - The function tests cover the OpenAI request shape.
+  - The attack tests include the OpenAI host.
+
+## 0.13.3 — 2026-10-25 (branch `atlas/security-pass`)
+
+Security pass: I attacked the app myself, then fixed what got through. Every attack is now a test.
+- Online function, four gaps fixed:
+  - Requests from other websites (browser `Sec-Fetch-Site` cross-site, or a foreign `Origin`) now get 403.
+  - Only `application/json` is accepted (415), so HTML forms on other sites cannot post.
+  - A provider sent as an array (`["groq"]`) was accepted; it now must be a string.
+  - JSON and stream replies now carry `X-Content-Type-Options: nosniff`.
+  - Oversized bodies are also refused from `Content-Length` before reading.
+- New `netlify/tests/attack.test.mjs` (9 tests) tries:
+  - header injection through the key;
+  - proxying to other hosts and paths through model IDs;
+  - prototype tricks;
+  - smuggling tools, roles or base URLs;
+  - cross-site calls and form posts;
+  - huge and deeply nested bodies;
+  - leaking the key in errors.
+  It runs in CI.
+- New browser test: HTML/script in a memory and in a chat reply never runs, and a prompt-injection message cannot get the key, because the key is never put into the prompt.
+- New `backend/tests/test_attack_sqli.py`: 11 SQL injection payloads against 10 storage endpoints on the PC app. No errors, no leaked rows, no changed tables.
+- Rate limit unchanged and confirmed in the live deploy: 60 requests a minute per visitor (Netlify), output capped at 2,048 tokens. The PC API keeps its own LLM rate limit (`test_llm_rate_limit_returns_429_with_retry_after`).
+- Threat model: T36 corrected (3 provider hosts), T38 (cross-site) and T39 (injection) added.
+
 ## 0.13.2 — 2026-10-25 (branch `atlas/update-notify`)
 
 - Update notice (PC app and online): when a newer version is deployed, a "New version available" banner appears with "Update now" (reloads into the new version) and "Later". The app checks on open, when it comes back on screen (at most every 5 minutes) and every 30 minutes. It only works while the app is open; there are no push notifications.

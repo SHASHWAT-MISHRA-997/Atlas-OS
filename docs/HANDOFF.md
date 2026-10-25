@@ -1,4 +1,4 @@
-# Handoff — 2026-10-25 (v0.13.2)
+# Handoff — 2026-10-25 (v0.14.0)
 
 ## State
 
@@ -7,6 +7,8 @@
 
 ## New in v0.13
 
+- v0.14.0: online auto-switch between free providers on 429/5xx (never into paid); optional paid OpenAI provider (owner's decision 2026-10-25); feature plan: https://claude.ai/artifact/6jsB1Jyo3mppD8b4u1BUY8.
+- v0.13.3: security pass (attack tests online and on the PC; cross-site, JSON-only and type fixes in the function). See CHANGELOG and THREAT_MODEL T38/T39.
 - v0.13.2: in-app update notice (banner + Check for update; `/version.json` online, `/health` on the PC) and a real model dropdown.
 - v0.13.1: the online key card is a plain text box with a Paste button and cleans pasted keys (the owner could not add a key on the phone; Netlify logs showed one key check succeed but no chat).
 - Redesign and new logo (see CHANGELOG 0.13.0). The owner said the old UI was confusing, overlapping and the logo boring; this is the response. Judged from Chromium screenshots at 360 px and 1280 px only.

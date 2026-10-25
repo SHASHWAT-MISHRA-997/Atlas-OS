@@ -21,7 +21,8 @@ export function fakeModelFetch(url, init) {
   }), { headers: { 'Content-Type': 'text/event-stream' } });
   const auth = (init.headers && init.headers.Authorization) || '';
   if (auth === 'Bearer wrong-key-123') return Promise.resolve(new Response('{"error":{"message":"Invalid API Key"}}', { status: 401 }));
-  if (String(url).endsWith('/models')) return Promise.resolve(Response.json({ data: [{ id: 'fake-small' }, { id: 'fake-large' }] }));
+  if (String(url).endsWith('/models')) return Promise.resolve(Response.json({ data: [{ id: 'fake-small' }, { id: 'fake-large' }, { id: 'fake-free:free' }] }));
+  if (auth === 'Bearer busy-key-429') return Promise.resolve(new Response('{"error":{"message":"Rate limit reached for requests"}}', { status: 429 }));
   const body = JSON.parse(init.body);
   const last = body.messages.filter((m) => m.role === 'user').pop().content;
   if (body.model === 'fake-broken') return Promise.resolve(new Response('{"error":{"message":"model not found"}}', { status: 404 }));
