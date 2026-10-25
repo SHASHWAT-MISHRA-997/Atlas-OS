@@ -131,6 +131,19 @@ def test_chat_history_append_list_prune_and_clear(monkeypatch):
     assert len(client.get("/api/chat/history", params={"conversation": "other"}).json()["messages"]) == 1
 
 
+def test_chat_message_delete_one_or_from_an_edited_message_onward():
+    ids = [client.post("/api/chat/history", json={"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}"}).json()["id"]
+           for i in range(4)]
+    other = client.post("/api/chat/history", params={"conversation": "other"}, json={"role": "user", "content": "x"}).json()["id"]
+    assert client.delete(f"/api/chat/history/{ids[0]}").json() == {"deleted": 1}
+    # Editing m2 removes it and the reply after it, but not other conversations.
+    assert client.delete(f"/api/chat/history/{ids[2]}", params={"following": "true"}).json() == {"deleted": 2}
+    assert [m["content"] for m in client.get("/api/chat/history").json()["messages"]] == ["m1"]
+    assert client.delete(f"/api/chat/history/{ids[0]}").status_code == 404
+    assert client.delete(f"/api/chat/history/{other}").status_code == 404  # wrong conversation
+    assert len(client.get("/api/chat/history", params={"conversation": "other"}).json()["messages"]) == 1
+
+
 def test_chat_history_rejects_bad_input():
     assert client.post("/api/chat/history", json={"role": "system", "content": "x"}).status_code == 422
     assert client.post("/api/chat/history", json={"role": "user", "content": ""}).status_code == 422

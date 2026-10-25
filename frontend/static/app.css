@@ -167,6 +167,12 @@ input[type=file]::file-selector-button{min-height:40px;margin-right:10px;border:
 .bubble.user .meta{color:#ddd6fe}
 .bubble.error{background:#2a1418;border-color:#7f2d3a}
 .bubble.error strong{color:var(--danger)}
+.msgactions{display:flex;gap:4px;margin:6px -6px -4px;flex-wrap:wrap}
+.msgbtn{min-height:32px;padding:4px 10px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.msgbtn:hover,.msgbtn:focus-visible{background:rgba(255,255,255,.08);color:var(--text)}
+.bubble.user .msgactions{justify-content:flex-end}
+.bubble.user .msgbtn{color:#ede9fe}
+.bubble.user .msgbtn:hover,.bubble.user .msgbtn:focus-visible{background:rgba(255,255,255,.16);color:#fff}
 .emptychat{text-align:center;padding:28px 8px;display:grid;justify-items:center;gap:6px}
 .emptychat .chips-row{justify-content:center;margin-top:8px}
 .emptylogo{width:56px;height:56px;border-radius:16px}

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.1 — 2026-10-25 (branch `atlas/key-paste`)
+
+Chat messages can now be managed (PC app and online):
+- Every saved message has Copy and Delete; your own messages also have Edit, which puts the text back in the message box and removes the replies after it, so you can change it and send again. Each asks before deleting.
+- The "Clear" button is now "Clear all".
+- New backend route `DELETE /api/chat/history/{id}` (`?following=true` also removes later messages). Browser-stored messages get ids; older ones are given ids on first load.
+
+Online version: easier to add your key on a phone.
+- The key box is now a plain text box (phone keyboards hide clipboard suggestions in password boxes) with a "Paste" button. If the browser blocks clipboard reading, it says to press and hold the box and tap Paste.
+- Pasted keys are cleaned: spaces, line breaks, quotes and invisible characters are removed.
+- If the provider rejects a key that looks like another provider's (for example a `gsk_` Groq key under Gemini), the card says which provider to pick.
+- Friendlier error texts; the Tasks screen no longer asks for models online before a key exists.
+- Browser test pastes a messy key and checks it is cleaned and saved, then deletes, edits and clears messages. A backend test covers the new delete route.
+
 ## 0.13.0 — 2026-10-25 (branch `atlas/redesign`)
 
 Redesign (both the PC app and the online version):
