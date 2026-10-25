@@ -1,5 +1,7 @@
 # Project audit — baseline (2026-10-23)
 
+> Historical: this describes the PC version, which was removed in 0.15.0 (see D-025). The files it names are in the Git history.
+
 This records what was actually inspected and run. Nothing here was inferred from the UI or README alone.
 
 ## Sources inspected

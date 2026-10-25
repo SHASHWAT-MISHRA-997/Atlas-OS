@@ -10,107 +10,6 @@ permissions:
   contents: read
 
 jobs:
-  backend:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: backend/requirements-dev.txt
-      - name: Install backend dependencies
-        run: python -m pip install -r backend/requirements-dev.txt
-      - name: Compile
-        run: python -m compileall -q backend/app
-      - name: Lint (ruff, includes bandit security rules)
-        working-directory: backend
-        run: python -m ruff check .
-      - name: Unit and API tests
-        working-directory: backend
-        run: python -m pytest -q -m "not e2e"
-      - name: Dependency vulnerability audit
-        run: |
-          python -m pip install pip-audit
-          pip-audit -r backend/requirements.txt
-      - name: Secret scan (fails on any finding outside tests)
-        run: |
-          python -m pip install detect-secrets
-          detect-secrets scan --all-files --exclude-files '(^|/)(\.git|tests|\.pytest_cache|\.ruff_cache)/' > secrets.json
-          python -c "import json,sys; r=json.load(open('secrets.json'))['results']; print(json.dumps({k:[x['type'] for x in v] for k,v in r.items()})); sys.exit(1 if r else 0)"
-
-  windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: backend/requirements-dev.txt
-      - name: Install backend dependencies
-        run: python -m pip install -r backend/requirements-dev.txt
-      - name: Unit, API and Windows tests (includes a real Notepad launch)
-        working-directory: backend
-        run: python -m pytest -q -m "not e2e"
-      - name: Installer script (installs, starts ATLAS, start-on-login on and off)
-        shell: pwsh
-        run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/install.ps1 -StartOnLogin
-          if ($LASTEXITCODE -ne 0) { throw "installer failed" }
-          $link = Join-Path ([Environment]::GetFolderPath('Startup')) 'ATLAS OS.lnk'
-          if (-not (Test-Path $link)) { throw "start-on-login shortcut missing" }
-          $p = Start-Process -FilePath (Resolve-Path start-atlas.cmd) -PassThru -WindowStyle Hidden
-          $ok = $false
-          for ($i = 0; $i -lt 60 -and -not $ok; $i++) {
-            Start-Sleep -Seconds 1
-            try { $ok = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/health).StatusCode -eq 200 } catch { }
-          }
-          taskkill /PID $p.Id /T /F | Out-Null
-          if (-not $ok) { throw "ATLAS did not answer on http://127.0.0.1:8000/health" }
-          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/install.ps1 -RemoveStartOnLogin
-          if (Test-Path $link) { throw "shortcut not removed" }
-          if (-not (Select-String -Path atlas-settings.cmd -Pattern 'ATLAS_AGENT_FOLDERS' -Quiet)) { throw "settings file missing" }
-
-  frontend-e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: backend/requirements-dev.txt
-      - name: Set up Node (JS syntax check)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Check frontend JavaScript syntax
-        run: node --check frontend/static/app.js
-      - name: Install dependencies and Chromium
-        run: |
-          python -m pip install -r backend/requirements-dev.txt
-          python -m playwright install --with-deps chromium
-      - name: Browser end-to-end tests (fake Ollama provider)
-        working-directory: backend
-        run: python -m pytest -q -m e2e
-
-  docker-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build image
-        run: docker build -t atlas-os:ci .
-      - name: Smoke test container health
-        run: |
-          docker run -d --name atlas -p 8000:8000 atlas-os:ci
-          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/health && exit 0; sleep 1; done
-          docker logs atlas; exit 1
-
   cloud:
     runs-on: ubuntu-latest
     steps:
@@ -119,6 +18,8 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Check JavaScript syntax
+        run: for f in frontend/static/*.js netlify/lib/*.mjs netlify/functions/*.mjs scripts/netlify/*.mjs; do node --check "$f"; done
       - name: Install dependencies and Chromium
         run: |
           npm ci
@@ -127,7 +28,12 @@ jobs:
         run: node scripts/netlify/build.mjs
       - name: Function tests (fake model providers)
         run: node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs
-      - name: Browser tests of the online version (FAKE model)
+      - name: Browser tests of the web app (FAKE model)
         run: node --test netlify/tests/e2e.test.mjs
       - name: Dependency audit
         run: npm audit --omit=dev
+      - name: Secret scan (fails on any finding outside tests)
+        run: |
+          python3 -m pip install --quiet detect-secrets
+          detect-secrets scan --all-files --exclude-files '(^|/)(\.git|node_modules|dist|tests)/' > secrets.json
+          python3 -c "import json,sys; r=json.load(open('secrets.json'))['results']; print(json.dumps({k:[x['type'] for x in v] for k,v in r.items()})); sys.exit(1 if r else 0)"

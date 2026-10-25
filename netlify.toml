@@ -1,5 +1,5 @@
-# ATLAS OS cloud edition on Netlify: the normal frontend plus one function (netlify/functions/atlas.mjs).
-# The full local app (FastAPI backend, PC actions, local models) is not deployed here; see docs/CLOUD.md.
+# ATLAS OS on Netlify: the web app (frontend/) plus one function (netlify/functions/atlas.mjs).
+# See docs/CLOUD.md.
 [build]
   command = "node scripts/netlify/build.mjs"
   publish = "dist"

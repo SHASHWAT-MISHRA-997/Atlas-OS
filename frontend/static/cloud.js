@@ -1,19 +1,15 @@
-/* ATLAS OS online edition: browser half. Loaded before app.js only in the Netlify build.
+/* ATLAS OS: browser half of the web app. Loaded before app.js.
  *
- * The normal ATLAS app talks to a backend on the owner's PC through /api/*. On Netlify there is no
- * such backend, so this file answers those calls in the browser:
+ * app.js asks for everything through /api/*. This file answers those calls in the browser:
  *   - AI Chat, plans and summaries go to the /cloud function with the visitor's own API key, which
  *     forwards them to that provider. Nothing is simulated, and the site owner's keys are never used.
- *   - Memories, chat history and tasks are stored in this browser (localStorage).
- *   - Things that need the PC (PC actions, document index, local voice, automations) answer with a
- *     clear "needs ATLAS on your PC" error instead of pretending.
+ *   - Tasks are stored in this browser (localStorage); app.js keeps memories and chat history there.
+ *   - Anything else answers 404.
  */
 (() => {
   'use strict';
   const TASKS_KEY = 'atlas.cloud.tasks.v1';
   const realFetch = window.fetch.bind(window);
-  const PC_ONLY = 'This needs ATLAS installed on your Windows PC. The online version cannot touch any computer.';
-  const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
   const json = (body, status = 200) => new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
   const fail = (status, detail, code) => json({ detail, code: code || 'cloud' }, status);
@@ -52,11 +48,11 @@
   async function providers() {
     const s = await status();
     const list = s.providers.map((p) => ({
-      id: p.id, label: p.label, key_required: true, local: false, enabled: true, server_key_configured: false, paid: !!p.paid,
+      id: p.id, label: p.label, paid: !!p.paid,
       billing: (p.paid ? 'PAID. ' : '') + 'Uses your own ' + p.label + ' key and account. ' + p.note + ' Limits and prices are set by the provider and can change.',
       capabilities: { streaming: true }, docs_url: p.key_url, key_url: p.key_url,
     }));
-    return { default_provider: list[0].id, external_providers_enabled: true, providers: list, fallback: { label: 'your other free provider', auto: true },
+    return { default_provider: list[0].id, providers: list, fallback: { label: 'your other free provider', auto: true },
       note: 'Model IDs, availability, pricing and free tiers are provider-controlled and can change.' };
   }
 
@@ -186,7 +182,7 @@
   }
 
   async function createTask(body) {
-    if (!['plan', 'summarize_text'].includes(body.kind)) return fail(422, PC_ONLY, 'pc_only');
+    if (!['plan', 'summarize_text'].includes(body.kind)) return fail(422, 'Unknown task kind.');
     const s = await status();
     if (!s.providers.some((p) => p.id === body.provider)) return fail(422, 'Unknown provider.');
     if (!body.api_key || !String(body.api_key).trim()) return fail(422, 'Enter your API key for this provider.');
@@ -214,9 +210,7 @@
     let m;
     if (path === '/api/system/status') {
       const s = await status();
-      return json({ api: { status: 'ok', version: s.version, env: 'cloud' }, ollama: { available: false, count: 0, message: 'Not part of the online version' },
-        external_providers_enabled: true, desktop_agent_enabled: false, task_runner: 'browser', auth: 'none', memory_storage: 'browser-local',
-        cloud: { providers: s.providers, key_mode: s.key_mode } });
+      return json({ api: { status: 'ok', version: s.version }, cloud: { providers: s.providers, key_mode: s.key_mode } });
     }
     if (path === '/api/llm/providers') return json(await providers());
     if (path === '/api/llm/models') {
@@ -225,13 +219,9 @@
     if (path === '/api/llm/chat/stream' || path === '/api/llm/chat') {
       return chatWithSwitch(body, path.endsWith('stream'));
     }
-    if (path === '/api/tasks/plan') {
-      return json({ mode: 'simulation', command: body.command, steps: ['Understand goal and constraints', 'Assign relevant specialist roles', 'Prepare execution and verification checklist', 'Request permissions before real external actions'],
-        notice: 'Planning only: no files, commands, or external services were accessed.' });
-    }
     if (path === '/api/tasks' && method === 'POST') return createTask(body);
     if (path === '/api/tasks') return json({ tasks: tasks.slice(0, Number(url.searchParams.get('limit')) || 50) });
-    if ((m = path.match(/^\/api\/tasks\/([^/]+)(?:\/(approve|cancel|retry|pause|resume))?$/))) {
+    if ((m = path.match(/^\/api\/tasks\/([^/]+)(?:\/(cancel|retry))?$/))) {
       const task = tasks.find((t) => t.id === m[1]);
       if (!task) return fail(404, 'Task not found.');
       if (m[2] === 'cancel') {
@@ -242,20 +232,10 @@
         if (!['Failed', 'Cancelled'].includes(task.state)) return fail(409, 'Only failed or cancelled tasks can be retried.');
         if (!taskKeys.has(task.id)) return fail(409, 'Your API key is kept only while the page is open. Start the task again with your key.');
         runTask(task);
-      } else if (m[2]) {
-        return fail(409, 'Online tasks start right away and cannot be paused or approved.');
       }
       return json(task);
     }
-    if (path === '/api/desktop/status') return json({ enabled: false, actions: [], apps: [], folders: [], media_keys: [], notice: PC_ONLY });
-    if (path === '/api/desktop/trash') return json({ items: [] });
-    if (path === '/api/docs/status') return json({ folders: {}, files: 0, chunks: 0, unreadable: 0, last_indexed: null });
-    if (path === '/api/docs/search') return json({ query: url.searchParams.get('q'), results: [] });
-    if (path === '/api/voice/status') return json({ engine_installed: false, models: [], available: [], download: { running: false, error: null }, languages: ['auto', 'en', 'hi'], notice: PC_ONLY });
-    if (path === '/api/voice/tts/status') return json({ engine_installed: false, voices: [], available: [], download: { running: false, error: null }, notice: PC_ONLY });
-    if (path.startsWith('/api/devices')) return fail(409, 'Not needed online: there is no sign-in. Each phone uses its own API key, and its data stays on that phone.');
-    if (path === '/api/automations' && method === 'GET') return json({ automations: [], days: DAYS });
-    return fail(409, PC_ONLY, 'pc_only');
+    return fail(404, 'Not found.', 'not_found');
   }
 
   window.fetch = async (input, init = {}) => {

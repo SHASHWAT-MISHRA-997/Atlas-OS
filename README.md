@@ -1,127 +1,70 @@
-# ATLAS OS — local-first AI assistant (early prototype)
+# ATLAS OS
 
-[![ATLAS OS checks](https://github.com/SHASHWAT-MISHRA-997/Atlas-OS/actions/workflows/tests.yml/badge.svg)](https://github.com/SHASHWAT-MISHRA-997/Atlas-OS/actions/workflows/tests.yml)
+ATLAS OS is an AI assistant that runs as a web app in the browser. Open
+**https://atlas-os-sm.netlify.app** on any device with a modern browser: Android, iPhone, iPad,
+Windows, Mac, Linux or ChromeOS. There is nothing to install. It can also be added to the home
+screen as an app. It is **not** an operating system and **not** production-ready. This README
+describes only what exists today; see [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the
+status of every feature.
 
-ATLAS OS is an AI assistant you run on your own computer. It is **not** an operating system and **not** production-ready. This README describes only what exists today; see [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the status of every feature.
+## What it does today (v0.15.0)
 
-## What it does today (v0.11.0)
+- **AI Chat** with your own key. Free providers come first: Groq, Google Gemini and OpenRouter
+  (free models only). Paid OpenAI is optional and clearly marked. Replies stream, can be stopped,
+  and can be copied, edited or deleted.
+- **Auto-switch:** when the free provider you picked hits its limit or is down, the message goes to
+  another free provider you added a key for. It never switches into a paid provider.
+- **Memory:** notes you save are sent with chats so answers fit you. Export them as JSON.
+- **Tasks:** plan a goal or summarize long text with the model you choose.
+- **Home:** a quick step-by-step plan for a goal, and a CSV analyzer that works in the browser.
+- **Voice:** dictation and read-aloud with your browser's speech service.
+- **Updates:** a banner tells you when a new version is out; "Check for update" is in the menu.
 
-**New: an online version for phones** at https://atlas-os-sm.netlify.app (Netlify). Anyone can use it with their own free AI key (Groq, Google Gemini or OpenRouter free models; the app links to each key page): AI Chat, memory, plans and summaries, saved in their own browser. There is no PC control. See [docs/CLOUD.md](docs/CLOUD.md).
+Everything you save (key if you tick "Remember", memories, chat history, tasks) stays in that
+browser on that device. Nothing is synced. There is no sign-in.
 
-- **Chat with a local model through Ollama** (the default). Replies stream in, and the Stop button really cancels generation. Installed models are found automatically, and you get clear errors when Ollama or a model is missing.
-- **Optional cloud models** with your own key: OpenAI, Groq, OpenRouter, NVIDIA NIM, Together, Cerebras, Fireworks and DeepSeek. Each reply says which provider and model answered. Cloud use needs an explicit billing and data-routing acknowledgement, and can be switched off for the whole server.
-- **Memory you control**, stored in SQLite on your computer. You can add, edit, search, delete, export and import memories, back up and restore them, or switch memory off. Each answer shows which memories were sent with it. Auto-delete after N days is optional and off by default.
-- **Background tasks** with live progress, cancel, pause and resume, and urgent priority. Tasks can write a plan (never executed) or summarize long text. Cloud tasks wait for your approval.
-- **PC actions** (off by default, for your own PC only): open Notepad, Calculator or the file manager; list and search file names in approved folders; create notes, Word and Excel files; move a file to ATLAS trash and restore it; media keys on Windows; open a website or a web search in your browser. ATLAS never overwrites or permanently deletes a file. Every action waits for your approval of exactly what it will do. There is no shell.
-- **Search your documents:** index .txt, .md, .csv, .pdf and .docx files in an approved folder, search them on the Memory screen, and turn on "Use my documents" in chat to answer from them with the source files listed.
-- **Phone use:** a phone layout with a bottom tab bar, and per-device login with a pairing QR code. Each phone can be removed on its own. ATLAS can be installed as an app, which shows an offline screen when it is served over HTTPS. See [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md).
-- **Voice:** dictation and read-aloud through the browser (in Chrome and Edge, **browser dictation audio goes to the browser vendor**), or fully on your PC with Whisper and Piper: `pip install -r backend/requirements-voice.txt`, then download a model and a voice from AI Chat → Model settings. Hands-free "Hey ATLAS" and microphone choice work with the PC engines. Not yet tried with real models.
-- **CSV workbench**: statistics are computed in your browser, and the file is never uploaded.
-- **Quick plan on Home** asks your local model for a plan (nothing is executed).
-- **Automations:** plans, re-indexing, web searches or websites on a schedule. PC actions still wait for your approval.
-- **Fallback model** (optional, set up by the owner): answers when the chosen model fails, and says so.
+## Not supported
 
-## Not supported yet
+Acting on your computer (opening apps, files), local models, calendar, email and messaging. A web
+page cannot safely do these. ATLAS says so instead of pretending.
 
-Browser automation (clicking or reading pages), a trained wake-word model, OCR for scanned PDFs, meaning-based (embedding) search, vision, tool calling, and the Agents and Projects screens. Remote access through Tailscale is documented but has not been tested with real devices. ATLAS has **not been tested on a personal Windows 11 PC**; only the CI Windows runner has been used.
+## How it works
 
-## Requirements
+The page (`frontend/`) talks to one small Netlify Function (`netlify/`). The function forwards each
+chat to the provider you picked, with your key, and stores nothing. The site owner's keys are never
+used. See [docs/CLOUD.md](docs/CLOUD.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-- Python 3.11+ (tested here on 3.13 on Linux; **Windows 11 is the target but has not been tested yet**)
-- Optional: [Ollama](https://ollama.com/download). For 8 GB RAM, start with `llama3.2:3b` (~2 GB) or `qwen2.5:1.5b`. 7–8B models want ~8 GB of free RAM or VRAM.
+## Develop
 
-## Install on Windows
-
-Install Python 3.11+ from python.org (tick "Add python.exe to PATH"), download this repository, then in its folder run:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\windows\install.ps1 -StartOnLogin
-```
-
-Double-click `start-atlas.cmd` and open http://localhost:8000. Edit `atlas-settings.cmd` to turn on PC actions and choose folders. `-RemoveStartOnLogin` undoes start-on-login.
-
-## Run locally
+Needs Node.js 20 or newer.
 
 ```bash
-cd backend
-python -m venv .venv
-# Windows PowerShell: .venv\Scripts\Activate.ps1
-# macOS/Linux:        source .venv/bin/activate
-pip install -r requirements.txt
-python -m app.serve                       # binds to 127.0.0.1:8000
-# or: python -m uvicorn app.main:app --env-file .env
+npm install
+npm run build                 # writes dist/
+ATLAS_FAKE_MODEL=1 npm run dev  # http://localhost:8888 with a labelled FAKE model
+npm test                      # function, attack and size tests
+npm run test:e2e              # browser tests (Chromium via Playwright)
 ```
 
-Open http://127.0.0.1:8000. API docs are at http://127.0.0.1:8000/api/docs (development only).
-
-Local model: install Ollama, run `ollama pull llama3.2:3b`, then open **AI Chat**. The model fills in automatically.
-
-To use ATLAS from your phone, follow [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md): same Wi-Fi, Tailscale (HTTPS, works anywhere), or your own certificate.
-
-## Configuration
-
-All settings are environment variables; see [backend/.env.example](backend/.env.example). Key ones:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `ATLAS_OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Where Ollama runs (operator-set only) |
-| `ATLAS_ALLOW_EXTERNAL_PROVIDERS` | `true` | `false` = local-only mode |
-| `ATLAS_<PROVIDER>_API_KEY` | unset | Server-side key, e.g. `ATLAS_GROQ_API_KEY`, so the browser never handles it |
-| `ATLAS_ENV` | `development` | `production` turns off API docs |
-| `ATLAS_LLM_RATE_LIMIT_PER_MINUTE` | `30` | Per-IP limit on model calls |
-| `ATLAS_ENABLE_DESKTOP_AGENT` | `false` | Enable PC actions on your own PC only |
-| `ATLAS_HOST` / `ATLAS_PORT` | `127.0.0.1` / `8000` | Where `python -m app.serve` listens |
-| `ATLAS_TLS_CERT` / `ATLAS_TLS_KEY` | unset | Serve HTTPS with your certificate |
-| `ATLAS_PUBLIC_URL` | unset | Address phones use; turns on the pairing QR code |
-
-Never commit `.env`, keys or private data. A key typed into the chat screen is sent with that request only, and is not stored or logged.
-
-## Tests
-
-```bash
-cd backend
-pip install -r requirements-dev.txt
-python -m pytest -q -m "not e2e"     # API/unit tests (provider mocked)
-python -m playwright install chromium
-python -m pytest -q -m e2e           # browser tests (real Chromium + backend, fake Ollama)
-python -m ruff check .
-```
-
-The latest results and the manual checks still needed (real Ollama, Windows) are in [docs/TEST_PLAN.md](docs/TEST_PLAN.md). Passing tests are not a guarantee of zero bugs or vulnerabilities.
-
-## Docker
-
-```bash
-docker build -t atlas-os .
-docker run -p 127.0.0.1:8000:8000 -e ATLAS_OLLAMA_BASE_URL=http://host.docker.internal:11434 atlas-os
-```
-
-The image runs in production mode as a non-root user. Your browser reaches the container through Docker's network, so pair it once: `docker exec <container> python -m app.auth token`. It has not been built in the development environment yet; CI builds it.
+Without `ATLAS_FAKE_MODEL=1` the preview talks to real providers with the key you paste.
 
 ## Deployment
 
-The full app (PC actions, local models, server storage) is meant to run on your own PC; hosting it publicly is **not safe** (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
-
-The separate **online version** on Netlify is built for hosting: each visitor brings their own key, the site owner's keys are never used, data stays in each browser, and there is no PC access. See [docs/CLOUD.md](docs/CLOUD.md).
+The GitHub repository is linked to the Netlify project `atlas-os-sm`; every merge to `main`
+deploys. Configuration is in `netlify.toml`.
 
 ## Data and privacy
 
-Memories, chat history and task records are stored in SQLite at `%LOCALAPPDATA%\AtlasOS\atlas.db` (Windows) or `~/.local/share/atlas-os/atlas.db` (set `ATLAS_DATA_DIR` to change it). The file is not encrypted. Deleted memories are overwritten in the file. Back up with `python -m app.storage backup` and restore with `python -m app.storage restore <file>` from `backend/`. In production mode, server storage is off and the browser's localStorage is used instead. Chat requests to a cloud provider include your memories and recent turns. CSV files never leave the browser.
-
-## Troubleshooting
-
-| Symptom | Fix |
-|---|---|
-| "Ollama is not reachable" | Start Ollama; check `curl http://127.0.0.1:11434/api/tags`; set `ATLAS_OLLAMA_BASE_URL` if it runs elsewhere |
-| "Ollama is running but has no models" | `ollama pull llama3.2:3b` |
-| "model ran out of memory" | Use a smaller model or close GPU-heavy apps |
-| "does not recognise this model ID" | Press **Load models** and pick from the list |
-| 429 "ATLAS rate limit" | Wait a minute or raise `ATLAS_LLM_RATE_LIMIT_PER_MINUTE` |
-
-## Uninstall
-
-Stop the server, delete the folder and the `.venv`, delete the data folder above, and clear the site data for `127.0.0.1:8000` in your browser. Remove Ollama models with `ollama rm <model>`.
+Chats, saved memories and recent turns are sent to the provider you pick, under its terms.
+Memories, history and a remembered key are kept in the browser's localStorage, readable by anyone
+using the unlocked device. Do not enter passwords or sensitive data in chats.
 
 ## Project docs
 
-[Audit](docs/PROJECT_AUDIT.md) · [Feature matrix](docs/FEATURE_MATRIX.md) · [Phone and remote access](docs/REMOTE_ACCESS.md) · [Online version](docs/CLOUD.md) · [Research](docs/RESEARCH.md) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) · [Test plan](docs/TEST_PLAN.md) · [Decisions](docs/DECISIONS.md) · [Handoff](docs/HANDOFF.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
+[FEATURE_MATRIX](docs/FEATURE_MATRIX.md) · [CLOUD](docs/CLOUD.md) ·
+[ARCHITECTURE](docs/ARCHITECTURE.md) · [THREAT_MODEL](docs/THREAT_MODEL.md) ·
+[TEST_PLAN](docs/TEST_PLAN.md) · [DECISIONS](docs/DECISIONS.md) · [HANDOFF](docs/HANDOFF.md) ·
+[CHANGELOG](CHANGELOG.md)
+
+Versions up to 0.14.0 also had a PC version (FastAPI backend, Windows installer, PC actions, local
+models). It was removed in 0.15.0 at the owner's request; it is still in the Git history.

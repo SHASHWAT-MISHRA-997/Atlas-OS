@@ -2,11 +2,12 @@
   "name": "atlas-os-cloud",
   "private": true,
   "type": "module",
-  "description": "Netlify build of the ATLAS OS online edition (frontend + one function). The local app lives in backend/.",
+  "description": "ATLAS OS web app: the frontend plus one Netlify function.",
   "scripts": {
     "build": "node scripts/netlify/build.mjs",
-    "test": "node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs",
-    "dev": "node scripts/netlify/dev-server.mjs"
+    "test": "node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs",
+    "dev": "node scripts/netlify/dev-server.mjs",
+    "test:e2e": "node --test netlify/tests/e2e.test.mjs"
   },
   "engines": {
     "node": ">=20"
