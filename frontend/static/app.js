@@ -1683,8 +1683,8 @@
     }));
     const planModel = await localModel();
     const desktop = await api('/api/desktop/status').catch(() => ({ enabled: false, folders: [] }));
-    const kinds = [['plan', 'Plan a goal with the local model']];
-    if (desktop.enabled) kinds.push(['index_documents', 'Re-index documents (needs approval)'], ['web_search', 'Open a web search (needs approval)'], ['open_url', 'Open a website (needs approval)']);
+    const kinds = [['plan', 'Plan a goal (local)']];
+    if (desktop.enabled) kinds.push(['index_documents', 'Re-index documents'], ['web_search', 'Web search'], ['open_url', 'Open a website']);
     const name = el('input', { id: 'autoname', maxlength: '100', placeholder: 'e.g. Morning plan' });
     const kind = el('select', { id: 'autokind' }, kinds.map(([value, text]) => el('option', { value, text })));
     const goal = el('input', { id: 'autogoal', maxlength: '2000', placeholder: 'e.g. Plan my study day' });
@@ -1700,7 +1700,7 @@
       words: el('label', { class: 'field' }, ['SEARCH FOR', words]), url: el('label', { class: 'field' }, ['WEB ADDRESS', url]),
       time: el('label', { class: 'field' }, ['TIME', time]), day: el('label', { class: 'field' }, ['DAY', day]), hours: el('label', { class: 'field' }, ['EVERY (HOURS)', hours]),
     };
-    const note = el('p', { class: 'notice', role: 'status', text: planModel ? 'Plans use ' + planModel + ' on this PC.' : 'Plans need a model installed in Ollama on this PC.' });
+    const note = el('p', { class: 'notice', role: 'status', text: (planModel ? 'Plans use ' + planModel + ' on this PC.' : 'Plans need a model installed in Ollama on this PC.') + (desktop.enabled ? ' Re-index, web search and website runs wait for your approval in Tasks.' : '') });
     const create = el('button', { class: 'btn primary', type: 'submit', text: 'Create automation' });
     const form = el('form', { class: 'panel', style: 'margin-top:14px', 'aria-label': 'New automation' }, [
       el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['NAME', name]), el('label', { class: 'field' }, ['WHAT', kind]), fields.goal, fields.folder, fields.words, fields.url,

@@ -4,22 +4,24 @@
 
 ATLAS OS is an AI assistant you run on your own computer. It is **not** an operating system and **not** production-ready. This README describes only what exists today; see [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the status of every feature.
 
-## What it does today (v0.8.0)
+## What it does today (v0.9.0)
 
 - **Chat with a local model through Ollama** (the default). Replies stream in, and the Stop button really cancels generation. Installed models are found automatically, and you get clear errors when Ollama or a model is missing.
 - **Optional cloud models** with your own key: OpenAI, Groq, OpenRouter, NVIDIA NIM, Together, Cerebras, Fireworks and DeepSeek. Each reply says which provider and model answered. Cloud use needs an explicit billing and data-routing acknowledgement, and can be switched off for the whole server.
 - **Memory you control**, stored in SQLite on your computer. You can add, edit, search, delete, export and import memories, back up and restore them, or switch memory off. Each answer shows which memories were sent with it. Auto-delete after N days is optional and off by default.
 - **Background tasks** with live progress, cancel, pause and resume, and urgent priority. Tasks can write a plan (never executed) or summarize long text. Cloud tasks wait for your approval.
-- **PC actions** (off by default, for your own PC only): open Notepad, Calculator or the file manager; list and search file names in approved folders; create notes, Word and Excel files; move a file to ATLAS trash and restore it; media keys on Windows. ATLAS never overwrites or permanently deletes a file. Every action waits for your approval of exactly what it will do. There is no shell.
+- **PC actions** (off by default, for your own PC only): open Notepad, Calculator or the file manager; list and search file names in approved folders; create notes, Word and Excel files; move a file to ATLAS trash and restore it; media keys on Windows; open a website or a web search in your browser. ATLAS never overwrites or permanently deletes a file. Every action waits for your approval of exactly what it will do. There is no shell.
 - **Search your documents:** index .txt, .md, .csv, .pdf and .docx files in an approved folder, search them on the Memory screen, and turn on "Use my documents" in chat to answer from them with the source files listed.
 - **Phone use:** a phone layout with a bottom tab bar, and per-device login with a pairing QR code. Each phone can be removed on its own. ATLAS can be installed as an app, which shows an offline screen when it is served over HTTPS. See [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md).
-- **Voice:** dictation and read-aloud through the browser, with a choice of language and voice (in Chrome and Edge, **browser dictation audio goes to the browser vendor**). Optional local dictation on your PC with Whisper: `pip install -r backend/requirements-voice.txt`, then download a model from AI Chat → Model settings. Not yet tried with a real model.
+- **Voice:** dictation and read-aloud through the browser (in Chrome and Edge, **browser dictation audio goes to the browser vendor**), or fully on your PC with Whisper and Piper: `pip install -r backend/requirements-voice.txt`, then download a model and a voice from AI Chat → Model settings. Hands-free "Hey ATLAS" and microphone choice work with the PC engines. Not yet tried with real models.
 - **CSV workbench**: statistics are computed in your browser, and the file is never uploaded.
-- **Quick plan on Home** is still a fixed 4-step simulation. Use Tasks for a real plan.
+- **Quick plan on Home** asks your local model for a plan (nothing is executed).
+- **Automations:** plans, re-indexing, web searches or websites on a schedule. PC actions still wait for your approval.
+- **Fallback model** (optional, set up by the owner): answers when the chosen model fails, and says so.
 
 ## Not supported yet
 
-Wake word, local text-to-speech, choosing a microphone, browser control, OCR for scanned PDFs, meaning-based (embedding) search, vision and tool calling. Remote access through Tailscale is documented but has not been tested with real devices. ATLAS has **not been tested on a personal Windows 11 PC**; only the CI Windows runner has been used.
+Browser automation (clicking or reading pages), a trained wake-word model, OCR for scanned PDFs, meaning-based (embedding) search, vision, tool calling, and the Agents and Projects screens. Remote access through Tailscale is documented but has not been tested with real devices. ATLAS has **not been tested on a personal Windows 11 PC**; only the CI Windows runner has been used.
 
 ## Requirements
 

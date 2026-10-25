@@ -4,7 +4,7 @@ States: **Not implemented** · **Partially implemented** · **Implemented** (cod
 
 "Verified (Linux, mocked provider)" means automated tests passed on Linux with the model provider replaced by `httpx.MockTransport` or a fake Ollama server. It is **not** evidence that a real provider, a real Ollama install, or Windows works.
 
-Last updated: 2026-10-25 (v0.8.0), branch `atlas/v0.8`.
+Last updated: 2026-10-25 (v0.9.0), branch `atlas/v0.9`.
 
 ## Foundation and security
 
@@ -46,7 +46,7 @@ Last updated: 2026-10-25 (v0.8.0), branch `atlas/v0.8`.
 | Billing / data-routing acknowledgement in UI | `frontend/static/app.js` | Verified (Linux, Chromium) | e2e `test_cloud_provider_requires_key_and_billing_*` |
 | Real Ollama end-to-end | — | **Not verified** | The workspace network blocks Ollama downloads, and the owner chose not to pursue it for now. See `TEST_PLAN.md` §Manual |
 | Real cloud provider end-to-end | — | **Blocked** | Needs the user's own key; never requested in chat |
-| Provider fallback | — | Not implemented | Only if explicitly configured (spec 5.5) |
+| Provider fallback (opt-in twice) | `routers/llm.py` | Verified (Linux, mocked provider + Chromium) | Owner sets `ATLAS_FALLBACK_PROVIDER/MODEL`; a cloud fallback needs the server's own key and cloud allowed; the user must also tick it in chat. Only on availability errors (unreachable, timeout, model missing, out of memory, rate limit), never on key or policy errors, and a stream falls back only before any text arrives. The answer is labelled. `test_fallback.py`, e2e `test_fallback_model_*` |
 | ATLAS's own latency before the first token | `app/providers/tls.py` | Verified (Linux, fake model) | 7.5 ms median through ATLAS vs 1.7 ms direct (was 50.6 ms); `docs/RESEARCH.md` |
 | Usage/latency metadata | chat + stream responses | Verified (Linux, mocked provider) | `latency_ms`, `first_token_ms`, `usage` when the provider sends it |
 
@@ -54,12 +54,13 @@ Last updated: 2026-10-25 (v0.8.0), branch `atlas/v0.8`.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Dictation | Partially implemented | Browser Web Speech API. Not local: Chrome/Edge send audio to the vendor. UI now says so |
-| Text-to-speech + Stop interrupts speech | Partially implemented | Browser `speechSynthesis`. Not tested on hardware |
+| Dictation | Implemented | Browser Web Speech API (audio goes to the vendor in Chrome/Edge; the UI says so) or local Whisper on the PC (below) |
+| Text-to-speech + Stop interrupts speech | Implemented | Browser `speechSynthesis`, or local Piper on the PC (below). Not tested on hardware |
+| Local read-aloud (Piper), opt-in | Implemented (plumbing verified with a mock engine) | `app/tts.py`, `/api/voice/tts/*`, Model settings → Read-aloud engine. Voices (English US/UK, Hindi; ~63 MB each) download only when the owner presses Download on the PC; a broken download is never treated as installed. `test_tts.py` (labelled **mock**), e2e with network-level mocks. **Not verified with a real voice**: Hugging Face is blocked here, and the Hindi voice name was not checked against the live catalogue |
 | Speech language (English India/US/UK, Hindi) and read-aloud voice choice; voices labelled on-device or online | Verified (Chromium, speech stubbed) | e2e `test_voice_language_and_voice_choice_*` uses a labelled stub of `speechSynthesis`; real voices depend on the phone or PC |
 | Local STT (faster-whisper), opt-in | Implemented (plumbing verified with a mock engine) | `app/stt.py`, `/api/voice/*`, Model settings → Dictation engine. Optional install (`requirements-voice.txt`); the model (tiny ~75 MB, base ~145 MB, small ~484 MB) downloads only when the owner presses Download on the PC. `test_voice.py` checks limits, permissions and the flow with a labelled **mock** engine. **Not verified with a real model**: this workspace blocks Hugging Face downloads, so recognition quality and speed on Hindi/Hinglish are unmeasured |
-| Wake word "Hey ATLAS" | Not implemented | |
-| Microphone selection, VAD | Not implemented | The browser speech API always uses the default microphone |
+| Hands-free "Hey ATLAS" | Implemented (verified in Chromium with a fake microphone and mocked transcription) | A voice-activity detector in the page cuts speech into clips (~150 ms to start, 0.8 s of quiet to end, 8 s max, adaptive to room noise); each clip is transcribed by local Whisper; only clips starting with "Hey ATLAS"/"ATLAS" (also एटलस) are used, or the next clip within 8 s after a bare "Hey ATLAS". Paused while ATLAS answers or speaks. Refuses to use the browser's online speech service. Works only while the page is open. e2e `test_hands_free_*`. Not a trained wake-word model: every clip goes through Whisper, so it uses more CPU than a real wake-word engine, and accuracy on real voices is unmeasured |
+| Microphone selection, VAD | Implemented | Microphone choice applies to local dictation and hands-free; browser dictation still uses the default microphone (a browser limit). VAD as above |
 
 ## Windows agent (Milestone E)
 
@@ -71,7 +72,7 @@ Last updated: 2026-10-25 (v0.8.0), branch `atlas/v0.8`.
 | Create notes, Word (.docx) and Excel (.xlsx) files | Verified (Linux, Chromium) | `create_note`, `create_document` approved actions. New files only: an existing name is refused (409), and the write is exclusive so a file appearing meanwhile is never replaced. Word: `#` headings and `-` bullets; Excel: CSV text, every cell stored as text (no formulas run). `test_file_actions.py`, e2e `test_note_is_written_*`, `test_file_goes_to_atlas_trash_*`. Not yet opened in real Microsoft Office |
 | Move to ATLAS trash and restore | Verified (Linux, Chromium) | `move_to_trash` moves one regular file (not folders or links) into ATLAS's own trash folder; `restore_from_trash` puts it back and never overwrites. Nothing is permanently deleted by ATLAS. Trash is not emptied automatically |
 | Media keys (play/pause, next, previous, volume, mute) | Implemented (Windows only) | `media_key` approved action via `keybd_event`. Refused with `unsupported_os` elsewhere (tested on Linux). Not tested on a real Windows PC |
-| Browser control | Not implemented | |
+| Browser control: open a website, web search | Verified (Linux, mocked browser + Chromium) | `open_url`, `web_search` approved actions open the default browser via Python `webbrowser`. Only public http(s) pages: `file:`, `javascript:`, `data:`, embedded logins, localhost, private, link-local and `.local` addresses are refused; internationalised names are shown in `xn--` form on the approval card. `test_browser_actions.py`, 17 red-team cases. No page automation (clicking, typing, reading pages) |
 | Installer and start on login | Implemented (verified on Windows CI once the PR runs) | `scripts/windows/install.ps1`: checks Python 3.11+, makes `.venv`, installs `requirements.txt`, writes `start-atlas.cmd` and an editable `atlas-settings.cmd`; `-StartOnLogin` adds a Startup-folder shortcut, `-RemoveStartOnLogin` removes it. No admin rights, no model downloads. CI runs it, starts ATLAS and checks `/health` |
 
 ## Memory, tasks, remote, UI
@@ -91,7 +92,9 @@ Last updated: 2026-10-25 (v0.8.0), branch `atlas/v0.8`.
 | Document search (RAG) over approved folders | Verified (Linux, Chromium, fake Ollama) | `app/docsearch.py`. An approved `index_documents` task reads .txt, .md, .csv, .json, .log, .pdf (text layer) and .docx into a local FTS5 index (incremental by size and date; 10 MB per file, 5,000 files, 5 minutes). Memory → Documents searches and clears it. Chat → "Use my documents" sends up to 5 matching excerpts (5,000 chars) as untrusted data and lists the source files; a warning shows when the provider is cloud. Keyword search (bm25), not embeddings. Scanned PDFs are not read (no OCR). `test_docsearch.py`, e2e `test_note_is_written_indexed_searched_and_used_in_chat` |
 | Browser-local fallback storage | Implemented | Used only when server storage is off (e.g. production) |
 | CSV workbench (browser-only) | Implemented | Unchanged logic; no automated test yet |
-| Quick plan on Home | Partially implemented | Still the fixed 4-step simulation; points to Tasks for a real plan |
+| Quick plan on Home | Verified (Chromium, fake Ollama) | Uses the chat's local model, or the first model installed in Ollama, as a background plan task; falls back to the fixed example plan only when no local model exists. e2e `test_home_plan_*`, `test_task_plan_comes_from_backend` |
+| Automations (scheduled tasks) | Verified (Linux, Chromium, fake Ollama) | `app/automations.py`, Automations screen. Daily, weekly or every N hours in the PC's local time; run now, pause, delete. Only creates tasks, so PC actions and cloud models still need approval each time; API keys are never stored. A run missed while ATLAS was off happens once at start-up. `test_automations.py`, e2e `test_automation_*`. Daylight-saving behaviour follows the OS; tested only in a fixed UTC+05:30 zone |
+| Agents and Projects screens | Not implemented | Still placeholders |
 | Task engine: states, enforced transitions, audit events | Verified (Linux, mocked provider) | `test_tasks.py` (20 tests) |
 | Cancel (running and queued), pause/resume between steps | Verified (Linux, mocked provider + Chromium) | `test_cancel_*`, `test_pause_*`, e2e cancel |
 | Real progress (parts done / total) | Verified (Linux, mocked provider) | `test_summarize_reports_real_per_part_progress` |
@@ -120,4 +123,4 @@ Last updated: 2026-10-25 (v0.8.0), branch `atlas/v0.8`.
 | Q1 local vs cloud first-token latency | Not measured | Needs real Ollama and a real key on stated hardware |
 | ATLAS's own overhead (part of Q1) | Measured (Linux, fake model) | `docs/RESEARCH.md`: 7.5 ms median after fixing a 49 ms per-request TLS cost |
 | Q2 cancellation latency | Measured (Linux, fake model) | 3.5 ms median from Stop to the model server's connection closing, 0 of 100 missed |
-| Q3 permission policy | Measured (Linux), author-written cases | 50 of 50 attack cases blocked (20 added in v0.8 for writing, trash, indexing and search); found and fixed two real holes in v0.7. Not an independent red team |
+| Q3 permission policy | Measured (Linux), author-written cases | 67 of 67 attack cases blocked (20 added in v0.8, 17 in v0.9 for browser control); found and fixed two real holes in v0.7. Not an independent red team |

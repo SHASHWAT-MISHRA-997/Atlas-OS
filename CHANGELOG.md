@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.0 — 2026-10-25 (branch `atlas/v0.9`)
+
+### Added
+- **Hands-free "Hey ATLAS"** (opt-in): say "Hey ATLAS" and your request; ATLAS listens only while the chat is open and only with speech-to-text on your PC.
+- **Read-aloud on your PC** with Piper voices (English US/UK, Hindi), downloaded only when you press Download.
+- **Microphone choice** for dictation on the PC and hands-free.
+- **Browser control:** "Open a website" and "Search the web" PC actions, with approval. Only public http(s) pages.
+- **Automations:** run a plan, re-index, web search or website on a schedule (daily, weekly, every few hours).
+- **Fallback model** (opt-in): if the chosen model fails, another one the owner set up can answer, and the answer says so.
+- 17 more red-team cases (67 in total).
+
+### Changed
+- The Home quick plan now asks your local model for a real plan. The fixed example plan is used only when no model is installed.
+
+### Fixed
+- Voice recordings over 256 KB (about 30 seconds) were refused before they reached speech-to-text on the PC.
+
+
 ## 0.8.0 — 2026-10-25 (branch `atlas/v0.8`)
 
 ### Added
