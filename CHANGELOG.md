@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.2 — 2026-10-25 (branch `atlas/update-notify`)
+
+- Update notice (PC app and online): when a newer version is deployed, a "New version available" banner appears with "Update now" (reloads into the new version) and "Later". The app checks on open, when it comes back on screen (at most every 5 minutes) and every 30 minutes. It only works while the app is open; there are no push notifications.
+- "Check for update" button in the menu (under system status) says either that a version is available or "You have the latest version (x.y.z)".
+- Online the version comes from a new `/version.json` written by the Netlify build (served with `Cache-Control: no-cache`); on the PC it comes from `/health`.
+- Model choice: once models are loaded they are shown as a dropdown with every model the key can use (OpenRouter: free ones only), plus "Other: type a model ID". Before, a text box with suggestions showed only the one pre-filled model on phones.
+- Tests: cloud e2e covers the update banner, Check for update and the model dropdown; local UI tests type custom model IDs through "Other".
+
 ## 0.13.1 — 2026-10-25 (branch `atlas/key-paste`)
 
 Chat messages can now be managed (PC app and online):

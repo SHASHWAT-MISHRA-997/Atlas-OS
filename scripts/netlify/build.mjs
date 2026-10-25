@@ -28,4 +28,6 @@ html = html
   .replace('<title>ATLAS OS — Agentic Workspace</title>', '<title>ATLAS OS — Online</title>')
   .replace(/(\/static\/(?:app|cloud)\.(?:js|css))/g, '$1?v=' + version);
 writeFileSync(join(out, 'index.html'), html);
+// The app compares this with its own version to show "New version available".
+writeFileSync(join(out, 'version.json'), JSON.stringify({ version }) + '\n');
 console.log('ATLAS cloud build ' + version + ' written to dist/');

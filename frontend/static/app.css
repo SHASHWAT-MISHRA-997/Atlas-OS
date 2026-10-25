@@ -242,3 +242,7 @@ input[type=file]::file-selector-button{min-height:40px;margin-right:10px;border:
 @media(max-width:340px){.composer .chip{font-size:12px}.tabbar button{font-size:10.5px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 .panel.settings,.panel.tools{padding:0}
+.updatebanner{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;padding:12px 14px;border-radius:14px;border:1px solid #4c3fb0;background:#1a1840}
+.updatebanner strong{display:block;font-size:15px}
+.updatebanner .tiny{color:var(--soft)}
+.updatebanner .row{gap:8px;flex-wrap:nowrap}

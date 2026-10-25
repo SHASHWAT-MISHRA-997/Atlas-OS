@@ -149,6 +149,58 @@
     $('main').prepend(banner);
   }
 
+  // ---------------------------------------------------------------- updates
+  // A new version is announced inside the app: a banner with "Update now", checked when the app
+  // opens, when it comes back to the screen, every 30 minutes, and from "Check for update".
+  // Online the version comes from /version.json (written by the Netlify build); on the PC from /health.
+  const pageVersion = (document.querySelector('script[src*="/static/app.js?v="]')?.getAttribute('src').split('?v=')[1]) || null;
+  let runningVersion = pageVersion;
+  let lastUpdateCheck = 0;
+
+  async function latestVersion() {
+    // Only the online build adds ?v= to the page's script, so that also tells the two apart.
+    const url = pageVersion ? '/version.json' : '/health';
+    const response = await fetch(url + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const data = await response.json();
+    if (typeof data.version !== 'string') throw new Error('no version in reply');
+    return data.version;
+  }
+
+  /** Returns the newer version, or null when this page is already the latest. */
+  async function checkForUpdate() {
+    lastUpdateCheck = Date.now();
+    const latest = await latestVersion();
+    if (!runningVersion) { runningVersion = latest; return null; }
+    if (latest === runningVersion) return null;
+    showUpdateBanner(latest);
+    return latest;
+  }
+
+  function showUpdateBanner(latest) {
+    const old = $('updatebanner');
+    if (old) old.remove();
+    const now = el('button', { class: 'btn primary', type: 'button', id: 'updatenow', text: 'Update now' });
+    const later = el('button', { class: 'btn', type: 'button', text: 'Later' });
+    const banner = el('div', { id: 'updatebanner', class: 'updatebanner', role: 'status' }, [
+      el('div', {}, [el('strong', { text: 'New version available' }), el('span', { class: 'tiny', text: 'ATLAS ' + latest + ' is ready (you have ' + runningVersion + ').' })]),
+      el('div', { class: 'row' }, [now, later]),
+    ]);
+    now.addEventListener('click', async () => {
+      now.disabled = true;
+      now.textContent = 'Updating…';
+      try { const reg = await navigator.serviceWorker?.getRegistration(); if (reg) await reg.update(); } catch { /* reload still fetches the new files */ }
+      location.reload();
+    });
+    later.addEventListener('click', () => banner.remove());
+    document.querySelector('header.top').after(banner);
+  }
+
+  function autoCheckForUpdate() {
+    if (Date.now() - lastUpdateCheck < 5 * 60 * 1000) return;
+    checkForUpdate().catch(() => { /* offline: try again later */ });
+  }
+
   // ---------------------------------------------------------------- status
   let systemStatus = null;
   /** True in the Netlify cloud edition (frontend/cloud/cloud.js answers /api there). */
@@ -889,6 +941,10 @@
     providerSelect.value = providers.some((p) => p.id === saved.provider) ? saved.provider : catalogue.default_provider;
     const modelInput = el('input', { id: 'atlasmodel', list: 'atlasmodels', autocomplete: 'off', placeholder: 'Model ID', value: saved.model || '' });
     const modelList = el('datalist', { id: 'atlasmodels' });
+    // Phones only suggest datalist entries that match what is already typed, so once models are
+    // loaded they are offered as a real dropdown; "Other" brings back the free-text box.
+    const OTHER_MODEL = '__other__';
+    const modelPick = el('select', { id: 'atlasmodelpick', class: 'hidden', 'aria-label': 'Model' });
     const loadModels = el('button', { class: 'btn', type: 'button', text: 'Load models' });
     const keyInput = el('input', { id: 'atlaskey', type: 'password', autocomplete: 'off', placeholder: 'Paste key for this page session' });
     const keyField = el('label', { class: 'field' }, [isCloud() ? 'YOUR API KEY' : 'API KEY (SENT PER REQUEST, NOT SAVED)', keyInput]);
@@ -1049,7 +1105,7 @@
         : 'Local-first: Ollama on the machine running ATLAS is the default. Cloud providers are optional and use your own key. When memory is on, saved memories and recent turns are included in each request.' }),
       el('div', { class: 'grid-fields' }, [
         el('label', { class: 'field' }, ['PROVIDER', providerSelect]),
-        el('label', { class: 'field' }, ['MODEL', modelInput]),
+        el('label', { class: 'field' }, ['MODEL', modelPick, modelInput]),
         keyField,
       ]),
       keyHelp,
@@ -1144,9 +1200,19 @@
       if (docsIndexed === null) api('/api/docs/status').then((d) => { docsIndexed = d.files; refreshDocsNote(); }).catch(() => {});
     }
 
+    function showModelPick(models) {
+      modelPick.replaceChildren(...models.map((m) => el('option', { value: m, text: m })),
+        el('option', { value: OTHER_MODEL, text: 'Other: type a model ID' }));
+      const known = models.includes(modelInput.value);
+      modelPick.value = known ? modelInput.value : OTHER_MODEL;
+      modelPick.classList.toggle('hidden', !models.length);
+      modelInput.classList.toggle('hidden', !!models.length && known);
+    }
+
     async function discoverModels(auto) {
       const p = current();
       modelList.replaceChildren();
+      showModelPick([]);
       if (p.key_required && !keyInput.value.trim() && !p.server_key_configured) {
         modelStatus.textContent = auto ? 'Enter a key, then press Load models, or type a model ID from ' + p.docs_url + '.' : 'A key is needed to list ' + p.label + ' models.';
         return;
@@ -1159,8 +1225,9 @@
         if (!data.models.length) {
           modelStatus.textContent = p.local ? 'Ollama is running but has no models. Run `ollama pull llama3.2:3b` (about 2 GB) on that machine.' : 'No models returned.';
         } else {
-          modelStatus.textContent = data.models.length + ' model(s) available. Start typing to pick one.';
+          modelStatus.textContent = data.models.length + (data.models.length === 1 ? ' model' : ' models') + ' available' + (p.id === 'openrouter' ? ' (free ones only)' : '') + '. Pick one from the list.';
           if (!modelInput.value || (p.local && !data.models.includes(modelInput.value))) modelInput.value = data.models[0];
+          showModelPick(data.models);
           updatePill();
         }
       } catch (err) {
@@ -1348,6 +1415,13 @@
       modelInput.value = '';
       storageSet(CHAT_SETTINGS_KEY, { ...storageGet(CHAT_SETTINGS_KEY, {}), provider: providerSelect.value, model: '' });
       discoverModels(true);
+    });
+    modelPick.addEventListener('change', () => {
+      const other = modelPick.value === OTHER_MODEL;
+      modelInput.classList.toggle('hidden', !other);
+      if (other) { modelInput.value = ''; modelInput.focus(); } else modelInput.value = modelPick.value;
+      updatePill();
+      modelInput.dispatchEvent(new Event('change'));
     });
     modelInput.addEventListener('input', updatePill);
     modelInput.addEventListener('change', () => storageSet(CHAT_SETTINGS_KEY, { ...storageGet(CHAT_SETTINGS_KEY, {}), provider: providerSelect.value, model: modelInput.value.trim() }));
@@ -2211,6 +2285,24 @@
   $('analyzecsv').addEventListener('click', analyzeCsv);
   $('downloadreport').addEventListener('click', downloadReport);
   $('refreshstatus').addEventListener('click', refreshStatus);
+  $('checkupdate').addEventListener('click', async () => {
+    const button = $('checkupdate');
+    const note = $('updatenote');
+    button.disabled = true;
+    note.textContent = 'Checking…';
+    try {
+      const latest = await checkForUpdate();
+      note.textContent = latest ? 'Version ' + latest + ' is available. Tap "Update now".' : 'You have the latest version (' + runningVersion + ').';
+      if (latest) setSheet(false);
+    } catch (err) {
+      note.textContent = 'Could not check for updates (' + err.message + '). Are you online?';
+    } finally {
+      button.disabled = false;
+    }
+  });
+  setTimeout(autoCheckForUpdate, 4000);
+  setInterval(autoCheckForUpdate, 30 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') autoCheckForUpdate(); });
   $('morebtn').addEventListener('click', () => setSheet(!$('sidebar').classList.contains('open')));
   $('sheetbackdrop').addEventListener('click', () => setSheet(false));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setSheet(false); });
