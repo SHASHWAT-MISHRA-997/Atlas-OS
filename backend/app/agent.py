@@ -185,6 +185,8 @@ def search_files(folder: str, query: str, subpath: str = "") -> dict:
 
 NAME_RE = re.compile(r"^[\w\- .()]{1,100}$", re.UNICODE)
 MAX_NOTE_CHARS = 100_000
+# Windows device names: "CON.txt" or "nul.md" would write to a device, not a file.
+RESERVED_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
 MEDIA_KEYS = {"play_pause": 0xB3, "next": 0xB0, "previous": 0xB1, "volume_up": 0xAF, "volume_down": 0xAE, "mute": 0xAD}
 
 
@@ -192,6 +194,8 @@ def _new_file(folder: str, subpath: str, name: str, suffix: str) -> tuple[Path, 
     name = (name or "").strip()
     if not NAME_RE.match(name) or name.startswith(".") or ".." in name:
         raise AgentError(422, "bad_name", "File names may use letters, numbers, spaces, - _ . ( ) and at most 100 characters.")
+    if name.split(".")[0].strip().upper() in RESERVED_NAMES:
+        raise AgentError(422, "bad_name", "That name is reserved by Windows; pick another.")
     if not name.lower().endswith(suffix):
         name += suffix
     root, directory = _resolve(folder, subpath)
@@ -335,7 +339,7 @@ def restore_from_trash(trash_id: str) -> dict:
         raise AgentError(409, "file_exists", f"{record['path']} exists again; move or rename it first.")
     if not target.parent.is_dir():
         raise AgentError(404, "not_a_folder", "The original folder no longer exists.")
-    shutil.move(str(holder / record["name"]), str(target))
+    shutil.move(str(holder / Path(record["name"]).name), str(target))
     shutil.rmtree(holder, ignore_errors=True)
     return {"restored": _rel(root, target), "folder": record["folder"]}
 
@@ -397,7 +401,8 @@ def describe(kind: str, params: dict) -> dict:
     elif kind == "move_to_trash":
         summary = f"Move {params.get('folder')}/{params.get('path')} to ATLAS trash"
     elif kind == "restore_from_trash":
-        summary = f"Restore trash item {params.get('trash_id')}"
+        item = next((r for r in list_trash() if r.get("id") == params.get("trash_id")), None)
+        summary = f"Restore {item['folder']}/{item['path']} from ATLAS trash" if item else f"Restore trash item {params.get('trash_id')}"
     else:
         summary = f"Press media key: {params.get('key')}"
     return {"label": ACTIONS[kind]["label"], "risk": ACTIONS[kind]["risk"], "summary": summary}
