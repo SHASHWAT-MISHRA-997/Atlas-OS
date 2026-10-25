@@ -266,7 +266,7 @@
 
   async function runTask() {
     const message = $('message');
-    const cmd = $('command').value.trim() || $('globalcmd').value.trim();
+    const cmd = $('command').value.trim();
     message.classList.remove('hidden');
     if (!cmd) {
       message.textContent = 'Enter a task first, or choose an example.';
@@ -301,7 +301,6 @@
         el('div', {}, [el('strong', { text: step.title }), el('p', { text: step.detail || '' })]),
       ])));
       log('plan written by ' + saved.model + '; steps=' + task.output.steps.length);
-      $('globalcmd').value = '';
     } catch (err) {
       $('taskstate').textContent = 'FAILED';
       message.textContent = 'Could not create a plan: ' + err.message;
@@ -1896,8 +1895,6 @@
 
   // ---------------------------------------------------------------- wiring
   $('run').addEventListener('click', runTask);
-  $('toprun').addEventListener('click', () => { $('command').value = $('globalcmd').value; runTask(); });
-  $('globalcmd').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('toprun').click(); } });
   document.querySelectorAll('[data-example]').forEach((b) => b.addEventListener('click', () => { $('command').value = b.dataset.example; $('command').focus(); }));
   $('analyzecsv').addEventListener('click', analyzeCsv);
   $('downloadreport').addEventListener('click', downloadReport);
