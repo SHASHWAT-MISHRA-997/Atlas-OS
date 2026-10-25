@@ -1,11 +1,27 @@
 # Changelog
 
+## Unreleased — mobile polish (branch `atlas/mobile-redesign`)
+
+### Fixed
+- Symbols that showed as boxes on some Android phones are now inline SVG icons.
+- Your own chat bubble was clipped by a header style (pill corners cut "YOU" and words); header styles are now scoped to the header.
+- Chat box placeholder no longer wraps and gets cut at 320 px; composer buttons wrap instead of overflowing.
+- PC action inputs stuck out of their card on narrow phones; they are now labelled fields.
+- Home cards use a 2-column grid on phones instead of a sideways scroller; model name wraps instead of being cut.
+- Verified with a scripted audit at 320/360/390/412 px for cut text, wrapped placeholders, round-corner clipping, elements outside their card, and tap targets in the More sheet (0 findings).
+
 ## 0.6.0 — 2026-10-23 (branch `atlas/windows-agent`)
 
 ### Added
 - Desktop agent typed actions (`backend/app/agent.py`): `open_app` (allowlisted apps), `list_folder` and `search_files` (read-only, approved folders only). They run as tasks, always wait for approval of their exact parameters, and record who approved them.
 - `ATLAS_AGENT_FOLDERS` to choose approved folders (default: Documents, Downloads, Desktop).
 - Tasks screen: a PC actions form, approval cards that say exactly what will happen, and file results.
+
+### Changed (mobile redesign)
+- Phones get a bottom tab bar (Home, AI Chat, Tasks, Memory, More), a sticky top bar with live status, and a "More" sheet with every section and the system status. The squeezed quick-plan bar is hidden on phones.
+- Chat: message bubbles, a collapsible model drawer with a route badge (local or cloud), an empty state with suggestions, and a composer that grows with the text and sticks above the tab bar.
+- Bigger touch targets (44 px), 16 px inputs (no zoom on focus), horizontal agent cards, fixed oversized status dots.
+- Browser test checks every screen at phone width for anything cut off past the screen edge.
 
 ### Changed
 - `/api/desktop/status` also lists approved folders and actions. `/api/desktop/launch` uses the same launcher code.
