@@ -65,6 +65,7 @@
   // goes to the next provider the visitor added a key for. Each key still goes only to its own
   // provider, in its own request; the function never sees two keys at once.
   const SWITCH_ON = /HTTP (429|5\d\d)\b|rate limit|quota|overloaded|unavailable|timed? ?out|empty answer/i;
+  const isText = (v) => typeof v === 'string' && v.length > 0;
   const firstModels = new Map();
   async function firstModel(provider, apiKey) {
     if (!firstModels.has(provider)) {
@@ -79,7 +80,7 @@
     const send = (provider, apiKey, model) => cloud('chat', { method: 'POST', body: { provider, api_key: apiKey, model, messages: body.messages, stream } });
     const first = await send(body.provider, body.api_key || '', body.model);
     const others = body.allow_fallback && Array.isArray(body.fallback_keys)
-      ? body.fallback_keys.filter((f) => f && typeof f.provider === 'string' && f.provider !== body.provider && typeof f.api_key === 'string' && f.api_key) : [];
+      ? body.fallback_keys.filter((f) => f && isText(f.provider) && f.provider !== body.provider && isText(f.api_key)) : [];
     if (first.ok || !others.length || (first.status !== 429 && first.status < 500)) return first;
     const detail = String((await first.clone().json().catch(() => ({}))).detail || 'HTTP ' + first.status);
     if (!SWITCH_ON.test(detail)) return first;
