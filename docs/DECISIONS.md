@@ -33,4 +33,6 @@
 
 Voice (D) waits on local STT/TTS engine selection and real hardware.
 
+**D-014 Desktop actions are tasks that always need approval.** Reusing the task engine gives states, cancel, audit events and approval hashes for free. Until there is evidence that a risk policy can safely auto-approve anything, every action (even read-only) waits for a person. File access starts read-only; writes and deletes need their own design (undo, trash, dry run).
+
 **D-013 Per-device tokens in a JSON file, not the database.** Device records must work even when server storage is off (production default), and there are at most 20 of them. Only SHA-256 hashes are stored; pairing codes live in memory only, so a restart simply invalidates them. Paired devices can use every feature but cannot pair or remove other devices.

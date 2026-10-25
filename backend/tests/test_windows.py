@@ -44,3 +44,22 @@ def test_desktop_agent_stays_off_by_default(monkeypatch):
 def test_default_data_dir_is_under_localappdata(monkeypatch):
     monkeypatch.delenv("ATLAS_DATA_DIR")
     assert str(storage.default_data_dir()).lower().startswith(os.environ["LOCALAPPDATA"].lower())
+
+
+def test_file_actions_on_real_windows_paths(monkeypatch, tmp_path):
+    docs = tmp_path / "Documents"
+    (docs / "College").mkdir(parents=True)
+    (docs / "College" / "Notes.TXT").write_text("x")
+    (tmp_path / "secret").mkdir()
+    monkeypatch.setenv("ATLAS_ENABLE_DESKTOP_AGENT", "true")
+    monkeypatch.setenv("ATLAS_AGENT_FOLDERS", f"documents={docs}")
+    from app import agent
+    assert agent.list_folder("documents")["entries"][0]["name"] == "College"
+    assert agent.search_files("documents", "notes")["results"] == [{"path": "College/Notes.TXT", "type": "file"}]
+    for escape in ("..\\secret", "College\\..\\..\\secret", "C:\\Windows"):
+        try:
+            agent.list_folder("documents", escape)
+        except agent.AgentError as exc:
+            assert exc.code in ("outside_folder", "not_a_folder"), (escape, exc.code)
+        else:
+            raise AssertionError(f"{escape} was allowed")

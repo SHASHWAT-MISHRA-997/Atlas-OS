@@ -134,7 +134,11 @@ def fake_ollama():
 @pytest.fixture(scope="module")
 def server(fake_ollama, tmp_path_factory):
     port = free_port()
+    docs = tmp_path_factory.mktemp("agent-docs")
+    (docs / "college").mkdir()
+    (docs / "college" / "dbms-notes.pdf").write_bytes(b"x")
     env = {**os.environ, "ATLAS_OLLAMA_BASE_URL": f"http://127.0.0.1:{fake_ollama.port}",
+           "ATLAS_ENABLE_DESKTOP_AGENT": "true", "ATLAS_AGENT_FOLDERS": f"docs={docs}",
            "ATLAS_DATA_DIR": str(tmp_path_factory.mktemp("atlas-data")),
            "ATLAS_API_TOKEN": E2E_TOKEN, "ATLAS_AUTH_REQUIRED": "true",
            "ATLAS_LLM_RATE_LIMIT_PER_MINUTE": "1000", "PYTHONPATH": str(BACKEND)}
@@ -430,3 +434,17 @@ def test_owner_pairs_a_second_device_from_the_ui_and_removes_it(page, browser, s
     phone.wait_for_selector("#pairbanner")
     assert page.errors == []
     phone_ctx.close()
+
+
+def test_pc_action_waits_for_approval_then_searches_files(page):
+    page.get_by_role("button", name="Tasks").click()
+    page.select_option("#actionkind", "search_files")
+    page.select_option("#actionfolder", "docs")
+    page.fill("#actionquery", "dbms")
+    page.get_by_role("button", name="Ask for approval").click()
+    card = page.locator(".task", has_text="Search 'dbms' in docs").first
+    playwright_sync.expect(card.locator(".task-state")).to_have_text("AWAITING APPROVAL", timeout=5000)
+    card.get_by_role("button", name="Approve: Search 'dbms' in docs").click()
+    playwright_sync.expect(card.locator(".task-state")).to_have_text("SUCCEEDED", timeout=5000)
+    playwright_sync.expect(card).to_contain_text("college/dbms-notes.pdf")
+    assert page.errors == []

@@ -16,7 +16,7 @@ from .routers import desktop, llm, memory, tasks
 from .routers import devices as devices_router
 from .security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 
 CANDIDATE_ROOT = Path(__file__).resolve().parents[2]
 ROOT = CANDIDATE_ROOT if (CANDIDATE_ROOT / "frontend" / "index.html").exists() else Path(__file__).resolve().parents[1]

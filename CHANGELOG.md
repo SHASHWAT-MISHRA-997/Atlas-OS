@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 — 2026-10-23 (branch `atlas/windows-agent`)
+
+### Added
+- Desktop agent typed actions (`backend/app/agent.py`): `open_app` (allowlisted apps), `list_folder` and `search_files` (read-only, approved folders only). They run as tasks, always wait for approval of their exact parameters, and record who approved them.
+- `ATLAS_AGENT_FOLDERS` to choose approved folders (default: Documents, Downloads, Desktop).
+- Tasks screen: a PC actions form, approval cards that say exactly what will happen, and file results.
+
+### Changed
+- `/api/desktop/status` also lists approved folders and actions. `/api/desktop/launch` uses the same launcher code.
+
 ## 0.5.0 — 2026-10-23 (branch `atlas/v7-foundation`, not yet released)
 
 ### Added
