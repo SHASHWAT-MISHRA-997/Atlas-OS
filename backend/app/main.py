@@ -16,6 +16,7 @@ from .config import get_settings
 from .providers import ProviderError, ollama_status
 from .routers import desktop, llm, memory, tasks
 from .routers import devices as devices_router
+from .routers import docs as docs_router
 from .security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 
 VERSION = "0.7.0"
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
     application.include_router(desktop.router)
     application.include_router(tasks.router)
     application.include_router(memory.router)
+    application.include_router(docs_router.router)
     application.include_router(devices_router.router)
 
     @application.get("/health")

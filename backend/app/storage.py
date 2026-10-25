@@ -94,6 +94,35 @@ MIGRATIONS: list[str] = [
     """
     CREATE INDEX chat_created ON chat_messages(created_at);
     """,
+    # 4: document search index (app/docsearch.py): text of files in approved folders
+    """
+    CREATE TABLE doc_files (
+        folder TEXT NOT NULL,
+        path TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        mtime REAL NOT NULL,
+        chunks INTEGER NOT NULL,
+        error TEXT,
+        indexed_at TEXT NOT NULL,
+        PRIMARY KEY (folder, path)
+    );
+    CREATE TABLE doc_chunks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        folder TEXT NOT NULL,
+        path TEXT NOT NULL,
+        chunk INTEGER NOT NULL,
+        text TEXT NOT NULL
+    );
+    CREATE INDEX doc_chunks_file ON doc_chunks(folder, path);
+    CREATE VIRTUAL TABLE doc_chunks_fts USING fts5(text, content='doc_chunks', content_rowid='id',
+                                                  tokenize='unicode61 remove_diacritics 2');
+    CREATE TRIGGER doc_chunks_ai AFTER INSERT ON doc_chunks BEGIN
+        INSERT INTO doc_chunks_fts(rowid, text) VALUES (new.id, new.text);
+    END;
+    CREATE TRIGGER doc_chunks_ad AFTER DELETE ON doc_chunks BEGIN
+        INSERT INTO doc_chunks_fts(doc_chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
+    END;
+    """,
 ]
 
 
