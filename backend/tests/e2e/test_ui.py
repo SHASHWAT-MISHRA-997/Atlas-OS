@@ -218,6 +218,13 @@ def open_model_settings(page):
         page.locator("#chatsettings > summary").click()
 
 
+def type_model(page, model):
+    """Type a model ID: once models are listed, the text box is behind "Other" in the dropdown."""
+    if page.locator("#atlasmodelpick").is_visible():
+        page.select_option("#atlasmodelpick", "__other__")
+    page.fill("#atlasmodel", model)
+
+
 def test_status_panel_shows_real_backend_and_ollama_state(page):
     page.wait_for_selector("text=API online")
     assert page.locator("#sysstatus").inner_text().count("2 local model(s)") == 1
@@ -239,6 +246,10 @@ def test_local_chat_streams_answer_and_labels_provider(page, fake_ollama):
     open_chat(page)
     assert page.locator("#atlasprovider").input_value() == "ollama"
     assert page.locator("#atlasmodel").input_value() == "fake-small:1b"
+    # Installed models are a real dropdown (phones hide datalist entries that do not match the typed text).
+    options = page.locator("#atlasmodelpick option").all_text_contents()
+    assert "fake-small:1b" in options and options[-1] == "Other: type a model ID" and len(options) >= 3
+    assert page.locator("#atlasmodelpick").input_value() == "fake-small:1b"
     assert page.locator("text=Data routing: messages go to Ollama").count() == 1
     page.fill("textarea[aria-label=Message]", "namaste ATLAS")
     page.click("button:has-text('Send')")
@@ -259,7 +270,7 @@ def test_local_chat_streams_answer_and_labels_provider(page, fake_ollama):
 def test_stop_button_cancels_generation_and_upstream(page, fake_ollama):
     open_chat(page)
     open_model_settings(page)
-    page.fill("#atlasmodel", "fake-slow:1b")
+    type_model(page, "fake-slow:1b")
     page.fill("textarea[aria-label=Message]", "long answer please")
     page.click("button:has-text('Send')")
     page.wait_for_selector("text=word3")
@@ -273,7 +284,7 @@ def test_stop_button_cancels_generation_and_upstream(page, fake_ollama):
 def test_provider_errors_are_shown_as_errors_not_answers(page):
     open_chat(page)
     open_model_settings(page)
-    page.fill("#atlasmodel", "fake-missing")
+    type_model(page, "fake-missing")
     page.fill("textarea[aria-label=Message]", "hello")
     page.click("button:has-text('Send')")
     page.wait_for_selector(".bubble.error")
@@ -285,7 +296,7 @@ def test_cloud_provider_requires_key_and_billing_acknowledgement(page, fake_olla
     before = len(fake_ollama.chat_requests)
     open_model_settings(page)
     page.select_option("#atlasprovider", "groq")
-    page.fill("#atlasmodel", "some-model")
+    type_model(page, "some-model")
     page.fill("textarea[aria-label=Message]", "hello")
     page.click("button:has-text('Send')")
     page.wait_for_selector("text=Paste your Groq API key")
@@ -679,7 +690,7 @@ def test_browser_actions_wait_for_approval(page):
 def test_fallback_model_answers_only_when_ticked_and_is_labelled(page, fake_ollama):
     open_chat(page)
     open_model_settings(page)
-    page.fill("#atlasmodel", "fake-missing")
+    type_model(page, "fake-missing")
     page.fill("textarea[aria-label=Message]", "fallback please")
     page.click("button:has-text('Send')")
     playwright_sync.expect(page.locator(".chatstatus")).to_contain_text("does not recognise this model", timeout=10000)
@@ -690,7 +701,7 @@ def test_fallback_model_answers_only_when_ticked_and_is_labelled(page, fake_olla
     playwright_sync.expect(reply.locator(".meta")).to_contain_text("fallback: Ollama (local) failed, model not found", timeout=10000)
     assert fake_ollama.chat_requests[-1]["model"] == "fake-small:1b"
     page.uncheck("#atlasfallback")
-    page.fill("#atlasmodel", "fake-small:1b")
+    type_model(page, "fake-small:1b")
 
 
 def test_home_plan_uses_the_local_model_once_one_is_chosen(page):

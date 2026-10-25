@@ -31,8 +31,8 @@ after(async () => {
   server?.kill();
 });
 
-async function phone() {
-  const context = await browser.newContext({ viewport: { width: 360, height: 760 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+async function phone(options = {}) {
+  const context = await browser.newContext({ ...options, viewport: { width: 360, height: 760 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   const page = await context.newPage();
   page.errors = [];
   page.on('pageerror', (e) => page.errors.push(String(e)));
@@ -104,6 +104,14 @@ test('a visitor gets a free key, chats, plans, and the key stays on their phone'
   await page.click('#keycardsave');
   await page.waitForSelector('#keycard', { state: 'hidden' });
   await page.waitForFunction(() => /^fake-/.test(document.querySelector('#atlasmodel')?.value || ''));
+  // Every model the key can use is offered in a dropdown, not one pre-filled text box.
+  const models = await page.$$eval('#atlasmodelpick option', (os) => os.map((o) => o.textContent));
+  assert.ok(models.length >= 3 && models.at(-1) === 'Other: type a model ID', 'model dropdown: ' + models.join(', '));
+  assert.equal(await page.$eval('#atlasmodel', (i) => i.classList.contains('hidden')), true);
+  await page.click('#chatsettings summary');
+  await page.locator('#atlasmodelpick').scrollIntoViewIfNeeded();
+  await shot(page, '6-model-dropdown');
+  await page.click('#chatsettings summary');
   await page.fill('.composer-input', 'namaste');
   await page.click('.sendbtn');
   await page.waitForSelector('.bubble >> text=FAKE reply to: namaste');
@@ -182,4 +190,29 @@ test('a visitor gets a free key, chats, plans, and the key stays on their phone'
 
   for (const p of [page, other]) assert.deepEqual(p.errors, []);
   await Promise.all([page, other].map((p) => p.context().close()));
+});
+
+test('a new version is announced with "Update now", and "Check for update" works', async () => {
+  // Requests from the service worker bypass page.route, so this test runs without it.
+  const page = await phone({ serviceWorkers: 'block' });
+  const version = (await import('node:fs')).readFileSync(root + 'VERSION', 'utf8').trim();
+  await page.goto(base + '/');
+  await page.waitForSelector('#topstatus >> text=Cloud');
+  // Same version as the page: nothing to update.
+  await page.click('#morebtn');
+  await page.click('#checkupdate');
+  await page.waitForSelector('#updatenote >> text=You have the latest version (' + version + ')');
+  assert.equal(await page.locator('#updatebanner').count(), 0);
+  // A newer deploy: a banner says so and "Update now" reloads the page.
+  await page.route('**/version.json*', (route) => route.fulfill({ contentType: 'application/json', body: '{"version":"9.9.9"}' }));
+  await page.click('#checkupdate');
+  await page.waitForSelector('#updatebanner >> text=ATLAS 9.9.9 is ready (you have ' + version + ')');
+  assert.equal(await page.isVisible('#sidebar.open'), false, 'menu closes so the banner is seen');
+  await shot(page, '5-update-banner');
+  await noSideScroll(page);
+  await Promise.all([page.waitForEvent('load'), page.click('#updatenow')]);
+  // After the reload the app checks again by itself (the fake deploy is still "newer").
+  await page.waitForSelector('#updatebanner', { timeout: 10000 });
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
 });
