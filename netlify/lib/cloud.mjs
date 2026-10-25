@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.13.2';
+export const VERSION = '0.13.3';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -38,14 +38,27 @@ export const PROVIDERS = {
 };
 export const PROVIDER_ORDER = ['groq', 'gemini', 'openrouter'];
 
+const MAX_BODY = 400_000;
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
-  status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
 });
 const fail = (status, code, detail) => json({ code, detail }, status);
 
+/**
+ * True when a browser says the request came from another website. The app itself always calls
+ * from the same origin; other sites get no answer (and no CORS headers, so they could not read one).
+ */
+function fromOtherSite(req, url) {
+  const site = req.headers.get('sec-fetch-site');
+  if (site === 'cross-site' || site === 'same-site') return true;
+  const origin = req.headers.get('origin');
+  if (!origin || site === 'same-origin') return false;
+  try { return new URL(origin).host !== url.host; } catch { return true; }
+}
+
 /** The provider with the visitor's key for this one request, or an error message. */
 function withKey(providers, id, key) {
-  const preset = Object.hasOwn(providers, id) ? providers[id] : null;
+  const preset = typeof id === 'string' && Object.hasOwn(providers, id) ? providers[id] : null;
   if (!preset) return { error: 'Unknown provider.' };
   if (typeof key !== 'string' || !KEY_RE.test(key.trim())) return { error: 'Enter your ' + preset.label + ' API key (Model settings → API key).' };
   return { p: { id, ...preset, key: key.trim() } };
@@ -226,7 +239,7 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
         controller.close();
       },
     });
-    return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' } });
+    return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no', 'X-Content-Type-Options': 'nosniff' } });
   }
 
   return async function handle(req) {
@@ -244,9 +257,13 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
       });
     }
     if (method !== 'POST' || !['/chat', '/models'].includes(path)) return fail(404, 'not_found', 'Unknown ATLAS cloud endpoint.');
+    if (fromOtherSite(req, url)) return fail(403, 'cross_site', 'ATLAS online only answers its own page.');
+    // JSON only: a plain HTML form on another site cannot send this content type.
+    if (!/^application\/json\s*(;|$)/i.test(req.headers.get('content-type') || '')) return fail(415, 'json_only', 'Send JSON (Content-Type: application/json).');
+    if (Number(req.headers.get('content-length')) > MAX_BODY) return fail(413, 'too_large', 'Request too large.');
 
     const text = await req.text();
-    if (text.length > 400_000) return fail(413, 'too_large', 'Request too large.');
+    if (text.length > MAX_BODY) return fail(413, 'too_large', 'Request too large.');
     let body;
     try { body = text ? JSON.parse(text) : {}; } catch { return fail(400, 'invalid_json', 'Request body must be JSON.'); }
     if (!body || typeof body !== 'object') return fail(400, 'invalid_json', 'Request body must be a JSON object.');

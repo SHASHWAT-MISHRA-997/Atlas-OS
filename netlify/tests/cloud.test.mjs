@@ -20,7 +20,7 @@ function setup({ upstream } = {}) {
   };
   const handle = createHandler({ fetchImpl });
   const call = (path, { method = 'GET', body, raw } = {}) => handle(new Request('https://atlas.example/cloud/' + path, {
-    method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: raw ?? (body ? JSON.stringify(body) : undefined),
+    method, headers: body || raw ? { 'Content-Type': 'application/json' } : {}, body: raw ?? (body ? JSON.stringify(body) : undefined),
   }));
   return { call, calls };
 }

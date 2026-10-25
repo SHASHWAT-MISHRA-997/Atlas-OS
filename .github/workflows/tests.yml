@@ -126,7 +126,7 @@ jobs:
       - name: Build the Netlify site
         run: node scripts/netlify/build.mjs
       - name: Function tests (fake model providers)
-        run: node --test netlify/tests/cloud.test.mjs
+        run: node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs
       - name: Browser tests of the online version (FAKE model)
         run: node --test netlify/tests/e2e.test.mjs
       - name: Dependency audit

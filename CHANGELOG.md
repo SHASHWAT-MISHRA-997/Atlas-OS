@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.13.3 — 2026-10-25 (branch `atlas/security-pass`)
+
+Security pass: I attacked the app myself, then fixed what got through. Every attack is now a test.
+- Online function, four gaps fixed:
+  - Requests from other websites (browser `Sec-Fetch-Site` cross-site, or a foreign `Origin`) now get 403.
+  - Only `application/json` is accepted (415), so HTML forms on other sites cannot post.
+  - A provider sent as an array (`["groq"]`) was accepted; it now must be a string.
+  - JSON and stream replies now carry `X-Content-Type-Options: nosniff`.
+  - Oversized bodies are also refused from `Content-Length` before reading.
+- New `netlify/tests/attack.test.mjs` (9 tests) tries:
+  - header injection through the key;
+  - proxying to other hosts and paths through model IDs;
+  - prototype tricks;
+  - smuggling tools, roles or base URLs;
+  - cross-site calls and form posts;
+  - huge and deeply nested bodies;
+  - leaking the key in errors.
+  It runs in CI.
+- New browser test: HTML/script in a memory and in a chat reply never runs, and a prompt-injection message cannot get the key, because the key is never put into the prompt.
+- New `backend/tests/test_attack_sqli.py`: 11 SQL injection payloads against 10 storage endpoints on the PC app. No errors, no leaked rows, no changed tables.
+- Rate limit unchanged and confirmed in the live deploy: 60 requests a minute per visitor (Netlify), output capped at 2,048 tokens. The PC API keeps its own LLM rate limit (`test_llm_rate_limit_returns_429_with_retry_after`).
+- Threat model: T36 corrected (3 provider hosts), T38 (cross-site) and T39 (injection) added.
+
 ## 0.13.2 — 2026-10-25 (branch `atlas/update-notify`)
 
 - Update notice (PC app and online): when a newer version is deployed, a "New version available" banner appears with "Update now" (reloads into the new version) and "Later". The app checks on open, when it comes back on screen (at most every 5 minutes) and every 30 minutes. It only works while the app is open; there are no push notifications.

@@ -5,7 +5,7 @@
   "description": "Netlify build of the ATLAS OS online edition (frontend + one function). The local app lives in backend/.",
   "scripts": {
     "build": "node scripts/netlify/build.mjs",
-    "test": "node --test netlify/tests/cloud.test.mjs",
+    "test": "node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs",
     "dev": "node scripts/netlify/dev-server.mjs"
   },
   "engines": {
