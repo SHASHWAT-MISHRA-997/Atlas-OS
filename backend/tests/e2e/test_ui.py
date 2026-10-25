@@ -563,3 +563,60 @@ def test_voice_language_and_voice_choice_are_used_for_read_aloud(browser, server
     spoken = pg.evaluate("() => window.__spoken")
     assert spoken[-1] == {"text": "Echo: namaste bolo", "lang": "hi-IN", "voice": "Test Hindi (device)"}
     context.close()
+
+
+def axe_violations(pg, label):
+    from axe_playwright_python.sync_playwright import Axe
+    results = Axe().run(pg, options={"runOnly": {"type": "tag", "values": ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]}})
+    found = []
+    for v in results.response["violations"]:
+        if v["impact"] in ("serious", "critical"):
+            targets = [", ".join(n["target"]) for n in v["nodes"]][:4]
+            found.append(f"[{label}] {v['id']} ({v['impact']}): {v['help']} -> {targets}")
+    return found
+
+
+@pytest.mark.parametrize("viewport", [{"width": 1280, "height": 900}, {"width": 390, "height": 844}], ids=["desktop", "phone"])
+def test_every_screen_passes_automated_accessibility_checks(browser, server, viewport):
+    """axe-core (WCAG 2.1 A/AA rules). Automated checks find only part of real accessibility problems."""
+    context = browser.new_context(viewport=viewport, is_mobile=viewport["width"] < 700)
+    pg = context.new_page()
+    pg.goto(server + "/")
+    playwright_sync.expect(pg.locator("#topstatus")).to_contain_text("Online")
+    problems = axe_violations(pg, "home")
+    phone = viewport["width"] < 700
+    for name in ["AI Chat", "Tasks", "Memory", "Agents", "Projects", "Automations", "Integrations", "Devices"]:
+        if phone:
+            if name in ("AI Chat", "Tasks", "Memory"):
+                pg.locator(".tabbar").get_by_role("button", name=name).click()
+            else:
+                pg.locator("#morebtn").click()
+                pg.locator("#sidebar").get_by_role("button", name=name).click()
+        else:
+            pg.locator("#sidebar").get_by_role("button", name=name).click()
+        pg.wait_for_timeout(400)
+        if name == "AI Chat":
+            open_model_settings(pg)
+        problems += axe_violations(pg, name)
+    if phone:
+        pg.locator("#morebtn").click()
+        pg.wait_for_timeout(400)
+        problems += axe_violations(pg, "More sheet")
+    context.close()
+    assert problems == [], "\n".join(problems)
+
+
+def test_more_sheet_keeps_keyboard_focus_inside_and_returns_it(browser, server):
+    context = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True)
+    pg = context.new_page()
+    pg.goto(server + "/")
+    pg.locator("#morebtn").focus()
+    pg.keyboard.press("Enter")
+    playwright_sync.expect(pg.locator("#sidebar.open")).to_have_count(1)
+    assert pg.evaluate("() => document.activeElement.closest('#sidebar') !== null")
+    assert pg.evaluate("() => document.getElementById('main').inert")
+    pg.keyboard.press("Escape")
+    playwright_sync.expect(pg.locator("#sidebar.open")).to_have_count(0)
+    assert pg.evaluate("() => document.activeElement.id") == "morebtn"
+    assert not pg.evaluate("() => document.getElementById('main').inert")
+    context.close()

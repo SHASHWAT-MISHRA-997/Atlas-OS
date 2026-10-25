@@ -1353,16 +1353,23 @@
     refresh();
   }
 
-  function setSheet(open) {
+  function setSheet(open, returnFocus = true) {
+    const wasOpen = $('sidebar').classList.contains('open');
     $('sidebar').classList.toggle('open', open);
     $('sheetbackdrop').classList.toggle('hidden', !open);
     $('morebtn').setAttribute('aria-expanded', String(open));
     $('morebtn').classList.toggle('active', open);
+    if (!matchMedia('(max-width: 700px)').matches) return;
+    // While the sheet is open, keyboard and screen-reader focus stay inside it.
+    $('main').inert = open;
+    document.querySelector('.tabbar').inert = open;
+    if (open && !wasOpen) $('sidebar').querySelector('.nav button').focus();
+    if (!open && wasOpen && returnFocus) $('morebtn').focus();
   }
 
   function showSection(button) {
     const page = button.dataset.section;
-    setSheet(false);
+    setSheet(false, false);
     document.querySelectorAll('[data-section]').forEach((x) => {
       const on = x.dataset.section === page;
       x.classList.toggle('active', on);
