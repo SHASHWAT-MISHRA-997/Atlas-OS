@@ -1,9 +1,13 @@
-# Handoff — 2026-10-25 (v0.10.0)
+# Handoff — 2026-10-25 (v0.11.0)
 
 ## State
 
-- `main` holds v0.9.0 (PRs #1–#6 merged). Branch `atlas/cloud` holds v0.10.0 (the online version). Claude pushes as GitHub user `SRM100`, a Write collaborator.
-- The full app runs on the owner's own computer. The online version is the Netlify project `atlas-os-sm` (site id `d61caa99-389d-418d-8f50-f49928bf0c2c`), created from this workspace on 2026-10-25. This workspace's network cannot reach Netlify, so it cannot upload a deploy or open the live site itself; deploys come from Netlify building the GitHub repository once the owner links it (see `docs/CLOUD.md`).
+- `main` holds v0.10.0 (PRs #1–#7 merged). Branch `atlas/byok` holds v0.11.0: the online version uses each visitor's own key. Claude pushes as GitHub user `SRM100`, a Write collaborator.
+- The full app runs on the owner's own computer. The online version is the Netlify project `atlas-os-sm` (site id `d61caa99-389d-418d-8f50-f49928bf0c2c`), created from this workspace on 2026-10-25. The owner linked the GitHub repository on 2026-10-25, so Netlify deploys every merge to `main`. This workspace's network cannot reach Netlify or the live site; check deploys with the Netlify MCP tools or ask the owner for a screenshot.
+
+## New in v0.11
+
+The online version is bring-your-own-key: no sign-in, each visitor pastes their own key (optionally remembered on that phone), and the owner's keys and Netlify credits are never used. See `docs/CLOUD.md` and D-024.
 
 ## New in v0.10
 
@@ -29,12 +33,11 @@ Document search (index approved folders, search, "Use my documents" in chat), sa
 | Personal Windows 11 PC check (installer, agent, media keys, Office files, voice) | A Windows PC. The owner currently has only a phone |
 | Real local speech model and voice (quality on Hindi/Hinglish, hands-free accuracy) | A PC that can reach Hugging Face; press Download in AI Chat → Model settings |
 | Real phone over Wi-Fi or Tailscale, PWA install, QR scan | A phone plus the PC running ATLAS; follow `REMOTE_ACCESS.md` |
-| Real cloud provider test | The owner's own key set in Netlify (`GROQ_API_KEY` or `GEMINI_API_KEY`) or locally as `ATLAS_<PROVIDER>_API_KEY`. Never paste it into chat |
-| First live deploy of the online version | The owner links the GitHub repository to the Netlify project once (Netlify → atlas-os-sm → Link repository) |
+| Real cloud provider test | The owner pastes their own key in the live site's Model settings (or sets `ATLAS_<PROVIDER>_API_KEY` locally). Never paste it into chat |
 
 ## Next tasks, in order
 
-1. Link the repository in Netlify, check the first deploy, claim the site, add a key, and send a real chat.
+1. The owner sends a real chat on the live site with their own key, to verify a real provider end to end.
 2. Remove `ATLAS_OS_Research_Starter_v4.zip` from `main` once the owner agrees.
 3. Hardware checks from the blockers above, using `TEST_PLAN.md` §Manual.
 4. Optional embedding search on top of the keyword index (D-016); OCR for scanned PDFs.

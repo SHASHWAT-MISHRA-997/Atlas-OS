@@ -89,6 +89,20 @@
     }
   }
 
+  // Online version: each visitor's own provider keys. Kept for this page visit only, or in this
+  // browser when the visitor ticks "Remember". They are sent only with that visitor's own requests.
+  const CLOUD_KEY_PREFIX = 'atlas.cloud.key.';
+  const sessionKeys = {};
+  const cloudKey = {
+    get(id) { return sessionKeys[id] || storageGet(CLOUD_KEY_PREFIX + id, '') || ''; },
+    remembered(id) { return !!storageGet(CLOUD_KEY_PREFIX + id, ''); },
+    set(id, key, remember) {
+      sessionKeys[id] = key;
+      if (remember && key) storageSet(CLOUD_KEY_PREFIX + id, key);
+      else try { localStorage.removeItem(CLOUD_KEY_PREFIX + id); } catch { /* storage off */ }
+    },
+  };
+
   function storageSet(key, value) {
     try {
       localStorage.setItem(key, JSON.stringify(value));
@@ -146,19 +160,18 @@
       systemStatus = await api('/api/system/status');
       const s = systemStatus;
       if (s.cloud) {
-        const names = s.cloud.providers.map((p) => p.label).join(', ');
+        const withKey = s.cloud.providers.filter((p) => cloudKey.get(p.id)).map((p) => p.label);
         box.replaceChildren(
           statusRow('', 'ATLAS online (v' + s.api.version + ')'),
-          statusRow(names ? 'warn' : 'off', names ? 'AI: ' + names + ' (cloud)' : 'AI: no key set up yet'),
+          statusRow(withKey.length ? 'warn' : 'off', withKey.length ? 'AI: your ' + withKey.join(', ') + ' key' : 'AI: add your API key in AI Chat'),
           statusRow('off', 'PC actions: need ATLAS on your PC'),
-          statusRow('off', 'Memory: this browser only'),
-          statusRow('', 'Signed in: ' + (s.cloud.me ? s.cloud.me.name + (s.cloud.me.kind === 'owner' ? ' (owner)' : '') : 'no')),
+          statusRow('off', 'Memory and keys: this browser only'),
         );
         $('ollamastat').textContent = 'Off';
-        $('topstatus').replaceChildren(el('span', { class: 'dot ' + (names ? '' : 'off'), 'aria-hidden': 'true' }), el('span', { text: (names ? 'AI ready' : 'AI not set up') + ' · Cloud' }));
-        $('topstatus').title = names ? 'Cloud AI ready: ' + names : 'Add an AI key in Netlify to chat';
+        $('topstatus').replaceChildren(el('span', { class: 'dot ' + (withKey.length ? '' : 'off'), 'aria-hidden': 'true' }), el('span', { text: (withKey.length ? 'AI ready' : 'Add your key') + ' · Cloud' }));
+        $('topstatus').title = withKey.length ? 'Using your own key: ' + withKey.join(', ') : 'Open AI Chat → Model settings and paste your own API key';
         document.querySelector('#home .subtitle').textContent = 'Describe the outcome. ATLAS asks your cloud AI model for a plan you can inspect. Nothing is executed.';
-        document.querySelector('footer').textContent = 'ATLAS OS online · Chat goes to the cloud AI model shown in AI Chat. Memory and chat history stay in this browser. Do not enter passwords or sensitive data.';
+        document.querySelector('footer').textContent = 'ATLAS OS online · Each person uses their own AI key. Chat goes to the provider you pick. Memory, history and a remembered key stay in this browser. Do not enter passwords or sensitive data in chats.';
         return;
       }
       box.replaceChildren(
@@ -201,13 +214,14 @@
       return model ? { provider: 'ollama', model, where: 'on this PC' } : null;
     }
     const providers = systemStatus.cloud.providers;
-    if (!providers.length) throw new Error('No AI key is set up yet. Follow "Set up AI" at the top of the page.');
     const saved = storageGet(CHAT_SETTINGS_KEY, {});
-    const p = providers.find((x) => x.id === saved.provider) || providers[0];
+    const p = providers.find((x) => x.id === saved.provider) || providers.find((x) => cloudKey.get(x.id)) || providers[0];
+    const apiKey = cloudKey.get(p.id);
+    if (!apiKey) throw new Error('Add your own ' + p.label + ' API key first: AI Chat → Model settings → API key.');
     let model = p.id === saved.provider ? saved.model : '';
-    if (!model) model = ((await api('/api/llm/models', { method: 'POST', body: { provider: p.id } })).models || [])[0] || '';
+    if (!model) model = ((await api('/api/llm/models', { method: 'POST', body: { provider: p.id, api_key: apiKey } })).models || [])[0] || '';
     if (!model) throw new Error('No model is available from ' + p.label + '. Pick one in AI Chat → Model settings.');
-    return { provider: p.id, model, where: 'on ' + p.label + ' (cloud)' };
+    return { provider: p.id, model, apiKey, where: 'on ' + p.label + ' (cloud)' };
   }
 
   async function runTask() {
@@ -233,7 +247,7 @@
         const saved = target;
         // A real plan written by the local model, as a background task (same as Tasks → Plan a goal).
         message.textContent = 'Asking ' + saved.model + ' ' + saved.where + ' for a plan…';
-        let task = await api('/api/tasks', { method: 'POST', body: { kind: 'plan', provider: saved.provider, model: saved.model, goal: cmd } });
+        let task = await api('/api/tasks', { method: 'POST', body: { kind: 'plan', provider: saved.provider, model: saved.model, api_key: saved.apiKey, goal: cmd } });
         const until = Date.now() + 180000;
         while (!TASK_TERMINAL.includes(task.state) && Date.now() < until) {
           await new Promise((r) => setTimeout(r, 700));
@@ -837,7 +851,13 @@
     const modelList = el('datalist', { id: 'atlasmodels' });
     const loadModels = el('button', { class: 'btn', type: 'button', text: 'Load models' });
     const keyInput = el('input', { id: 'atlaskey', type: 'password', autocomplete: 'off', placeholder: 'Paste key for this page session' });
-    const keyField = el('label', { class: 'field' }, ['API KEY (SENT PER REQUEST, NOT SAVED)', keyInput]);
+    const keyField = el('label', { class: 'field' }, [isCloud() ? 'YOUR API KEY' : 'API KEY (SENT PER REQUEST, NOT SAVED)', keyInput]);
+    const rememberKey = el('input', { type: 'checkbox', id: 'atlasremember' });
+    const keyLink = el('a', { target: '_blank', rel: 'noopener' });
+    const keyHelp = isCloud() ? el('div', { class: 'keyhelp' }, [
+      el('label', { class: 'check' }, [rememberKey, 'Remember my key on this phone (saved only in this browser; anyone who uses this phone could use it)']),
+      el('p', { class: 'tiny muted' }, ['Each person uses their own key. It goes only to the provider you pick, through ATLAS online, which does not store it. ', keyLink]),
+    ]) : null;
     const streamToggle = el('input', { type: 'checkbox', id: 'atlasstream', checked: true });
     const billingAck = el('input', { type: 'checkbox', id: 'atlasbilling' });
     const billingLabel = el('span');
@@ -992,6 +1012,7 @@
         el('label', { class: 'field' }, ['MODEL', modelInput]),
         keyField,
       ]),
+      keyHelp,
       modelList,
       el('div', { class: 'row', style: 'margin-top:10px' }, [loadModels, el('label', { class: 'check', style: 'margin:0' }, [streamToggle, 'Stream replies'])]),
       modelStatus, billingBox, routing, fallbackBox,
@@ -1027,7 +1048,13 @@
       const p = current();
       updatePill();
       keyField.classList.toggle('hidden', !p.key_required);
-      keyInput.placeholder = p.server_key_configured ? 'Optional: server key configured' : 'Paste key for this page session';
+      keyInput.placeholder = p.server_key_configured ? 'Optional: server key configured' : isCloud() ? 'Paste your ' + p.label + ' key' : 'Paste key for this page session';
+      if (isCloud()) {
+        keyInput.value = cloudKey.get(p.id);
+        rememberKey.checked = cloudKey.remembered(p.id);
+        keyLink.href = p.key_url;
+        keyLink.textContent = 'Get a ' + p.label + ' key';
+      }
       billingBox.classList.toggle('hidden', p.local);
       billingLabel.textContent = isCloud()
         ? 'I understand that my messages go to ' + p.label + '. ' + (p.billing || '')
@@ -1150,6 +1177,11 @@
     }
 
     billingAck.addEventListener('change', () => { if (isCloud()) storageSet(CLOUD_ACK_KEY + current().id, billingAck.checked); });
+    if (isCloud()) {
+      const keepKey = () => { cloudKey.set(current().id, keyInput.value.trim(), rememberKey.checked); status.textContent = ''; refreshStatus(); };
+      keyInput.addEventListener('change', () => { keepKey(); if (keyInput.value.trim()) discoverModels(true); });
+      rememberKey.addEventListener('change', keepKey);
+    }
     providerSelect.addEventListener('change', () => {
       billingAck.checked = false;
       refreshProviderUi();
@@ -1342,8 +1374,14 @@
       const text = prompt.value.trim();
       const model = modelInput.value.trim();
       if (!text) { status.textContent = 'Enter a message first.'; return; }
+      if (p.key_required && !keyInput.value.trim() && !p.server_key_configured) {
+        status.textContent = isCloud() ? 'Paste your own ' + p.label + ' API key in Model settings first.' : 'Paste your ' + p.label + ' API key. It is sent with this request only and is not stored.';
+        settings.open = true;
+        keyInput.focus();
+        return;
+      }
+      if (isCloud()) cloudKey.set(p.id, keyInput.value.trim(), rememberKey.checked);
       if (!model) { status.textContent = p.local ? 'Pick an installed Ollama model (press Load models).' : 'Enter the exact model ID required by ' + p.label + '.'; return; }
-      if (p.key_required && !keyInput.value.trim() && !p.server_key_configured) { status.textContent = 'Paste your ' + p.label + ' API key. It is sent with this request only and is not stored.'; return; }
       if (!p.local && !billingAck.checked) { status.textContent = 'Confirm the data-routing and billing notice above before sending to ' + p.label + '.'; billingAck.focus(); return; }
 
       send.disabled = true;
@@ -1607,23 +1645,25 @@
     function refreshForm() {
       const p = current();
       keyField.classList.toggle('hidden', !p.key_required || p.server_key_configured);
+      if (isCloud() && !key.value) key.value = cloudKey.get(p.id);
       input.placeholder = kind.value === 'plan' ? 'Goal, e.g. "Plan a weekend trip to Jaipur on a student budget"' : 'Paste the text to summarize (up to 100,000 characters)';
       input.maxLength = kind.value === 'plan' ? 2000 : 100000;
     }
     kind.addEventListener('change', refreshForm);
     provider.addEventListener('change', async () => {
+      if (isCloud()) key.value = '';
       refreshForm();
       model.value = '';
       if (current().local || isCloud()) {
         try {
-          const data = await api('/api/llm/models', { method: 'POST', body: { provider: current().id } });
+          const data = await api('/api/llm/models', { method: 'POST', body: { provider: current().id, api_key: key.value.trim() } });
           if (data.models.length) model.value = data.models[0];
         } catch { /* user can type a model */ }
       }
     });
     refreshForm();
     if (!model.value && (current().local || isCloud())) {
-      api('/api/llm/models', { method: 'POST', body: { provider: current().id } }).then((d) => { if (!model.value && d.models.length) model.value = d.models[0]; }).catch(() => {});
+      api('/api/llm/models', { method: 'POST', body: { provider: current().id, api_key: key.value.trim() } }).then((d) => { if (!model.value && d.models.length) model.value = d.models[0]; }).catch(() => {});
     }
 
     form.addEventListener('submit', async (e) => {
@@ -1840,7 +1880,7 @@
   function renderIntegrations(v) {
     const s = systemStatus;
     const rows = s && s.cloud ? [
-      'Cloud AI models: ' + (s.cloud.providers.length ? s.cloud.providers.map((p) => p.label).join(', ') : 'none yet (add a key in Netlify)'),
+      'Cloud AI models with your own key: ' + s.cloud.providers.map((p) => p.label).join(', '),
       'Local models (Ollama), desktop agent, files, local voice: need ATLAS on your PC',
       'Calendar / email / messaging: not implemented', 'Other devices: pair them in Devices (one-time links, per-device logins)',
     ] : s ? [
@@ -1856,6 +1896,10 @@
   async function renderDevices(v) {
     await ensureStatus();
     v.replaceChildren(el('h2', { text: 'Devices' }));
+    if (isCloud()) {
+      v.append(el('p', { class: 'notice', text: 'Online, there is no sign-in or pairing. Anyone can open this page and use it with their own API key. Your key, memories and chat history stay in this browser on this phone; another phone starts empty. Use Memory → Export to move them.' }));
+      return;
+    }
     if (systemStatus && systemStatus.auth === 'off') {
       v.append(el('p', { class: 'warn', text: 'Login is switched off on this server (ATLAS_AUTH_REQUIRED=false), so anyone who can reach it can use it. Device pairing needs login on.' }));
       return;

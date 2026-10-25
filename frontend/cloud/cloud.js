@@ -1,24 +1,20 @@
-/* ATLAS OS cloud edition: browser half. Loaded before app.js only in the Netlify build.
+/* ATLAS OS online edition: browser half. Loaded before app.js only in the Netlify build.
  *
  * The normal ATLAS app talks to a backend on the owner's PC through /api/*. On Netlify there is no
  * such backend, so this file answers those calls in the browser:
- *   - AI Chat, plans and summaries go to the /cloud function, which calls a real cloud model with
- *     the key set in Netlify. Nothing is simulated.
+ *   - AI Chat, plans and summaries go to the /cloud function with the visitor's own API key, which
+ *     forwards them to that provider. Nothing is simulated, and the site owner's keys are never used.
  *   - Memories, chat history and tasks are stored in this browser (localStorage).
  *   - Things that need the PC (PC actions, document index, local voice, automations) answer with a
  *     clear "needs ATLAS on your PC" error instead of pretending.
- * It also shows the sign-in screen (claim this ATLAS, or join with a pairing link).
  */
 (() => {
   'use strict';
-  const TOKEN_KEY = 'atlas.cloud.token';
   const TASKS_KEY = 'atlas.cloud.tasks.v1';
   const realFetch = window.fetch.bind(window);
   const PC_ONLY = 'This needs ATLAS installed on your Windows PC. The online version cannot touch any computer.';
   const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-  const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } };
-  const setToken = (t) => { try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch { /* private mode */ } };
   const json = (body, status = 200) => new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
   const fail = (status, detail, code) => json({ detail, code: code || 'cloud' }, status);
   const now = () => new Date().toISOString();
@@ -26,8 +22,6 @@
 
   function cloud(path, init = {}) {
     const headers = { ...(init.headers || {}) };
-    const token = getToken();
-    if (token) headers.Authorization = 'Bearer ' + token;
     if (init.body !== undefined && typeof init.body !== 'string') {
       headers['Content-Type'] = 'application/json';
       init = { ...init, body: JSON.stringify(init.body) };
@@ -38,9 +32,9 @@
   async function cloudJson(path, init) {
     const response = await cloud(path, init);
     let data = null;
-    try { data = response.status === 204 ? null : await response.json(); } catch { data = {}; }
+    try { data = await response.json(); } catch { data = {}; }
     if (!response.ok) {
-      const err = new Error((data && data.detail) || 'ATLAS cloud answered HTTP ' + response.status);
+      const err = new Error((data && data.detail) || 'ATLAS online answered HTTP ' + response.status);
       err.status = response.status;
       err.code = data && data.code;
       throw err;
@@ -49,8 +43,8 @@
   }
 
   let statusPromise = null;
-  const status = (fresh) => {
-    if (fresh || !statusPromise) statusPromise = cloudJson('status').catch((err) => { statusPromise = null; throw err; });
+  const status = () => {
+    if (!statusPromise) statusPromise = cloudJson('status').catch((err) => { statusPromise = null; throw err; });
     return statusPromise;
   };
 
@@ -58,19 +52,16 @@
   async function providers() {
     const s = await status();
     const list = s.providers.map((p) => ({
-      id: p.id, label: p.label, key_required: false, local: false, billing: p.billing, enabled: true,
-      server_key_configured: true, capabilities: { streaming: true }, docs_url: p.docs_url,
+      id: p.id, label: p.label, key_required: true, local: false, enabled: true, server_key_configured: false,
+      billing: 'Uses your own ' + p.label + ' key and account. ' + p.note + ' Limits and prices are set by ' + p.label + ' and can change.',
+      capabilities: { streaming: true }, docs_url: p.key_url, key_url: p.key_url,
     }));
-    if (!list.length) {
-      list.push({ id: 'none', label: 'No AI key set up yet', key_required: false, local: false, billing: '', enabled: true,
-        server_key_configured: false, capabilities: { streaming: true }, docs_url: 'Settings → "Set up AI" on the Home screen' });
-    }
     return { default_provider: list[0].id, external_providers_enabled: true, providers: list, fallback: null,
       note: 'Model IDs, availability, pricing and free tiers are provider-controlled and can change.' };
   }
 
-  async function ask(provider, model, messages, maxTokens) {
-    const data = await cloudJson('chat', { method: 'POST', body: { provider, model, messages, stream: false, max_tokens: maxTokens } });
+  async function ask(provider, apiKey, model, messages, maxTokens) {
+    const data = await cloudJson('chat', { method: 'POST', body: { provider, api_key: apiKey, model, messages, stream: false, max_tokens: maxTokens } });
     return data.answer;
   }
 
@@ -79,6 +70,7 @@
   const tasks = loadTasks().map((t) => (['Queued', 'Running', 'Planning'].includes(t.state)
     ? { ...t, state: 'Failed', error: { code: 'interrupted', message: 'The page was closed while this task ran. Retry it.' }, finished_at: now() } : t));
   const saveTasks = () => { try { localStorage.setItem(TASKS_KEY, JSON.stringify(tasks.slice(0, 40))); } catch { /* full or private */ } };
+  const taskKeys = new Map(); // task id -> API key, in memory only (never saved with the task)
   saveTasks();
 
   const PLAN_SYSTEM = 'You are ATLAS OS\'s planner. Break the user\'s goal into 3-8 concrete steps. You cannot execute anything; '
@@ -104,12 +96,14 @@
 
   async function runTask(task) {
     const p = task.params;
+    const key = taskKeys.get(task.id);
     const progress = (done, total, note) => { task.progress = { done, total, note }; saveTasks(); };
     Object.assign(task, { state: task.kind === 'plan' ? 'Planning' : 'Running', started_at: now(), error: null, output: null });
     progress(0, 1, 'asking ' + p.model);
     try {
+      if (!key) throw Object.assign(new Error('Your API key is kept only while the page is open. Start the task again with your key.'), { code: 'key_needed' });
       if (task.kind === 'plan') {
-        const data = extractJson(await ask(p.provider, p.model, [{ role: 'system', content: PLAN_SYSTEM }, { role: 'user', content: p.goal }], 1200));
+        const data = extractJson(await ask(p.provider, key, p.model, [{ role: 'system', content: PLAN_SYSTEM }, { role: 'user', content: p.goal }], 1200));
         const steps = (data && Array.isArray(data.steps) ? data.steps : [])
           .filter((s) => s && typeof s.title === 'string' && s.title.trim()).slice(0, 8)
           .map((s) => ({ title: s.title.trim().slice(0, 200), detail: String(s.detail || '').trim().slice(0, 600) }));
@@ -125,12 +119,12 @@
         for (let i = 0; i < parts.length; i += 1) {
           if (task.state === 'Cancelled') return;
           progress(i, total, 'summarizing part ' + (i + 1) + ' of ' + parts.length);
-          partials.push(await ask(p.provider, p.model, [{ role: 'system', content: SUMMARY_SYSTEM }, { role: 'user', content: parts[i] }], 600));
+          partials.push(await ask(p.provider, key, p.model, [{ role: 'system', content: SUMMARY_SYSTEM }, { role: 'user', content: parts[i] }], 600));
         }
         let summary = partials[0];
         if (partials.length > 1) {
           progress(parts.length, total, 'combining part summaries');
-          summary = await ask(p.provider, p.model, [{ role: 'system', content: SUMMARY_SYSTEM + ' Merge these part summaries into one.' },
+          summary = await ask(p.provider, key, p.model, [{ role: 'system', content: SUMMARY_SYSTEM + ' Merge these part summaries into one.' },
             { role: 'user', content: partials.map((x, i) => 'Part ' + (i + 1) + ': ' + x).join('\n\n').slice(0, 12000) }], 800);
         }
         task.output = { summary, parts: parts.length, input_chars: p.text.length };
@@ -147,7 +141,8 @@
   async function createTask(body) {
     if (!['plan', 'summarize_text'].includes(body.kind)) return fail(422, PC_ONLY, 'pc_only');
     const s = await status();
-    if (!s.providers.some((p) => p.id === body.provider)) return fail(422, 'Set up an AI provider first (Home → Set up AI).', 'no_provider');
+    if (!s.providers.some((p) => p.id === body.provider)) return fail(422, 'Unknown provider.');
+    if (!body.api_key || !String(body.api_key).trim()) return fail(422, 'Enter your API key for this provider.');
     if (!body.model || !String(body.model).trim()) return fail(422, 'Choose a model.');
     const params = { provider: body.provider, model: String(body.model).trim() };
     if (body.kind === 'plan') {
@@ -160,6 +155,7 @@
     const task = { id: newId(), kind: body.kind, state: 'Queued', priority: body.priority || 0, params, resource: 'cloud',
       progress: { done: 0, total: 0, note: null }, output: null, error: null, created_at: now(), started_at: null, finished_at: null };
     tasks.unshift(task);
+    taskKeys.set(task.id, String(body.api_key).trim());
     saveTasks();
     runTask(task);
     return json(task, 202);
@@ -172,19 +168,15 @@
     if (path === '/api/system/status') {
       const s = await status();
       return json({ api: { status: 'ok', version: s.version, env: 'cloud' }, ollama: { available: false, count: 0, message: 'Not part of the online version' },
-        external_providers_enabled: true, desktop_agent_enabled: false, task_runner: 'browser', auth: 'token', memory_storage: 'browser-local',
-        cloud: { me: s.me, providers: s.providers, setup: s.setup } });
+        external_providers_enabled: true, desktop_agent_enabled: false, task_runner: 'browser', auth: 'none', memory_storage: 'browser-local',
+        cloud: { providers: s.providers, key_mode: s.key_mode } });
     }
     if (path === '/api/llm/providers') return json(await providers());
     if (path === '/api/llm/models') {
-      const provider = body.provider || url.searchParams.get('provider');
-      if (provider === 'none') return fail(422, 'No AI key is set up yet. See Home → Set up AI.');
-      return cloud('models?provider=' + encodeURIComponent(provider));
+      return cloud('models', { method: 'POST', body: { provider: body.provider || url.searchParams.get('provider'), api_key: body.api_key || '' } });
     }
     if (path === '/api/llm/chat/stream' || path === '/api/llm/chat') {
-      if (body.provider === 'none') return fail(422, 'No AI key is set up yet. See Home → Set up AI.');
-      // The browser never sends an API key: keys live in Netlify. Drop anything typed into a key box.
-      return cloud('chat', { method: 'POST', body: { provider: body.provider, model: body.model, messages: body.messages, stream: path.endsWith('stream') } });
+      return cloud('chat', { method: 'POST', body: { provider: body.provider, api_key: body.api_key || '', model: body.model, messages: body.messages, stream: path.endsWith('stream') } });
     }
     if (path === '/api/tasks/plan') {
       return json({ mode: 'simulation', command: body.command, steps: ['Understand goal and constraints', 'Assign relevant specialist roles', 'Prepare execution and verification checklist', 'Request permissions before real external actions'],
@@ -201,6 +193,7 @@
         saveTasks();
       } else if (m[2] === 'retry') {
         if (!['Failed', 'Cancelled'].includes(task.state)) return fail(409, 'Only failed or cancelled tasks can be retried.');
+        if (!taskKeys.has(task.id)) return fail(409, 'Your API key is kept only while the page is open. Start the task again with your key.');
         runTask(task);
       } else if (m[2]) {
         return fail(409, 'Online tasks start right away and cannot be paused or approved.');
@@ -213,22 +206,7 @@
     if (path === '/api/docs/search') return json({ query: url.searchParams.get('q'), results: [] });
     if (path === '/api/voice/status') return json({ engine_installed: false, models: [], available: [], download: { running: false, error: null }, languages: ['auto', 'en', 'hi'], notice: PC_ONLY });
     if (path === '/api/voice/tts/status') return json({ engine_installed: false, voices: [], available: [], download: { running: false, error: null }, notice: PC_ONLY });
-    if (path === '/api/devices/current') {
-      if (method === 'DELETE') {
-        const r = await cloud('me', { method: 'DELETE', body: {} });
-        if (r.ok) setToken('');
-        return r.ok ? json(null, 204) : r;
-      }
-      const s = await status();
-      return s.me ? json({ kind: s.me.kind, name: s.me.name }) : fail(401, 'Not signed in.', 'unauthorized');
-    }
-    if (path === '/api/devices/pairing' && method === 'POST') {
-      const data = await cloudJson('pairing', { method: 'POST', body: { name: body.name || null } });
-      const link = location.origin + '/#pair=' + data.code;
-      return json({ url: link, path: '/#pair=' + data.code, qr_svg: null, expires_at: data.expires_at }, 201);
-    }
-    if (path === '/api/devices' && method === 'GET') return cloud('devices');
-    if ((m = path.match(/^\/api\/devices\/([^/]+)$/)) && method === 'DELETE') return cloud('devices/' + encodeURIComponent(m[1]), { method: 'DELETE', body: {} });
+    if (path.startsWith('/api/devices')) return fail(409, 'Not needed online: there is no sign-in. Each phone uses its own API key, and its data stays on that phone.');
     if (path === '/api/automations' && method === 'GET') return json({ automations: [], days: DAYS });
     return fail(409, PC_ONLY, 'pc_only');
   }
@@ -245,102 +223,17 @@
     }
   };
 
-  // ------------------------------------------------------------ sign-in screen
-  function el(tag, attrs = {}, children = []) {
-    const node = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === 'text') node.textContent = v;
-      else node.setAttribute(k, v);
-    }
-    for (const c of [].concat(children)) if (c) node.append(typeof c === 'string' ? document.createTextNode(c) : c);
-    return node;
-  }
-
-  function gate(s, pairCode) {
-    const msg = el('p', { class: 'cg-msg', role: 'status', 'aria-live': 'polite' });
-    const name = el('input', { id: 'cgname', maxlength: '40', autocomplete: 'off', placeholder: 'e.g. My phone', value: pairCode ? '' : 'My phone' });
-    const fields = [el('label', { class: 'cg-field', for: 'cgname' }, ['NAME FOR THIS DEVICE', name])];
-    let code = null;
-    if (!pairCode && !s.claimed && s.access_code_required) {
-      code = el('input', { id: 'cgcode', type: 'password', autocomplete: 'off' });
-      fields.push(el('label', { class: 'cg-field', for: 'cgcode' }, ['ACCESS CODE (the one you set in Netlify)', code]));
-    }
-    let title, intro, button;
-    if (pairCode) {
-      title = 'Join this ATLAS';
-      intro = 'You opened a pairing link. This device gets its own sign-in, which the owner can remove at any time.';
-      button = 'Join';
-    } else if (!s.claimed) {
-      title = 'Make this ATLAS yours';
-      intro = 'This ATLAS has no owner yet. The first device to claim it becomes the owner; others can join only with a one-time link from the owner\'s device. Claim it only if this is your ATLAS.';
-      button = 'Claim as owner';
-    } else {
-      title = 'This ATLAS is private';
-      intro = 'It already has an owner. To use it on this device, open Devices on the owner\'s phone, create a pairing link and open that link here.';
-      button = null;
-    }
-    const submit = button ? el('button', { class: 'btn primary', type: 'submit', text: button }) : null;
-    const form = el('form', { class: 'cg-card' }, [
-      el('div', { class: 'cg-brand' }, [el('strong', { text: 'ATLAS OS' }), el('span', { text: 'ONLINE' })]),
-      el('h1', { text: title }), el('p', { class: 'cg-intro', text: intro }),
-      ...(button ? fields : []), submit, msg,
-      el('p', { class: 'cg-foot', text: 'Online version: chat uses a cloud AI model set up in Netlify. Memory and chat history stay in this browser. PC control needs ATLAS on your Windows PC.' }),
-    ]);
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      submit.disabled = true;
-      msg.textContent = 'Signing in…';
-      try {
-        const body = { name: name.value.trim() || null };
-        if (pairCode) body.code = pairCode;
-        if (code) body.access_code = code.value;
-        const data = await cloudJson(pairCode ? 'join' : 'claim', { method: 'POST', body });
-        setToken(data.token);
-        history.replaceState(null, '', location.pathname);
-        location.reload();
-      } catch (err) {
-        msg.textContent = err.message;
-        submit.disabled = false;
-      }
-    });
-    const wrap = el('div', { class: 'cloudgate', id: 'cloudgate', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'cgtitle' }, [form]);
-    form.querySelector('h1').id = 'cgtitle';
-    document.body.append(wrap);
-    document.querySelector('.layout')?.setAttribute('inert', '');
-    (button ? name : form.querySelector('h1')).focus?.();
-  }
-
-  function setupCard(s) {
-    if (s.providers.length || !s.me || document.getElementById('cloudsetup')) return;
-    const steps = el('ol', {}, [
-      el('li', { text: 'Get a free API key: Groq (console.groq.com/keys) or Google Gemini (aistudio.google.com/apikey). Sign in there and press "Create API key".' }),
-      el('li', {}, ['Open Netlify → this project → Project configuration → Environment variables', s.setup && s.setup.netlify_env_url ? ' (' : '',
-        s.setup && s.setup.netlify_env_url ? el('a', { href: s.setup.netlify_env_url, target: '_blank', rel: 'noopener', text: 'open it' }) : '', s.setup && s.setup.netlify_env_url ? ')' : '', '.']),
-      el('li', { text: 'Add a variable named GROQ_API_KEY (or GEMINI_API_KEY), paste the key as its value, tick "Contains secret values", and save.' }),
-      el('li', { text: 'In Netlify → Deploys, press "Trigger deploy" so ATLAS picks up the key. Then reload this page.' }),
-    ]);
-    const card = el('div', { class: 'warn cloudsetup', id: 'cloudsetup', role: 'region', 'aria-label': 'Set up AI' }, [
-      el('strong', { text: 'Set up AI: no model key yet' }),
-      el('p', { text: 'Chat needs one AI key, added in Netlify (never paste keys into chats or this app). Netlify keeps it on the server; this app never sees it.' }),
-      steps,
-    ]);
-    document.getElementById('main')?.prepend(card);
-  }
-
+  // ------------------------------------------------------------ startup check
   async function boot() {
-    const pairCode = (location.hash.match(/^#pair=([\w-]{20,})$/) || [])[1] || null;
-    let s;
     try {
-      s = await status();
+      await status();
     } catch (err) {
-      document.body.append(el('div', { class: 'cloudgate' }, [el('div', { class: 'cg-card' }, [
-        el('h1', { text: 'ATLAS cloud is unreachable' }), el('p', { class: 'cg-intro', text: err.message + '. Check your connection and reload.' }),
-      ])]));
-      return;
+      const box = document.createElement('div');
+      box.className = 'warn cloudsetup';
+      box.setAttribute('role', 'alert');
+      box.textContent = 'ATLAS online could not reach its server (' + err.message + '). Check your connection and reload.';
+      document.getElementById('main')?.prepend(box);
     }
-    if (pairCode && s.me) history.replaceState(null, '', location.pathname);
-    if (!s.me) { gate(s, pairCode); return; }
-    setupCard(s);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

@@ -1,4 +1,4 @@
-// Browser test of the cloud edition: built dist/ + the /cloud function with a FAKE model (labelled
+// Browser test of the online edition: built dist/ + the /cloud function with a FAKE model (labelled
 // "FAKE" in every reply). Run: node scripts/netlify/build.mjs && node --test netlify/tests/e2e.test.mjs
 // Set ATLAS_E2E_CHROMIUM to use an already installed Chromium; SHOTS=dir saves phone screenshots.
 import assert from 'node:assert/strict';
@@ -36,7 +36,7 @@ async function phone() {
   const page = await context.newPage();
   page.errors = [];
   page.on('pageerror', (e) => page.errors.push(String(e)));
-  page.on('console', (m) => { if (m.type() === 'error' && !/status of 40[139]/.test(m.text())) page.errors.push(m.text()); });
+  page.on('console', (m) => { if (m.type() === 'error' && !/status of (40[139]|422|502)/.test(m.text())) page.errors.push(m.text()); });
   return page;
 }
 
@@ -49,105 +49,86 @@ const go = async (page, section) => {
   await page.click('.nav [data-section="' + section + '"]');
 };
 
-test('owner claims, chats with the cloud model, plans, and pairs a second device', async () => {
-  const owner = await phone();
-  await owner.goto(base + '/');
-  await owner.waitForSelector('#cloudgate');
-  assert.equal(await owner.textContent('#cgtitle'), 'Make this ATLAS yours');
-  await shot(owner, '1-claim');
-  await noSideScroll(owner);
-  await owner.fill('#cgname', 'Shashwat phone');
-  await owner.click('#cloudgate button[type=submit]');
-  await owner.waitForSelector('#sysstatus >> text=Signed in: Shashwat phone (owner)', { state: 'attached' });
-  assert.equal(await owner.locator('#cloudgate').count(), 0);
-  await owner.waitForSelector('#topstatus >> text=AI ready · Cloud');
+test('a visitor adds their own key, chats, plans, and the key stays on their phone', async () => {
+  const page = await phone();
+  await page.goto(base + '/');
+  await page.waitForSelector('#topstatus >> text=Add your key · Cloud');
+  assert.equal(await page.locator('#cloudgate').count(), 0, 'no sign-in screen');
+  await shot(page, '1-home');
+  await noSideScroll(page);
 
-  // AI Chat: real round trip through the function (FAKE upstream model).
-  await go(owner, 'chat');
-  await owner.waitForFunction(() => /^fake-/.test(document.querySelector('#atlasmodel')?.value || ''));
-  assert.equal(await owner.inputValue('#atlasprovider'), 'groq');
-  await owner.click('#atlasbilling');
-  await owner.fill('.composer-input', 'namaste');
-  await owner.click('.sendbtn');
-  await owner.waitForSelector('.bubble >> text=FAKE reply to: namaste');
-  await owner.waitForSelector('.bubble .meta >> text=Answered by Groq (cloud)');
-  await shot(owner, '2-chat');
-  await noSideScroll(owner);
-  // History is kept in this browser.
-  await owner.reload();
-  await go(owner, 'chat');
-  await owner.waitForSelector('.bubble >> text=FAKE reply to: namaste');
-  assert.equal(await owner.$eval('#chatsettings', (d) => d.open), false, 'notice already confirmed on this device');
-  assert.equal(await owner.isChecked('#atlasbilling'), true);
-  await shot(owner, '2b-chat-again');
+  // Home plan without a key explains what to do.
+  await page.fill('#command', 'Plan my exam week');
+  await page.click('#run');
+  await page.waitForSelector('#message >> text=Add your own Groq API key first');
 
-  // Home plan is written by the cloud model.
-  await go(owner, 'home');
-  await owner.fill('#command', 'Plan my exam week');
-  await owner.click('#run');
-  await owner.waitForSelector('#tasksteps >> text=FAKE step one');
-  assert.match(await owner.textContent('#message'), /on Groq \(cloud\)/);
+  // AI Chat: sending without a key asks for one; nothing is sent.
+  await go(page, 'chat');
+  await page.waitForSelector('#atlaskey');
+  assert.equal(await page.inputValue('#atlasprovider'), 'groq');
+  await page.waitForSelector('.keyhelp a[href="https://console.groq.com/keys"]');
+  await page.fill('.composer-input', 'namaste');
+  await page.click('.sendbtn');
+  await page.waitForSelector('.chatstatus >> text=Paste your own Groq API key');
 
-  // PC-only features say so instead of pretending.
-  await go(owner, 'tasks');
-  await owner.waitForSelector('text=need ATLAS installed on your Windows PC');
-  await go(owner, 'automations');
-  await owner.waitForSelector('text=Scheduled tasks need ATLAS running on your PC');
+  // A wrong key shows the provider's error, not a fake answer.
+  await page.fill('#atlaskey', 'wrong-key-123');
+  await page.dispatchEvent('#atlaskey', 'change');
+  await page.waitForSelector('text=Invalid API Key');
 
-  // Pair a second device.
-  await go(owner, 'devices');
-  await owner.fill('#devicename', 'Tablet');
-  await owner.click('text=Create pairing link');
-  const link = await (await owner.waitForSelector('#pairlink')).textContent();
-  assert.match(link, new RegExp('^' + base + '/#pair=[\\w-]{40,}$'));
-  await shot(owner, '3-devices');
+  // The visitor's key: models load, chat works.
+  await page.fill('#atlaskey', 'my-own-test-key-456');
+  await page.check('#atlasremember');
+  await page.dispatchEvent('#atlaskey', 'change');
+  await page.waitForFunction(() => /^fake-/.test(document.querySelector('#atlasmodel')?.value || ''));
+  await page.click('#atlasbilling');
+  await shot(page, '2-key');
+  await page.fill('.composer-input', 'namaste');
+  await page.click('.sendbtn');
+  await page.waitForSelector('.bubble >> text=FAKE reply to: namaste');
+  await page.waitForSelector('.bubble .meta >> text=Answered by Groq (cloud)');
+  await shot(page, '3-chat');
+  await noSideScroll(page);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.cloud.key.groq'))), 'my-own-test-key-456');
 
-  const tablet = await phone();
-  await tablet.goto(link);
-  await tablet.waitForSelector('#cgtitle >> text=Join this ATLAS');
-  await tablet.click('#cloudgate button[type=submit]');
-  await tablet.waitForSelector('#sysstatus >> text=Signed in: Tablet', { state: 'attached' });
-  assert.ok(!tablet.url().includes('pair='), 'pairing code removed from the address bar');
+  // Remembered on this phone: after a reload the key and history are still there.
+  await page.reload();
+  await page.waitForSelector('#topstatus >> text=AI ready · Cloud');
+  await go(page, 'chat');
+  await page.waitForSelector('.bubble >> text=FAKE reply to: namaste');
+  assert.equal(await page.inputValue('#atlaskey'), 'my-own-test-key-456');
+  assert.equal(await page.$eval('#chatsettings', (d) => d.open), false, 'notice already confirmed on this device');
 
-  // The same link does not work twice.
-  const stranger = await phone();
-  await stranger.goto(link);
-  await stranger.click('#cloudgate button[type=submit]');
-  await stranger.waitForSelector('.cg-msg >> text=invalid, already used or expired');
-  await stranger.goto(base + '/');
-  await stranger.waitForSelector('#cgtitle >> text=This ATLAS is private');
-  assert.equal(await stranger.locator('#cloudgate button').count(), 0);
+  // Home plan uses the same key.
+  await go(page, 'home');
+  await page.fill('#command', 'Plan my exam week');
+  await page.click('#run');
+  await page.waitForSelector('#tasksteps >> text=FAKE step one');
+  assert.match(await page.textContent('#message'), /on Groq \(cloud\)/);
 
-  // Owner removes the tablet; it is signed out.
-  await owner.reload();
-  await go(owner, 'devices');
-  await owner.waitForSelector('#devicelist >> text=Tablet');
-  owner.once('dialog', (d) => d.accept());
-  await owner.click('#devicelist button');
-  await owner.waitForSelector('#devicelist >> text=No other devices are paired.');
-  await tablet.reload();
-  await tablet.waitForSelector('#cgtitle >> text=This ATLAS is private');
+  // Tasks screen fills in the key; PC-only features say so.
+  await go(page, 'tasks');
+  await page.waitForSelector('text=need ATLAS installed on your Windows PC');
+  assert.equal(await page.inputValue('#taskkey'), 'my-own-test-key-456');
+  await go(page, 'automations');
+  await page.waitForSelector('text=Scheduled tasks need ATLAS running on your PC');
+  await go(page, 'devices');
+  await page.waitForSelector('text=there is no sign-in or pairing');
 
-  for (const p of [owner, tablet, stranger]) assert.deepEqual(p.errors, []);
-  await Promise.all([owner, tablet, stranger].map((p) => p.context().close()));
-});
+  // Untick "Remember": the key is removed from this browser.
+  await go(page, 'chat');
+  await page.click('#chatsettings summary');
+  await page.uncheck('#atlasremember');
+  assert.equal(await page.evaluate(() => localStorage.getItem('atlas.cloud.key.groq')), null);
 
-test('without an AI key the app explains how to add one in Netlify', async () => {
-  const bare = await startServer(port + 1, {});
-  try {
-    const page = await phone();
-    await page.goto('http://localhost:' + (port + 1) + '/');
-    await page.click('#cloudgate button[type=submit]');
-    await page.waitForSelector('#cloudsetup >> text=Set up AI: no model key yet');
-    await page.waitForSelector('#topstatus >> text=AI not set up · Cloud');
-    await shot(page, '4-setup');
-    await noSideScroll(page);
-    await go(page, 'chat');
-    await page.waitForSelector('#atlasprovider', { state: 'attached' });
-    assert.equal(await page.$eval('#atlasprovider', (s) => s.selectedOptions[0].textContent), 'No AI key set up yet');
-    assert.deepEqual(page.errors, []);
-    await page.context().close();
-  } finally {
-    bare.kill();
-  }
+  // Another phone starts empty: no key, no history.
+  const other = await phone();
+  await other.goto(base + '/');
+  await go(other, 'chat');
+  await other.waitForSelector('#atlaskey');
+  assert.equal(await other.inputValue('#atlaskey'), '');
+  assert.equal(await other.locator('.bubble').count(), 0);
+
+  for (const p of [page, other]) assert.deepEqual(p.errors, []);
+  await Promise.all([page, other].map((p) => p.context().close()));
 });

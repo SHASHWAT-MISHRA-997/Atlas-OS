@@ -1,7 +1,7 @@
-// Local preview of the Netlify cloud edition without the Netlify CLI: serves dist/ and runs the
-// /cloud function in-process with an in-memory store. Keys come from this shell's environment.
+// Local preview of the Netlify online edition without the Netlify CLI: serves dist/ and runs the
+// /cloud function in-process. Type your own provider key in the app, as on the live site.
 //
-//   node scripts/netlify/build.mjs && GROQ_API_KEY=... node scripts/netlify/dev-server.mjs
+//   node scripts/netlify/build.mjs && node scripts/netlify/dev-server.mjs
 //
 // ATLAS_FAKE_MODEL=1 swaps every provider for a FAKE model that echoes the last message. It exists
 // for automated tests only; its replies are labelled FAKE and are never real AI output.
@@ -9,7 +9,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHandler, memoryStore } from '../../netlify/lib/cloud.mjs';
+import { createHandler } from '../../netlify/lib/cloud.mjs';
 
 const dist = fileURLToPath(new URL('../../dist/', import.meta.url));
 const port = Number(process.env.PORT || 8888);
@@ -19,6 +19,8 @@ export function fakeModelFetch(url, init) {
   const sse = (chunks) => new Response(new ReadableStream({
     start(c) { for (const x of chunks) c.enqueue(new TextEncoder().encode('data: ' + x + '\n\n')); c.close(); },
   }), { headers: { 'Content-Type': 'text/event-stream' } });
+  const auth = (init.headers && init.headers.Authorization) || '';
+  if (auth === 'Bearer wrong-key-123') return Promise.resolve(new Response('{"error":{"message":"Invalid API Key"}}', { status: 401 }));
   if (String(url).endsWith('/models')) return Promise.resolve(Response.json({ data: [{ id: 'fake-small' }, { id: 'fake-large' }] }));
   const body = JSON.parse(init.body);
   const last = body.messages.filter((m) => m.role === 'user').pop().content;
@@ -33,8 +35,7 @@ export function fakeModelFetch(url, init) {
 }
 
 const fake = process.env.ATLAS_FAKE_MODEL === '1';
-const env = { ...process.env, ...(fake ? { GROQ_API_KEY: 'fake-key-for-tests' } : {}) }; // pragma: allowlist secret (not a key)
-const handle = createHandler({ store: memoryStore(), env, fetchImpl: fake ? fakeModelFetch : fetch });
+const handle = createHandler({ fetchImpl: fake ? fakeModelFetch : fetch });
 
 createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:' + port);
