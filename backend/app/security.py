@@ -57,6 +57,10 @@ class SecurityHeadersMiddleware:
         await self.app(scope, receive, send_with_headers)
 
 
+# Endpoints that take recordings rather than JSON; they enforce the same cap themselves.
+LARGER_BODY_LIMITS = {"/api/voice/transcribe": 10 * 1024 * 1024}
+
+
 class BodySizeLimitMiddleware:
     """Reject request bodies larger than ATLAS_MAX_BODY_BYTES with HTTP 413."""
 
@@ -66,7 +70,7 @@ class BodySizeLimitMiddleware:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
-        limit = get_settings().max_body_bytes
+        limit = LARGER_BODY_LIMITS.get(scope.get("path", ""), get_settings().max_body_bytes)
         for key, value in scope.get("headers", []):
             if key == b"content-length":
                 try:

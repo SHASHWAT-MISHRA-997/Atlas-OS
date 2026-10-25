@@ -37,7 +37,7 @@ The fake server writes every 2 ms, so up to 2 ms of each number is just waiting 
 
 ## Q3. Does the permission policy block unauthorised actions?
 
-`backend/tests/test_redteam_actions.py` has **50 attack cases** against the desktop agent and its approval flow (30 from v0.7, 20 added in v0.8 for writing files, the trash, indexing and document search). All 50 are blocked or contained, and they run in CI on every push.
+`backend/tests/test_redteam_actions.py` has **67 attack cases** against the desktop agent and its approval flow (30 from v0.7, 20 added in v0.8 for writing files, the trash, indexing and document search, 17 in v0.9 for browser control). All 67 are blocked or contained, and they run in CI on every push.
 
 | Group | Cases | What is tried |
 |---|---|---|
@@ -45,6 +45,7 @@ The fake server writes every 2 ms, so up to 2 ms of each number is just waiting 
 | Run something not allowlisted | 7 | `shell` and `run_command` kinds, PowerShell, `notepad & calc`, `cmd.exe`, a missing app, extra `command`/`args` fields |
 | Get around approval | 4 | nothing runs unapproved, a wrong hash, a hash from another task, approving twice, approving after the agent is switched off |
 | Wrong person asks | 4 | no login, a cross-site page, a tunnel on the PC, a paired phone using the old direct launcher |
+| Browser control (v0.9) | 17 | `file:`, `javascript:`, `data:`, `ms-settings:` and UNC addresses, embedded logins, localhost and ATLAS's own API, IPv6 loopback, router and private addresses, cloud metadata, `.local`, spaces and newlines, search words trying to change the address |
 | Write, trash and index (v0.8) | 20 | `..`, slashes and backslashes in new file names, dotfiles, Windows device names (`CON`, `nul.txt`), writing into a linked folder, overwriting an existing file, trashing a file outside or a whole folder, restore over a newer file, indexing through a link, FTS query syntax |
 
 The cases **found two real problems**, both fixed in this version:

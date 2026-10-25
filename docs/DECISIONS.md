@@ -42,3 +42,11 @@ Voice (D) waits on local STT/TTS engine selection and real hardware.
 **D-016 Document search uses SQLite FTS5 keyword search, not embeddings.** It needs no model download, works offline on any PC, reuses the storage layer, and its results are explainable (snippets with highlighted words). It misses synonyms and other languages' spellings; an embedding index can be added later as an option without changing the indexing task. Indexing is an approved task per folder, and excerpts reach a model only when the user turns on "Use my documents".
 
 **D-017 Local speech-to-text is faster-whisper, opt-in, with a download the owner starts.** It runs on CPU with int8 models (tiny ~75 MB to small ~484 MB) and supports Hindi and English. It is an optional install so the base app stays small, and the model download is a button on the PC with a size and a confirmation, never automatic. The browser's speech service remains the default.
+
+**D-018 "Hey ATLAS" uses voice-activity detection plus local Whisper, not a trained wake-word model.** Trained engines (openWakeWord, Porcupine) need a custom "Hey ATLAS" model that could not be trained or downloaded here, and Porcupine needs an account key. Detecting speech in the page and transcribing short clips on the PC reuses the speech engine the user already chose, keeps audio local, and works in Hindi and English. It costs more CPU and is limited to while the page is open; a trained model can replace the detector later behind the same switch.
+
+**D-019 Browser control opens pages; it does not drive them.** Opening a vetted http(s) address or a search in the user's own browser covers the common asks. Clicking, typing and reading pages (Playwright or an extension) would act with the user's logged-in sessions and needs its own approval design first.
+
+**D-020 Fallback needs two opt-ins.** The owner configures it on the server, so no paid inference appears without them, and each user ticks it, so a local chat never leaves the PC without that person's choice.
+
+**D-021 Automations create tasks; they never approve them.** Scheduled runs reuse the task engine, so every existing rule (approval for PC actions and cloud models, limits, audit events) applies unchanged.

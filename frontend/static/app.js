@@ -162,6 +162,14 @@
   // ---------------------------------------------------------------- task plan (simulation)
   let planCount = 0;
 
+  /** The chat's local model if one is chosen, otherwise the first model installed in Ollama ('' if none). */
+  async function localModel() {
+    const saved = storageGet(CHAT_SETTINGS_KEY, {});
+    if ((!saved.provider || saved.provider === 'ollama') && saved.model) return saved.model;
+    const data = await api('/api/llm/models', { method: 'POST', body: { provider: 'ollama' } }).catch(() => ({ models: [] }));
+    return (data.models || [])[0] || '';
+  }
+
   async function runTask() {
     const message = $('message');
     const cmd = $('command').value.trim() || $('globalcmd').value.trim();
@@ -177,13 +185,37 @@
     }
     $('run').disabled = true;
     $('taskstate').textContent = 'PLANNING…';
+    const box = $('tasksteps');
     try {
+      const model = await localModel();
+      if (model) {
+        const saved = { model };
+        // A real plan written by the local model, as a background task (same as Tasks → Plan a goal).
+        message.textContent = 'Asking ' + saved.model + ' on this PC for a plan…';
+        let task = await api('/api/tasks', { method: 'POST', body: { kind: 'plan', provider: 'ollama', model: saved.model, goal: cmd } });
+        const until = Date.now() + 180000;
+        while (!TASK_TERMINAL.includes(task.state) && Date.now() < until) {
+          await new Promise((r) => setTimeout(r, 700));
+          task = await api('/api/tasks/' + task.id);
+        }
+        if (task.state !== 'Succeeded') throw new Error(task.error ? task.error.message : 'The plan is still running; see Tasks.');
+        planCount += 1;
+        $('taskcount').textContent = String(planCount).padStart(2, '0');
+        $('taskstate').textContent = 'PLAN READY · ' + saved.model.toUpperCase();
+        message.textContent = 'Written by ' + saved.model + ' on this PC. ' + (task.output.notice || 'Nothing was executed.');
+        box.replaceChildren(...task.output.steps.map((step, i) => el('div', { class: 'task' }, [
+          el('span', { class: 'icon', text: String(i + 1).padStart(2, '0') }),
+          el('div', {}, [el('strong', { text: step.title }), el('p', { text: step.detail || '' })]),
+        ])));
+        log('plan written by ' + saved.model + '; steps=' + task.output.steps.length);
+        $('globalcmd').value = '';
+        return;
+      }
       const plan = await api('/api/tasks/plan', { method: 'POST', body: { command: cmd } });
       planCount += 1;
       $('taskcount').textContent = String(planCount).padStart(2, '0');
-      message.textContent = plan.notice + ' For a plan written by your model, use the Tasks screen.';
+      message.textContent = plan.notice + ' This is a fixed example plan, because no local model is installed in Ollama.';
       $('taskstate').textContent = 'PLAN READY · ' + plan.mode.toUpperCase();
-      const box = $('tasksteps');
       box.replaceChildren();
       plan.steps.forEach((step, i) => {
         const detail = i === 0 ? 'Request captured: ' + plan.command : 'Planned step: not executed.';
@@ -770,6 +802,11 @@
     const billingLabel = el('span');
     const billingBox = el('label', { class: 'check' }, [billingAck, billingLabel]);
     const routing = el('p', { class: 'notice', role: 'status' });
+    const fb = catalogue.fallback;
+    const fallbackToggle = el('input', { type: 'checkbox', id: 'atlasfallback', checked: !!storageGet(CHAT_SETTINGS_KEY, {}).fallback });
+    const fallbackBox = el('label', { class: 'check' + (fb ? '' : ' hidden') }, [fallbackToggle,
+      fb ? 'If the chosen model fails (not running, out of memory, busy), answer with ' + fb.label + ' · ' + fb.model + (fb.local ? ' on this machine' : ', using the server\'s key: leaves this PC and may bill the owner') : '']);
+    fallbackToggle.addEventListener('change', () => storageSet(CHAT_SETTINGS_KEY, { ...storageGet(CHAT_SETTINGS_KEY, {}), fallback: fallbackToggle.checked }));
     const docsToggle = el('input', { type: 'checkbox', id: 'atlasdocs', checked: storageGet(DOCS_KEY, false) === true });
     const docsNote = el('p', { class: 'tiny muted', id: 'docsnote' });
     docsToggle.addEventListener('change', () => { storageSet(DOCS_KEY, docsToggle.checked); refreshDocsNote(); });
@@ -777,12 +814,12 @@
 
 
     // Voice: language for dictation and read-aloud, and which installed voice reads replies.
-    const voicePrefs = { lang: '', voice: '', engine: 'browser', ...storageGet(VOICE_KEY, {}) };
+    const voicePrefs = { lang: '', voice: '', engine: 'browser', ttsEngine: 'browser', localVoice: '', mic: '', ...storageGet(VOICE_KEY, {}) };
     const LANGS = [['', 'Same as this browser'], ['en-IN', 'English (India)'], ['hi-IN', 'Hindi'], ['en-US', 'English (US)'], ['en-GB', 'English (UK)']];
     const langSelect = el('select', { id: 'voicelang' }, LANGS.map(([value, text]) => el('option', { value, text })));
     langSelect.value = voicePrefs.lang;
     const voiceSelect = el('select', { id: 'voicename' });
-    const voiceNote = el('p', { class: 'tiny muted', text: 'Dictation uses your browser\'s speech service; in Chrome and Edge the audio goes to the browser vendor. Voices marked "online" also send the text out. The microphone is the one your phone or browser uses by default.' });
+    const voiceNote = el('p', { class: 'tiny muted', text: 'Browser dictation uses your browser\'s speech service; in Chrome and Edge the audio goes to the browser vendor. Browser voices marked "online" also send the text out. "ATLAS on this PC" keeps audio and text on the PC running ATLAS.' });
     const engineSelect = el('select', { id: 'voiceengine' }, [el('option', { value: 'browser', text: 'Browser speech service' }), el('option', { value: 'local', text: 'ATLAS on this PC (local)' })]);
     engineSelect.value = voicePrefs.engine === 'local' ? 'local' : 'browser';
     const localVoice = el('div', { id: 'localvoice', class: 'tiny muted' });
@@ -819,6 +856,76 @@
     }
     engineSelect.addEventListener('change', () => { voicePrefs.engine = engineSelect.value; storageSet(VOICE_KEY, voicePrefs); refreshLocalVoice(); });
     refreshLocalVoice();
+
+    // Read-aloud on the PC (Piper), microphone choice and hands-free "Hey ATLAS".
+    const ttsSelect = el('select', { id: 'ttsengine' }, [el('option', { value: 'browser', text: 'Browser voices' }), el('option', { value: 'local', text: 'ATLAS on this PC (local)' })]);
+    ttsSelect.value = voicePrefs.ttsEngine === 'local' ? 'local' : 'browser';
+    const localVoiceSelect = el('select', { id: 'localvoicename' });
+    const localVoiceField = el('label', { class: 'field hidden' }, ['PC VOICE', localVoiceSelect]);
+    const localTts = el('div', { id: 'localtts', class: 'tiny muted' });
+    const micSelect = el('select', { id: 'micselect' }, [el('option', { value: '', text: 'Default microphone' })]);
+    const handsFree = el('input', { type: 'checkbox', id: 'handsfree' });
+    const handsFreeNote = el('p', { class: 'tiny muted', id: 'handsfreenote', role: 'status' });
+    voiceBox.append(
+      el('div', { class: 'grid-fields', style: 'margin-top:10px' }, [el('label', { class: 'field' }, ['READ-ALOUD ENGINE', ttsSelect]), localVoiceField, el('label', { class: 'field' }, ['MICROPHONE (ATLAS ON THIS PC)', micSelect])]),
+      localTts,
+      el('label', { class: 'check' }, [handsFree, 'Hands-free: say "Hey ATLAS" and then your request (needs dictation on this PC; works only while this page is open)']),
+      handsFreeNote,
+    );
+    let localTtsState = null;
+    async function refreshLocalTts() {
+      localVoiceField.classList.toggle('hidden', ttsSelect.value !== 'local');
+      if (ttsSelect.value !== 'local') { localTts.replaceChildren(); return; }
+      let st;
+      try { st = await api('/api/voice/tts/status'); } catch (err) { localTts.replaceChildren(el('p', { class: 'warn', text: 'Could not check local read-aloud: ' + err.message })); return; }
+      localTtsState = st;
+      localVoiceSelect.replaceChildren(...(st.voices.length
+        ? st.available.filter((v) => st.voices.includes(v.voice)).map((v) => el('option', { value: v.voice, text: v.label }))
+        : [el('option', { value: '', text: 'No voice downloaded' })]));
+      if (st.voices.includes(voicePrefs.localVoice)) localVoiceSelect.value = voicePrefs.localVoice;
+      if (!st.engine_installed) {
+        localTts.replaceChildren(el('p', { class: 'warn', text: 'Local read-aloud is not installed on the PC running ATLAS. On that PC run: pip install -r backend/requirements-voice.txt, then restart ATLAS. Until then, replies are read with browser voices.' }));
+        return;
+      }
+      const parts = [el('p', { text: st.voices.length ? 'Replies are spoken by the PC running ATLAS; the text is not sent anywhere else.' : 'No PC voice is downloaded yet; browser voices are used until you download one.' })];
+      if (st.download.running) parts.push(el('p', { role: 'status', text: 'Downloading ' + st.download.voice + '…' }));
+      if (st.download.error) parts.push(el('p', { class: 'warn', text: st.download.error }));
+      const me = await api('/api/devices/current').catch(() => ({}));
+      if (me.kind !== 'device' && !st.download.running) {
+        parts.push(el('div', { class: 'row' }, st.available.filter((v) => !st.voices.includes(v.voice)).map((v) => el('button', {
+          class: 'btn', type: 'button', text: 'Download ' + v.label + ' (~' + v.approx_mb + ' MB)',
+          onclick: async () => {
+            if (!confirm('Download the voice "' + v.label + '" (about ' + v.approx_mb + ' MB) from Hugging Face to this PC?')) return;
+            try { await api('/api/voice/tts/download', { method: 'POST', body: { voice: v.voice, confirm: true } }); } catch (err) { status.textContent = 'Download did not start: ' + err.message; }
+            refreshLocalTts();
+          },
+        }))));
+      }
+      localTts.replaceChildren(...parts);
+      if (st.download.running) setTimeout(() => { if (document.body.contains(localTts)) refreshLocalTts(); }, 2000);
+    }
+    ttsSelect.addEventListener('change', () => { voicePrefs.ttsEngine = ttsSelect.value; storageSet(VOICE_KEY, voicePrefs); refreshLocalTts(); });
+    localVoiceSelect.addEventListener('change', () => { voicePrefs.localVoice = localVoiceSelect.value; storageSet(VOICE_KEY, voicePrefs); });
+    refreshLocalTts();
+
+    async function fillMics() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+      const mics = (await navigator.mediaDevices.enumerateDevices().catch(() => [])).filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default');
+      micSelect.replaceChildren(el('option', { value: '', text: 'Default microphone' }),
+        ...mics.map((d, i) => el('option', { value: d.deviceId, text: d.label || 'Microphone ' + (i + 1) + ' (name shown after you allow the microphone)' })));
+      micSelect.value = mics.some((d) => d.deviceId === voicePrefs.mic) ? voicePrefs.mic : '';
+    }
+    micSelect.addEventListener('change', () => { voicePrefs.mic = micSelect.value; storageSet(VOICE_KEY, voicePrefs); });
+    fillMics();
+    const micConstraints = () => ({ audio: voicePrefs.mic ? { deviceId: { exact: voicePrefs.mic }, echoCancellation: true, noiseSuppression: true } : { echoCancellation: true, noiseSuppression: true } });
+    const localDictationReady = () => !!(localStt && localStt.engine_installed && localStt.models.length && window.MediaRecorder);
+    const sttLanguage = () => { const l = (voicePrefs.lang || '').split('-')[0]; return l === 'hi' || l === 'en' ? l : 'auto'; };
+    async function transcribeBlob(blob) {
+      const r = await fetch('/api/voice/transcribe?language=' + sttLanguage(), { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'HTTP ' + r.status);
+      return data;
+    }
     const speechLang = () => voicePrefs.lang || navigator.language || 'en-US';
     function fillVoices() {
       const all = 'speechSynthesis' in window ? window.speechSynthesis.getVoices() : [];
@@ -843,7 +950,7 @@
       ]),
       modelList,
       el('div', { class: 'row', style: 'margin-top:10px' }, [loadModels, el('label', { class: 'check', style: 'margin:0' }, [streamToggle, 'Stream replies'])]),
-      modelStatus, billingBox, routing,
+      modelStatus, billingBox, routing, fallbackBox,
       el('label', { class: 'check' }, [docsToggle, 'Use my documents: search files you indexed (Tasks → PC actions) and send matching excerpts with each message']),
       docsNote,
       voiceBox,
@@ -966,8 +1073,24 @@
       return node;
     }
 
+    let pcAudio = null;
+    function stopPcAudio() { if (pcAudio) { pcAudio.pause(); URL.revokeObjectURL(pcAudio.src); pcAudio = null; } }
+    async function speakOnPc(text) {
+      stopPcAudio();
+      const r = await fetch('/api/voice/tts/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text.slice(0, 5000), voice: localVoiceSelect.value || null }) });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(typeof d.detail === 'string' ? d.detail : 'HTTP ' + r.status); }
+      pcAudio = new Audio(URL.createObjectURL(await r.blob()));
+      pcAudio.onended = () => { stopPcAudio(); if (!activeGeneration) stop.disabled = true; };
+      stop.disabled = false;
+      await pcAudio.play();
+    }
     function speakText(text) {
-      if (speak.getAttribute('aria-pressed') !== 'true' || !('speechSynthesis' in window)) return;
+      if (speak.getAttribute('aria-pressed') !== 'true') return;
+      if (ttsSelect.value === 'local' && localTtsState && localTtsState.engine_installed && localTtsState.voices.length) {
+        speakOnPc(text).catch((err) => { status.textContent = 'Read-aloud on the PC failed: ' + err.message; });
+        return;
+      }
+      if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = speechLang();
@@ -982,16 +1105,17 @@
       refreshProviderUi();
       billingAck.checked = false;
       modelInput.value = '';
-      storageSet(CHAT_SETTINGS_KEY, { provider: providerSelect.value, model: '' });
+      storageSet(CHAT_SETTINGS_KEY, { ...storageGet(CHAT_SETTINGS_KEY, {}), provider: providerSelect.value, model: '' });
       discoverModels(true);
     });
     modelInput.addEventListener('input', updatePill);
-    modelInput.addEventListener('change', () => storageSet(CHAT_SETTINGS_KEY, { provider: providerSelect.value, model: modelInput.value.trim() }));
+    modelInput.addEventListener('change', () => storageSet(CHAT_SETTINGS_KEY, { ...storageGet(CHAT_SETTINGS_KEY, {}), provider: providerSelect.value, model: modelInput.value.trim() }));
     loadModels.addEventListener('click', () => discoverModels(false));
 
     stop.addEventListener('click', () => {
       if (activeGeneration) activeGeneration.controller.abort();
       if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      stopPcAudio();
       stop.disabled = !activeGeneration;
     });
 
@@ -1000,6 +1124,7 @@
       speak.setAttribute('aria-pressed', String(enabled));
       speak.textContent = enabled ? '🔊 Reading aloud' : '🔊 Read aloud';
       if (!enabled && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+      if (!enabled) stopPcAudio();
       status.textContent = enabled
         ? ('speechSynthesis' in window ? 'New replies will be read aloud with your browser\'s voices. Press Stop to interrupt.' : 'This browser has no speech synthesis.')
         : 'Voice output off.';
@@ -1009,7 +1134,8 @@
     async function dictateLocally() {
       if (recorder) { recorder.stop(); return; }
       let stream;
-      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { status.textContent = 'Microphone permission is blocked or no microphone was found.'; return; }
+      try { stream = await navigator.mediaDevices.getUserMedia(micConstraints()); } catch { status.textContent = 'Microphone permission is blocked or no microphone was found.'; return; }
+      fillMics();
       const chunks = [];
       recorder = new MediaRecorder(stream);
       const limit = setTimeout(() => recorder && recorder.stop(), 60000);
@@ -1022,11 +1148,8 @@
         mic.textContent = '🎙 Dictate';
         mic.disabled = true;
         status.textContent = 'Transcribing on the PC running ATLAS…';
-        const lang = (voicePrefs.lang || '').split('-')[0];
         try {
-          const r = await fetch('/api/voice/transcribe?language=' + (lang === 'hi' || lang === 'en' ? lang : 'auto'), { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
-          const data = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'HTTP ' + r.status);
+          const data = await transcribeBlob(blob);
           prompt.value = (prompt.value + ' ' + data.text).trim();
           prompt.focus();
           status.textContent = data.text ? 'Transcribed locally (' + data.model + ', ' + data.seconds + ' s). Review your message, then press Send.' : 'No speech heard. Try again.';
@@ -1041,8 +1164,94 @@
       status.textContent = 'Recording on this device (up to 60 s). Press Stop recording when done.';
     }
 
+    // Hands-free: a small voice-activity detector on this device cuts speech into short clips; each clip
+    // is transcribed by ATLAS on the PC, and only clips starting with "Hey ATLAS" (or "ATLAS") are used.
+    const WAKE = /^\W*(?:(?:hey|hi|ok|okay|हे|ऐ)\W+)?(?:atlas|एटलस|ऐटलस)(?=[\s,.!?:;-]|$)[\s,.!?:;-]*(.*)$/i;
+    let hf = null;
+    function stopHandsFree(message) {
+      if (!hf) return;
+      clearInterval(hf.timer);
+      if (hf.recorder && hf.recorder.state !== 'inactive') { hf.discard = true; hf.recorder.stop(); }
+      hf.stream.getTracks().forEach((t) => t.stop());
+      hf.ctx.close().catch(() => {});
+      hf = null;
+      handsFree.checked = false;
+      mic.classList.remove('listening');
+      handsFreeNote.textContent = message || 'Hands-free is off.';
+    }
+    async function startHandsFree() {
+      if (!localDictationReady()) {
+        handsFree.checked = false;
+        handsFreeNote.textContent = 'Hands-free needs dictation on this PC: choose "ATLAS on this PC" as the dictation engine and download a speech model. It never uses the browser\'s online speech service, because that would send everything you say to the browser vendor.';
+        return;
+      }
+      let stream;
+      try { stream = await navigator.mediaDevices.getUserMedia(micConstraints()); } catch { handsFree.checked = false; handsFreeNote.textContent = 'Microphone permission is blocked or no microphone was found.'; return; }
+      fillMics();
+      const ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      const samples = new Float32Array(analyser.fftSize);
+      hf = { stream, ctx, recorder: null, chunks: [], floor: 0.01, loud: 0, quiet: 0, started: 0, awaitingCommand: 0, discard: false, timer: 0 };
+      mic.classList.add('listening');
+      handsFreeNote.textContent = 'Listening for "Hey ATLAS"… Speech is cut into short clips on this device and transcribed by ATLAS on the PC; clips without "Hey ATLAS" are dropped. Nothing is kept.';
+      hf.timer = setInterval(() => {
+        if (!hf) return;
+        if (!document.body.contains(transcript)) { stopHandsFree(); return; }
+        analyser.getFloatTimeDomainData(samples);
+        let sum = 0;
+        for (const x of samples) sum += x * x;
+        const rms = Math.sqrt(sum / samples.length);
+        const busy = activeGeneration || (pcAudio && !pcAudio.paused) || ('speechSynthesis' in window && window.speechSynthesis.speaking);
+        const threshold = Math.max(0.02, hf.floor * 3);
+        if (!hf.recorder) {
+          hf.floor = hf.floor * 0.98 + rms * 0.02;  // follows the room's background noise
+          hf.loud = rms > threshold && !busy ? hf.loud + 1 : 0;
+          if (hf.loud >= 3) {  // ~150 ms of speech starts a clip
+            hf.chunks = [];
+            hf.discard = false;
+            hf.recorder = new MediaRecorder(stream);
+            hf.recorder.ondataavailable = (e) => { if (e.data.size && hf) hf.chunks.push(e.data); };
+            hf.recorder.onstop = () => onClip();
+            hf.recorder.start();
+            hf.started = Date.now();
+            hf.quiet = 0;
+          }
+          return;
+        }
+        hf.quiet = rms > threshold ? 0 : hf.quiet + 1;
+        if (hf.quiet >= 16 || Date.now() - hf.started > 8000) hf.recorder.stop();  // ~0.8 s of quiet ends it; 8 s at most
+      }, 50);
+    }
+    async function onClip() {
+      if (!hf) return;
+      const recorder = hf.recorder;
+      hf.recorder = null;
+      if (hf.discard || Date.now() - hf.started < 400) return;
+      const blob = new Blob(hf.chunks, { type: recorder.mimeType || 'audio/webm' });
+      let text = '';
+      try { text = (await transcribeBlob(blob)).text.trim(); } catch (err) { if (hf) handsFreeNote.textContent = 'Could not transcribe: ' + err.message; return; }
+      if (!hf || !text) return;
+      const woke = text.match(WAKE);
+      let request = woke ? woke[1].trim() : (Date.now() < hf.awaitingCommand ? text : '');
+      if (woke && !request) {
+        hf.awaitingCommand = Date.now() + 8000;
+        handsFreeNote.textContent = 'Yes? Say your request now.';
+        return;
+      }
+      if (!request) return;
+      hf.awaitingCommand = 0;
+      request = request.replace(/^[,.!?\s]+/, '');
+      handsFreeNote.textContent = 'Heard: "' + request + '". Sending…';
+      prompt.value = request;
+      form.requestSubmit();
+      setTimeout(() => { if (hf) handsFreeNote.textContent = 'Listening for "Hey ATLAS"…'; }, 1500);
+    }
+    handsFree.addEventListener('change', () => { if (handsFree.checked) startHandsFree(); else stopHandsFree(); });
+
     mic.addEventListener('click', () => {
-      if (engineSelect.value === 'local' && localStt && localStt.engine_installed && localStt.models.length && window.MediaRecorder) { dictateLocally(); return; }
+      if (engineSelect.value === 'local' && localDictationReady()) { dictateLocally(); return; }
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) { status.textContent = 'Speech recognition is not supported in this browser. Try Chrome or Edge and allow microphone access.'; return; }
       const recognition = new SR();
@@ -1093,8 +1302,8 @@
       try { items = await store.chat(); } catch { /* send without history */ }
       items.push({ role: 'user', content: text });
       const built = await buildMessages(items, docsToggle.checked);
-      const payload = { provider: p.id, model, api_key: keyInput.value.trim(), messages: built.messages };
-      storageSet(CHAT_SETTINGS_KEY, { provider: p.id, model });
+      const payload = { provider: p.id, model, api_key: keyInput.value.trim(), messages: built.messages, allow_fallback: !!fb && fallbackToggle.checked };
+      storageSet(CHAT_SETTINGS_KEY, { provider: p.id, model, fallback: fallbackToggle.checked });
       const saveTurn = (message) => store.appendChat(message).catch((err) => log('could not save chat turn: ' + err.message));
       const userSaved = saveTurn({ role: 'user', content: text });
 
@@ -1131,6 +1340,8 @@
               reply.body.textContent = answer;
               reply.metaLine.textContent = 'Streaming from ' + p.label + '…';
               scrollChat();
+            } else if (event === 'fallback') {
+              reply.metaLine.textContent = data.from.label + ' failed (' + data.from.detail + '). Answering with the fallback ' + data.label + '…';
             } else if (event === 'done') {
               meta = data;
             } else if (event === 'error') {
@@ -1144,7 +1355,8 @@
           answer = data.answer;
           meta = data;
         }
-        const metaText = describeAnswer(meta, p.label) + ' · ' + memoryNote(built.memoriesUsed) +
+        const answeredBy = meta.fallback_from ? fb.label + ' (fallback: ' + meta.fallback_from.label + ' failed, ' + meta.fallback_from.code.replace(/_/g, ' ') + ')' : p.label;
+        const metaText = describeAnswer(meta, answeredBy) + ' · ' + memoryNote(built.memoriesUsed) +
           (docsToggle.checked ? ' · ' + built.excerptsUsed.length + ' document excerpt' + (built.excerptsUsed.length === 1 ? '' : 's') + ' sent' : '');
         reply.body.textContent = answer;
         reply.metaLine.textContent = metaText;
@@ -1250,6 +1462,9 @@
       const body = el('textarea', { id: 'actiontext', rows: '5', maxlength: '100000', 'aria-label': 'File contents', style: 'display:block;width:100%;margin-top:8px;padding:12px;border:1px solid #304771;border-radius:9px;background:#080f20;color:white' });
       const trashPick = el('select', { id: 'actiontrash' });
       const mediaKey = el('select', { id: 'actionkey' }, [['play_pause', 'Play / pause'], ['next', 'Next track'], ['previous', 'Previous track'], ['volume_up', 'Volume up'], ['volume_down', 'Volume down'], ['mute', 'Mute']].map(([v, t]) => el('option', { value: v, text: t })));
+      const url = el('input', { id: 'actionurl', type: 'url', placeholder: 'https://example.com', maxlength: '2000', autocomplete: 'off' });
+      const words = el('input', { id: 'actionwords', placeholder: 'e.g. DBMS normalization', maxlength: '200' });
+      const engine = el('select', { id: 'actionengine' }, [['duckduckgo', 'DuckDuckGo'], ['google', 'Google'], ['bing', 'Bing']].map(([v, t]) => el('option', { value: v, text: t })));
       const risk = el('p', { class: 'tiny muted' });
       const go = el('button', { class: 'btn primary', type: 'submit', text: 'Ask for approval' });
       const appField = el('label', { class: 'field' }, ['APP', app]);
@@ -1262,9 +1477,12 @@
       const titleField = el('label', { class: 'field' }, ['HEADING', title]);
       const trashField = el('label', { class: 'field' }, ['FILE IN TRASH', trashPick]);
       const keyField2 = el('label', { class: 'field' }, ['KEY', mediaKey]);
+      const urlField = el('label', { class: 'field' }, ['WEB ADDRESS', url]);
+      const wordsField = el('label', { class: 'field' }, ['SEARCH FOR', words]);
+      const engineField = el('label', { class: 'field' }, ['SEARCH ENGINE', engine]);
       const f = el('form', { class: 'panel', style: 'margin-top:14px', 'aria-label': 'PC actions' }, [
         el('h3', { text: 'PC actions', style: 'margin:0 0 8px' }),
-        el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['ACTION', what]), appField, folderField, subField, queryField, nameField, fmtField, titleField, trashField, keyField2]),
+        el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['ACTION', what]), appField, folderField, subField, queryField, nameField, fmtField, titleField, trashField, keyField2, urlField, wordsField, engineField]),
         body, risk, go,
       ]);
       const FOLDER_KINDS = ['list_folder', 'search_files', 'index_documents', 'create_note', 'create_document', 'move_to_trash'];
@@ -1287,6 +1505,9 @@
         titleField.classList.toggle('hidden', k !== 'create_document' || fmt.value !== 'docx');
         trashField.classList.toggle('hidden', k !== 'restore_from_trash');
         keyField2.classList.toggle('hidden', k !== 'media_key');
+        urlField.classList.toggle('hidden', k !== 'open_url');
+        wordsField.classList.toggle('hidden', k !== 'web_search');
+        engineField.classList.toggle('hidden', k !== 'web_search');
         body.classList.toggle('hidden', k !== 'create_note' && k !== 'create_document');
         body.placeholder = k === 'create_document' && fmt.value === 'xlsx' ? 'Rows as CSV, e.g.\nItem,Price\nTea,20'
           : k === 'create_document' ? 'Text. Lines starting with # become headings, lines starting with - become bullets.' : 'Note text';
@@ -1311,6 +1532,8 @@
         if (k === 'create_document') { req.format = fmt.value; req.title = fmt.value === 'docx' ? title.value.trim() : ''; }
         if (k === 'restore_from_trash') req.trash_id = trashPick.value;
         if (k === 'media_key') req.key = mediaKey.value;
+        if (k === 'open_url') req.url = url.value.trim();
+        if (k === 'web_search') { req.query = words.value.trim(); req.engine = engine.value; }
         if (k === 'restore_from_trash' && !req.trash_id) { status.textContent = 'The ATLAS trash is empty.'; return; }
         go.disabled = true;
         try {
@@ -1423,6 +1646,7 @@
       if (o.created) children.push(el('p', { class: 'notice', text: 'Created ' + o.folder + '/' + o.created + ' (' + o.bytes.toLocaleString() + ' bytes).' }));
       if (o.trashed) children.push(el('p', { class: 'notice', text: 'Moved ' + o.trashed + ' to the ATLAS trash. ' + o.restore }));
       if (o.restored) children.push(el('p', { class: 'notice', text: 'Restored ' + o.folder + '/' + o.restored + '.' }));
+      if (o.opened) children.push(el('p', { class: 'notice', text: (o.searched ? 'Opened ' + o.engine + ' results for "' + o.searched + '"' : 'Opened ' + o.host) + ' in the browser on the PC.' }));
       if (o.pressed) children.push(el('p', { class: 'notice', text: 'Pressed the ' + o.pressed.replace('_', ' ') + ' key.' }));
       if (o.indexed != null) children.push(el('p', { class: 'notice', text: 'Indexed ' + o.indexed + ' new or changed file(s), ' + o.unchanged + ' unchanged, ' + o.skipped + ' skipped, ' + o.failed + ' unreadable, ' + o.removed + ' removed. ' + o.files + ' file(s) are now searchable.' + (o.stopped_at ? ' Stopped early (' + o.stopped_at + '); run it again to continue.' : '') }));
       if (task.output && task.output.launched) children.push(el('p', { class: 'notice', text: task.output.label + ' was started on the PC.' }));
@@ -1451,11 +1675,108 @@
     }, 1000);
   }
 
+  // ---------------------------------------------------------------- automations
+  async function renderAutomations(v) {
+    v.append(el('h2', { text: 'Automations' }), el('p', {
+      class: 'muted',
+      text: 'Create a task on a schedule, in this PC\'s time. Automations only create tasks: PC actions and cloud models still wait for your approval each time, and local plans run on their own. If the PC was off at the scheduled time, it runs once when ATLAS starts again.',
+    }));
+    const planModel = await localModel();
+    const desktop = await api('/api/desktop/status').catch(() => ({ enabled: false, folders: [] }));
+    const kinds = [['plan', 'Plan a goal (local)']];
+    if (desktop.enabled) kinds.push(['index_documents', 'Re-index documents'], ['web_search', 'Web search'], ['open_url', 'Open a website']);
+    const name = el('input', { id: 'autoname', maxlength: '100', placeholder: 'e.g. Morning plan' });
+    const kind = el('select', { id: 'autokind' }, kinds.map(([value, text]) => el('option', { value, text })));
+    const goal = el('input', { id: 'autogoal', maxlength: '2000', placeholder: 'e.g. Plan my study day' });
+    const folder = el('select', { id: 'autofolder' }, (desktop.folders || []).map((f) => el('option', { value: f, text: f })));
+    const words = el('input', { id: 'autowords', maxlength: '200', placeholder: 'e.g. weather Jaipur' });
+    const url = el('input', { id: 'autourl', type: 'url', maxlength: '2000', placeholder: 'https://example.com' });
+    const every = el('select', { id: 'autoevery' }, [['day', 'Every day'], ['week', 'Every week'], ['hours', 'Every few hours']].map(([value, text]) => el('option', { value, text })));
+    const time = el('input', { id: 'autotime', type: 'time', value: '08:00' });
+    const day = el('select', { id: 'autoday' }, ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((d, i) => el('option', { value: String(i), text: d })));
+    const hours = el('input', { id: 'autohours', type: 'number', min: '1', max: '24', value: '4' });
+    const fields = {
+      goal: el('label', { class: 'field' }, ['GOAL', goal]), folder: el('label', { class: 'field' }, ['FOLDER', folder]),
+      words: el('label', { class: 'field' }, ['SEARCH FOR', words]), url: el('label', { class: 'field' }, ['WEB ADDRESS', url]),
+      time: el('label', { class: 'field' }, ['TIME', time]), day: el('label', { class: 'field' }, ['DAY', day]), hours: el('label', { class: 'field' }, ['EVERY (HOURS)', hours]),
+    };
+    const note = el('p', { class: 'notice', role: 'status', text: (planModel ? 'Plans use ' + planModel + ' on this PC.' : 'Plans need a model installed in Ollama on this PC.') + (desktop.enabled ? ' Re-index, web search and website runs wait for your approval in Tasks.' : '') });
+    const create = el('button', { class: 'btn primary', type: 'submit', text: 'Create automation' });
+    const form = el('form', { class: 'panel', style: 'margin-top:14px', 'aria-label': 'New automation' }, [
+      el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['NAME', name]), el('label', { class: 'field' }, ['WHAT', kind]), fields.goal, fields.folder, fields.words, fields.url,
+        el('label', { class: 'field' }, ['WHEN', every]), fields.time, fields.day, fields.hours]),
+      el('div', { class: 'row', style: 'margin-top:10px' }, [create]), note,
+    ]);
+    const list = el('div', { class: 'tasklist', id: 'automationlist', style: 'margin-top:14px' });
+    v.append(form, list);
+    function sync() {
+      fields.goal.classList.toggle('hidden', kind.value !== 'plan');
+      fields.folder.classList.toggle('hidden', kind.value !== 'index_documents');
+      fields.words.classList.toggle('hidden', kind.value !== 'web_search');
+      fields.url.classList.toggle('hidden', kind.value !== 'open_url');
+      fields.time.classList.toggle('hidden', every.value === 'hours');
+      fields.day.classList.toggle('hidden', every.value !== 'week');
+      fields.hours.classList.toggle('hidden', every.value !== 'hours');
+    }
+    kind.addEventListener('change', sync);
+    every.addEventListener('change', sync);
+    sync();
+    const when = (iso) => (iso ? new Date(iso).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+    const what = (t) => (t.kind === 'plan' ? 'Plan: ' + t.params.goal : t.kind === 'index_documents' ? 'Re-index ' + t.params.folder : t.kind === 'web_search' ? 'Search: ' + t.params.query : t.kind === 'open_url' ? 'Open ' + t.params.url : t.kind);
+    async function refresh() {
+      let items;
+      try { items = (await api('/api/automations')).automations; } catch (err) { list.replaceChildren(el('p', { class: 'warn', text: 'Could not load automations: ' + err.message })); return; }
+      list.replaceChildren(...(items.length ? items.map((a) => {
+        const act = async (path, init) => {
+          try { await api('/api/automations/' + a.id + path, init); } catch (err) { note.textContent = err.message; }
+          refresh();
+        };
+        return el('div', { class: 'task', style: 'display:block', 'data-automation': a.id }, [
+          el('div', { class: 'agenttop' }, [el('strong', { text: a.name }), el('span', { class: 'badge', text: a.enabled ? a.schedule_text.toUpperCase() : 'PAUSED' })]),
+          el('div', { class: 'tiny muted', text: what(a.task) }),
+          el('div', { class: 'tiny muted', text: 'Next: ' + (a.enabled ? when(a.next_run) : 'paused') + ' · Last: ' + when(a.last_run) + (a.last_task_id ? ' (task created, see Tasks)' : '') }),
+          a.last_error ? el('p', { class: 'warn', text: 'Last run failed: ' + a.last_error }) : null,
+          el('div', { class: 'row', style: 'margin-top:8px' }, [
+            el('button', { class: 'btn', type: 'button', text: 'Run now', onclick: () => act('/run', { method: 'POST' }) }),
+            el('button', { class: 'btn', type: 'button', text: a.enabled ? 'Pause' : 'Resume', onclick: () => act('', { method: 'PATCH', body: { enabled: !a.enabled } }) }),
+            el('button', { class: 'btn', type: 'button', text: 'Delete', 'aria-label': 'Delete automation ' + a.name, onclick: () => { if (confirm('Delete "' + a.name + '"?')) act('', { method: 'DELETE' }); } }),
+          ]),
+        ].filter(Boolean));
+      }) : [el('div', { class: 'task', text: 'No automations yet.' })]));
+    }
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const task = { kind: kind.value };
+      if (kind.value === 'plan') {
+        if (!planModel) { note.textContent = 'Plans need a model installed in Ollama on this PC.'; return; }
+        Object.assign(task, { provider: 'ollama', model: planModel, goal: goal.value.trim() });
+      }
+      if (kind.value === 'index_documents') task.folder = folder.value;
+      if (kind.value === 'web_search') task.query = words.value.trim();
+      if (kind.value === 'open_url') task.url = url.value.trim();
+      const schedule = { every: every.value };
+      if (every.value !== 'hours') schedule.time = time.value;
+      if (every.value === 'week') schedule.day = Number(day.value);
+      if (every.value === 'hours') schedule.hours = Number(hours.value);
+      create.disabled = true;
+      try {
+        const a = await api('/api/automations', { method: 'POST', body: { name: name.value.trim(), task, schedule } });
+        note.textContent = 'Created "' + a.name + '". Next run: ' + when(a.next_run) + '.';
+        name.value = ''; goal.value = ''; words.value = ''; url.value = '';
+        refresh();
+      } catch (err) {
+        note.textContent = 'Could not create it: ' + err.message;
+      } finally {
+        create.disabled = false;
+      }
+    });
+    refresh();
+  }
+
   // ---------------------------------------------------------------- simple pages
   const pages = {
     agents: ['Agents', 'These are role definitions only. They are not yet connected to model execution or automation.', ['Data Analyst', 'Software Engineer', 'BI Builder', 'QA Agent']],
     projects: ['Projects', 'Projects are not implemented yet.', ['No saved projects']],
-    automations: ['Automations', 'Automation triggers are not implemented yet.', ['No schedules configured']],
   };
 
   function renderIntegrations(v) {
@@ -1608,6 +1929,7 @@
     if (page === 'tasks') return renderTasks(v);
     if (page === 'integrations') return renderIntegrations(v);
     if (page === 'devices') return renderDevices(v);
+    if (page === 'automations') return renderAutomations(v);
     const p = pages[page];
     v.append(el('h2', { text: p[0] }), el('p', { class: 'muted', text: p[1] }));
     p[2].forEach((t) => v.append(el('div', { class: 'task', text: t })));

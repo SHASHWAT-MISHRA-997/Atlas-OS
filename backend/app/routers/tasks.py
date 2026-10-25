@@ -51,7 +51,8 @@ def plan_task(body: PlanRequest):
 
 class TaskCreate(BaseModel):
     kind: Literal["plan", "summarize_text", "open_app", "list_folder", "search_files", "index_documents",
-                  "create_note", "create_document", "move_to_trash", "restore_from_trash", "media_key"]
+                  "create_note", "create_document", "move_to_trash", "restore_from_trash", "media_key",
+                  "open_url", "web_search"]
     provider: ProviderId | None = None
     model: str | None = Field(default=None, min_length=1, max_length=200)
     api_key: str = Field(default="", max_length=1000)
@@ -68,6 +69,8 @@ class TaskCreate(BaseModel):
     title: str = Field(default="", max_length=200)
     trash_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{12}$")
     key: Literal["play_pause", "next", "previous", "volume_up", "volume_down", "mute"] | None = None
+    url: str | None = Field(default=None, max_length=2000)
+    engine: Literal["duckduckgo", "google", "bing"] = "duckduckgo"
 
     @model_validator(mode="after")
     def inputs_match_kind(self):
@@ -89,6 +92,10 @@ class TaskCreate(BaseModel):
                 raise ValueError("A restore_from_trash task needs 'trash_id'.")
             if self.kind == "media_key" and not self.key:
                 raise ValueError("A media_key task needs 'key'.")
+            if self.kind == "open_url" and not (self.url or "").strip():
+                raise ValueError("An open_url task needs 'url'.")
+            if self.kind == "web_search" and not (self.query or "").strip():
+                raise ValueError("A web_search task needs non-blank 'query'.")
             if self.kind == "search_files" and not (self.query or "").strip():
                 raise ValueError("A search_files task needs non-blank 'query'.")
             if "\x00" in self.path:
@@ -123,6 +130,10 @@ class TaskCreate(BaseModel):
             return {"trash_id": self.trash_id}
         if self.kind == "media_key":
             return {"key": self.key}
+        if self.kind == "open_url":
+            return {"url": (self.url or "").strip()}
+        if self.kind == "web_search":
+            return {"query": (self.query or "").strip(), "engine": self.engine}
         base = {"provider": self.provider, "model": (self.model or "").strip()}
         if self.kind == "plan":
             base["goal"] = (self.goal or "").strip()

@@ -123,6 +123,21 @@ MIGRATIONS: list[str] = [
         INSERT INTO doc_chunks_fts(doc_chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
     END;
     """,
+    # 5: automations (app/automations.py): tasks created on a schedule. API keys are never stored.
+    """
+    CREATE TABLE automations (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        task TEXT NOT NULL,
+        schedule TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        next_run TEXT,
+        last_run TEXT,
+        last_task_id TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL
+    );
+    """,
 ]
 
 

@@ -141,6 +141,7 @@ def server(fake_ollama, tmp_path_factory):
     (docs / "college" / "dbms-notes.pdf").write_bytes(b"x")
     env = {**os.environ, "ATLAS_OLLAMA_BASE_URL": f"http://127.0.0.1:{fake_ollama.port}",
            "ATLAS_ENABLE_DESKTOP_AGENT": "true", "ATLAS_AGENT_FOLDERS": f"docs={docs}",
+           "ATLAS_FALLBACK_PROVIDER": "ollama", "ATLAS_FALLBACK_MODEL": "fake-small:1b",
            "ATLAS_DATA_DIR": str(tmp_path_factory.mktemp("atlas-data")),
            "ATLAS_API_TOKEN": E2E_TOKEN, "ATLAS_AUTH_REQUIRED": "true",
            "ATLAS_LLM_RATE_LIMIT_PER_MINUTE": "1000", "PYTHONPATH": str(BACKEND)}
@@ -161,10 +162,28 @@ def server(fake_ollama, tmp_path_factory):
     proc.wait(timeout=10)
 
 
+def fake_speech_wav() -> str:
+    import math
+    import tempfile
+    import wave
+    path = os.path.join(tempfile.mkdtemp(), "fake-speech.wav")
+    rate = 16000
+    tone = b"".join(int(8000 * math.sin(2 * math.pi * 220 * i / rate)).to_bytes(2, "little", signed=True) for i in range(rate))
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(tone + b"\x00\x00" * int(rate * 1.5))
+    return path
+
+
 @pytest.fixture(scope="module")
 def browser():
     with playwright_sync.sync_playwright() as p:
-        kwargs = {}
+        # A fake microphone and auto-accepted permission prompts, for the voice tests. The microphone
+        # "hears" a looping 1 s tone (like a short spoken phrase) followed by 1.5 s of silence.
+        kwargs = {"args": ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream",
+                           f"--use-file-for-fake-audio-capture={fake_speech_wav()}", "--autoplay-policy=no-user-gesture-required"]}
         if os.getenv("ATLAS_E2E_CHROMIUM"):
             kwargs["executable_path"] = os.environ["ATLAS_E2E_CHROMIUM"]
         try:
@@ -206,6 +225,8 @@ def test_status_panel_shows_real_backend_and_ollama_state(page):
 
 
 def test_task_plan_comes_from_backend(page):
+    # MOCK: Ollama reports no installed models, so Home falls back to the fixed example plan.
+    page.route("**/api/llm/models", lambda r: r.fulfill(json={"provider": "ollama", "models": []}))
     page.fill("#command", "Plan a test")
     page.click("#run")
     page.wait_for_selector("text=PLAN READY · SIMULATION")
@@ -568,6 +589,143 @@ def test_local_dictation_engine_explains_what_it_needs(page):
     page.select_option("#voiceengine", "local")
     playwright_sync.expect(page.locator("#localvoice")).to_contain_text(re.compile("not installed|No speech model is downloaded"))
     page.select_option("#voiceengine", "browser")
+    assert page.errors == []
+
+
+def silent_wav():
+    import io
+    import wave
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\x00\x00" * 1600)
+    return buffer.getvalue()
+
+
+def mock_local_voice(page, transcripts):
+    """MOCK: the PC's speech engines are faked at the network level (no real Whisper or Piper in CI)."""
+    page.route("**/api/voice/status", lambda r: r.fulfill(json={
+        "engine_installed": True, "models": ["tiny"], "available": [], "download": {"running": False, "error": None}, "languages": ["auto"]}))
+    page.route("**/api/voice/tts/status", lambda r: r.fulfill(json={
+        "engine_installed": True, "voices": ["hi_IN-pratham-medium"],
+        "available": [{"voice": "hi_IN-pratham-medium", "label": "Hindi · Pratham", "approx_mb": 63}],
+        "download": {"running": False, "error": None}}))
+    spoken = []
+    page.route("**/api/voice/tts/speak", lambda r: spoken.append(r.request.post_data_json) or r.fulfill(
+        body=silent_wav(), headers={"content-type": "audio/wav"}))
+    clips = []
+
+    def transcribe(route):
+        clips.append(len(route.request.post_data_buffer or b""))
+        route.fulfill(json={"text": transcripts.pop(0) if transcripts else "", "language": "en", "model": "tiny", "seconds": 0.1})
+    page.route("**/api/voice/transcribe**", transcribe)
+    return spoken, clips
+
+
+def test_hands_free_wake_word_sends_the_request_and_reads_the_reply_on_the_pc(page, fake_ollama):
+    page.context.grant_permissions(["microphone"])
+    spoken, clips = mock_local_voice(page, ["some background talk", "Hey ATLAS, what is normalization"] + ["background"] * 20)
+    open_chat(page)
+    open_model_settings(page)
+    page.select_option("#voiceengine", "local")
+    page.select_option("#ttsengine", "local")
+    playwright_sync.expect(page.locator("#localvoicename")).to_have_value("hi_IN-pratham-medium")
+    page.get_by_role("button", name="Read replies aloud").click()
+    page.check("#handsfree")
+    playwright_sync.expect(page.locator("#handsfreenote")).to_contain_text("Listening for")
+    page.wait_for_selector("text=Echo: what is normalization", timeout=20000)
+    assert len(clips) >= 2 and all(size > 0 for size in clips)  # real audio clips cut by the detector
+    assert fake_ollama.chat_requests[-1]["messages"][-1]["content"] == "what is normalization"
+    playwright_sync.expect(page.locator(".bubble:has-text('Echo: what is normalization')")).to_be_visible()
+    for _ in range(50):
+        if spoken:
+            break
+        page.wait_for_timeout(100)
+    assert spoken and spoken[0]["text"] == "Echo: what is normalization" and spoken[0]["voice"] == "hi_IN-pratham-medium"
+    page.uncheck("#handsfree")
+    playwright_sync.expect(page.locator("#handsfreenote")).to_have_text("Hands-free is off.")
+    assert page.errors == []
+
+
+def test_hands_free_refuses_to_use_the_online_browser_service(page):
+    open_chat(page)
+    open_model_settings(page)
+    page.select_option("#voiceengine", "browser")
+    page.click("#handsfree")  # the box unticks itself, so click() rather than check()
+    playwright_sync.expect(page.locator("#handsfreenote")).to_contain_text("never uses the browser")
+    playwright_sync.expect(page.locator("#handsfree")).not_to_be_checked()
+
+
+def test_browser_actions_wait_for_approval(page):
+    page.get_by_role("button", name="Tasks").click()
+    page.select_option("#actionkind", "web_search")
+    page.fill("#actionwords", "DBMS normalization")
+    page.select_option("#actionengine", "google")
+    page.get_by_role("button", name="Ask for approval").click()
+    card = page.locator(".task", has_text="Search Google for 'DBMS normalization'").first
+    playwright_sync.expect(card.locator(".task-state")).to_have_text("AWAITING APPROVAL", timeout=5000)
+    card.get_by_role("button", name="Cancel task").click()
+    page.select_option("#actionkind", "open_url")
+    page.fill("#actionurl", "file:///etc/passwd")
+    page.get_by_role("button", name="Ask for approval").click()
+    playwright_sync.expect(page.locator("p.notice[role=status]").first).to_contain_text("Only http:// and https://")
+    assert [e for e in page.errors if "status of 422" not in e] == []  # the refusal itself is logged by the browser
+
+
+def test_fallback_model_answers_only_when_ticked_and_is_labelled(page, fake_ollama):
+    open_chat(page)
+    open_model_settings(page)
+    page.fill("#atlasmodel", "fake-missing")
+    page.fill("textarea[aria-label=Message]", "fallback please")
+    page.click("button:has-text('Send')")
+    playwright_sync.expect(page.locator(".chatstatus")).to_contain_text("does not recognise this model", timeout=10000)
+    page.check("#atlasfallback")
+    page.fill("textarea[aria-label=Message]", "fallback please")
+    page.click("button:has-text('Send')")
+    reply = page.locator(".bubble:has-text('Echo: fallback please')")
+    playwright_sync.expect(reply.locator(".meta")).to_contain_text("fallback: Ollama (local) failed, model not found", timeout=10000)
+    assert fake_ollama.chat_requests[-1]["model"] == "fake-small:1b"
+    page.uncheck("#atlasfallback")
+    page.fill("#atlasmodel", "fake-small:1b")
+
+
+def test_home_plan_uses_the_local_model_once_one_is_chosen(page):
+    open_chat(page)  # picks the installed fake model and saves it as the chat model
+    page.locator(".tabbar, #sidebar").get_by_role("button", name="Home").first.click()
+    page.fill("#command", "Plan a weekend trip to Jaipur")
+    page.click("#run")
+    playwright_sync.expect(page.locator("#taskstate")).to_have_text("PLAN READY · FAKE-SMALL:1B", timeout=15000)
+    assert "Book train" in page.locator("#tasksteps").inner_text()
+    playwright_sync.expect(page.locator("#message")).to_contain_text("Written by fake-small:1b on this PC")
+    assert page.errors == []
+
+
+def test_automation_is_created_run_paused_and_deleted(page, server):
+    open_chat(page)
+    page.locator("#sidebar").get_by_role("button", name="Automations").click()
+    page.fill("#autoname", "Morning plan")
+    page.fill("#autogoal", "Plan my study day")
+    page.select_option("#autoevery", "week")
+    page.select_option("#autoday", "0")
+    page.fill("#autotime", "07:30")
+    page.get_by_role("button", name="Create automation").click()
+    card = page.locator("[data-automation]", has_text="Morning plan")
+    playwright_sync.expect(card).to_contain_text("EVERY MONDAY AT 07:30")
+    card.get_by_role("button", name="Run now").click()
+    playwright_sync.expect(card).to_contain_text("task created")
+    task_id = httpx.get(server + "/api/automations", headers=AUTH).json()["automations"][0]["last_task_id"]
+    for _ in range(50):
+        if httpx.get(f"{server}/api/tasks/{task_id}", headers=AUTH).json()["state"] == "Succeeded":
+            break
+        time.sleep(0.2)
+    assert httpx.get(f"{server}/api/tasks/{task_id}", headers=AUTH).json()["params"]["goal"] == "Plan my study day"
+    card.get_by_role("button", name="Pause").click()
+    playwright_sync.expect(card.locator(".badge")).to_have_text("PAUSED")
+    page.once("dialog", lambda d: d.accept())
+    card.get_by_role("button", name="Delete automation Morning plan").click()
+    playwright_sync.expect(page.locator("#automationlist")).to_contain_text("No automations yet.")
     assert page.errors == []
 
 

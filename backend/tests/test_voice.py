@@ -129,3 +129,11 @@ def test_paired_phone_cannot_start_a_download(engine, monkeypatch):
     assert phone.get("/api/voice/status").status_code == 200  # signed in as a paired device
     assert phone.post("/api/voice/download", json={"size": "tiny", "confirm": True}).status_code == 403
     assert engine == []
+
+
+def test_real_sized_recordings_get_past_the_json_body_limit(api, engine):
+    """A minute of speech is ~0.5 MB, above the 256 KB limit for JSON requests (bug found in v0.9)."""
+    api.post("/api/voice/download", json={"size": "tiny", "confirm": True})
+    wait_download(api)
+    r = api.post("/api/voice/transcribe", content=b"webm" + b"x" * 1_000_000)
+    assert r.status_code == 200 and r.json()["text"] == "namaste ATLAS"
