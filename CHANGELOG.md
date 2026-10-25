@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.1 — 2026-10-25
+
+- The "Describe a task to plan" box in the top bar showed on every screen. It is removed; plans are made from the goal box on Home (and from the Tasks screen).
+
 ## 0.16.0 — 2026-10-25 (branch `atlas/cyber-ui`)
 
 Redesign the owner asked for: every screen looked and worked the same, status, refresh and update were all in one corner, there was no light theme, and no effects or motion.
