@@ -27,6 +27,12 @@ def desktop_status():
     return {**agent.status(), "notice": "Local-only. Desktop actions are disabled unless explicitly enabled on your own PC."}
 
 
+@router.get("/trash")
+def desktop_trash():
+    """Files moved to ATLAS trash by approved tasks; restore them with a restore_from_trash task."""
+    return {"items": agent.list_trash() if agent.enabled() else []}
+
+
 @router.post("/launch")
 def desktop_launch(body: DesktopLaunchRequest, request: Request):
     principal = request.scope.get("state", {}).get("principal") or {}

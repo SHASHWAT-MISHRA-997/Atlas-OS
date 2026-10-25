@@ -18,3 +18,7 @@ atlas-data/
 *.db
 *.db-wal
 *.db-shm
+
+# Written by scripts/windows/install.ps1 on the owner PC
+atlas-settings.cmd
+start-atlas.cmd

@@ -55,6 +55,24 @@ jobs:
       - name: Unit, API and Windows tests (includes a real Notepad launch)
         working-directory: backend
         run: python -m pytest -q -m "not e2e"
+      - name: Installer script (installs, starts ATLAS, start-on-login on and off)
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/install.ps1 -StartOnLogin
+          if ($LASTEXITCODE -ne 0) { throw "installer failed" }
+          $link = Join-Path ([Environment]::GetFolderPath('Startup')) 'ATLAS OS.lnk'
+          if (-not (Test-Path $link)) { throw "start-on-login shortcut missing" }
+          $p = Start-Process -FilePath (Resolve-Path start-atlas.cmd) -PassThru -WindowStyle Hidden
+          $ok = $false
+          for ($i = 0; $i -lt 60 -and -not $ok; $i++) {
+            Start-Sleep -Seconds 1
+            try { $ok = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/health).StatusCode -eq 200 } catch { }
+          }
+          taskkill /PID $p.Id /T /F | Out-Null
+          if (-not $ok) { throw "ATLAS did not answer on http://127.0.0.1:8000/health" }
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/install.ps1 -RemoveStartOnLogin
+          if (Test-Path $link) { throw "shortcut not removed" }
+          if (-not (Select-String -Path atlas-settings.cmd -Pattern 'ATLAS_AGENT_FOLDERS' -Quiet)) { throw "settings file missing" }
 
   frontend-e2e:
     runs-on: ubuntu-latest

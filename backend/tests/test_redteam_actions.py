@@ -204,3 +204,66 @@ def test_a_tunnel_on_the_pc_does_not_get_owner_rights(env, auth_on):
     assert via_tunnel.post("/api/tasks", json={"kind": "open_app", "app_id": "calculator"},
                            headers={"x-forwarded-for": "203.0.113.9"}).status_code == 401
     assert auth.get_token() not in str(r.headers)
+
+
+# --- writing, trash and documents (v0.8) --------------------------------------------------
+
+@pytest.mark.parametrize("body", [
+    {"name": "../evil"}, {"name": "..\\evil"}, {"name": "notes/evil"}, {"name": ".bashrc"},
+    {"name": "CON"}, {"name": "nul.txt"}, {"name": "ok", "path": "../secret"}, {"name": "ok", "path": "escape-link"},
+], ids=["dotdot-name", "backslash-name", "slash-name", "dotfile", "windows-device", "windows-device-ext",
+        "dotdot-folder", "symlink-folder"])
+def test_new_files_cannot_be_written_outside_or_to_devices(api, env, body):
+    if body.get("path") == "escape-link" and not (env["docs"] / "escape-link").is_symlink():
+        pytest.skip("symlinks not available")
+    r = create(api, kind="create_note", folder="documents", text="x", **body)
+    assert r.status_code == 422
+    assert sorted(p.name for p in env["secret"].iterdir()) == ["passwords.txt"]
+
+
+def test_existing_files_are_never_overwritten(api, env):
+    r = create(api, kind="create_note", folder="documents", path="notes", name="a.txt", text="replaced")
+    assert r.status_code == 409
+    assert (env["docs"] / "notes" / "a.txt").read_text() == "a"
+
+
+@pytest.mark.parametrize("path", ["../secret/passwords.txt", "escape-link/passwords.txt", "notes"],
+                         ids=["dotdot", "through-symlink", "folder"])
+def test_trash_cannot_take_files_from_outside_or_whole_folders(api, env, path):
+    if path.startswith("escape-link") and not (env["docs"] / "escape-link").is_symlink():
+        pytest.skip("symlinks not available")
+    r = create(api, kind="move_to_trash", folder="documents", path=path)
+    if r.status_code == 202:
+        api.post(f"/api/tasks/{r.json()['id']}/approve", json={"approval_hash": r.json()["approval_hash"]})
+        assert settle(api, r.json()["id"], 0.5)["state"] == "Failed"
+    else:
+        assert r.status_code == 422
+    assert (env["secret"] / "passwords.txt").read_text() == "hunter2"
+    assert (env["docs"] / "notes" / "a.txt").exists()
+
+
+def test_restore_never_overwrites_a_new_file(api, env, tmp_path, monkeypatch):
+    monkeypatch.setenv("ATLAS_DATA_DIR", str(tmp_path / "data"))
+    task = create(api, kind="move_to_trash", folder="documents", path="notes/a.txt").json()
+    api.post(f"/api/tasks/{task['id']}/approve", json={"approval_hash": task["approval_hash"]})
+    trash_id = settle(api, task["id"], 0.5)["output"]["trash_id"]
+    (env["docs"] / "notes" / "a.txt").write_text("newer")
+    task = create(api, kind="restore_from_trash", trash_id=trash_id).json()
+    api.post(f"/api/tasks/{task['id']}/approve", json={"approval_hash": task["approval_hash"]})
+    assert settle(api, task["id"], 0.5)["state"] == "Failed"
+    assert (env["docs"] / "notes" / "a.txt").read_text() == "newer"
+
+
+def test_indexing_does_not_follow_links_out_of_the_folder(api, env, tmp_path, monkeypatch):
+    if not (env["docs"] / "escape-link").is_symlink():
+        pytest.skip("symlinks not available")
+    monkeypatch.setenv("ATLAS_DATA_DIR", str(tmp_path / "data"))
+    task = create(api, kind="index_documents", folder="documents").json()
+    api.post(f"/api/tasks/{task['id']}/approve", json={"approval_hash": task["approval_hash"]})
+    assert settle(api, task["id"], 0.8)["state"] == "Succeeded"
+    assert api.get("/api/docs/search", params={"q": "hunter2"}).json()["results"] == []
+
+
+@pytest.mark.parametrize("q", ['"', "NEAR(a b)", "a OR", "*", "col:val", "') DROP TABLE doc_chunks; --"])
+def test_search_syntax_cannot_break_the_query(api, env, q):
+    assert api.get("/api/docs/search", params={"q": q}).status_code == 200

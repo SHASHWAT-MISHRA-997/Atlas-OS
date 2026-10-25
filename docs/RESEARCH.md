@@ -37,7 +37,7 @@ The fake server writes every 2 ms, so up to 2 ms of each number is just waiting 
 
 ## Q3. Does the permission policy block unauthorised actions?
 
-`backend/tests/test_redteam_actions.py` has **30 attack cases** against the desktop agent and its approval flow. All 30 are blocked or contained, and they run in CI on every push.
+`backend/tests/test_redteam_actions.py` has **50 attack cases** against the desktop agent and its approval flow (30 from v0.7, 20 added in v0.8 for writing files, the trash, indexing and document search). All 50 are blocked or contained, and they run in CI on every push.
 
 | Group | Cases | What is tried |
 |---|---|---|
@@ -45,13 +45,14 @@ The fake server writes every 2 ms, so up to 2 ms of each number is just waiting 
 | Run something not allowlisted | 7 | `shell` and `run_command` kinds, PowerShell, `notepad & calc`, `cmd.exe`, a missing app, extra `command`/`args` fields |
 | Get around approval | 4 | nothing runs unapproved, a wrong hash, a hash from another task, approving twice, approving after the agent is switched off |
 | Wrong person asks | 4 | no login, a cross-site page, a tunnel on the PC, a paired phone using the old direct launcher |
+| Write, trash and index (v0.8) | 20 | `..`, slashes and backslashes in new file names, dotfiles, Windows device names (`CON`, `nul.txt`), writing into a linked folder, overwriting an existing file, trashing a file outside or a whole folder, restore over a newer file, indexing through a link, FTS query syntax |
 
 The cases **found two real problems**, both fixed in this version:
 
 1. **A tunnel on the PC made every visitor the owner.** A browser on the PC is signed in as the owner automatically. Tailscale Serve, cloudflared and nginx also connect from `127.0.0.1`, so anyone reaching ATLAS through them would have become the owner. The automatic owner login now also requires a loopback Host name and no forwarding headers. `test_devices.py` has the cases; they fail on the old code.
 2. **A paired phone could skip approval.** The old `/api/desktop/launch` endpoint opened an allowlisted app when the request said `confirm: true`. A phone can send that flag, so it was not approval. The endpoint is now owner-only, and phones use approved tasks.
 
-**Limits.** The same author wrote the code and these cases, so this is a regression suite, not an independent red-team evaluation. Prompt injection through chat is ruled out by design rather than tested: the chat endpoint cannot create tasks or actions, so a model's reply has no path to the agent. That holds until a tool-calling feature exists. Nothing here was run on Windows except the `test_windows.py` cases on the CI Windows runner.
+**Limits.** The same author wrote the code and these cases, so this is a regression suite, not an independent red-team evaluation. Prompt injection through chat is ruled out by design rather than tested: the chat endpoint cannot create tasks or actions, so a model's reply has no path to the agent. That holds until a tool-calling feature exists. Since v0.8, document excerpts can carry injected text into chat; they are labelled untrusted, and the same rule applies: chat cannot act. Nothing here was run on Windows except the `test_windows.py` cases on the CI Windows runner.
 
 ## Accessibility (supporting evidence)
 

@@ -1,8 +1,8 @@
 """Tasks: the original simulation planner plus real background tasks run by app/task_engine.py.
 
-Model tasks only call the chosen model. Desktop-action tasks (open_app,
-list_folder, search_files) run one typed action from app/agent.py after the user
-approves it; none runs shell commands.
+Model tasks only call the chosen model. Desktop-action tasks (see agent.ACTIONS)
+run one typed action from app/agent.py after the user approves it; none runs
+shell commands.
 """
 from __future__ import annotations
 
@@ -50,7 +50,8 @@ def plan_task(body: PlanRequest):
 # --- real background tasks (app/task_engine.py) ---------------------------------
 
 class TaskCreate(BaseModel):
-    kind: Literal["plan", "summarize_text", "open_app", "list_folder", "search_files"]
+    kind: Literal["plan", "summarize_text", "open_app", "list_folder", "search_files", "index_documents",
+                  "create_note", "create_document", "move_to_trash", "restore_from_trash", "media_key"]
     provider: ProviderId | None = None
     model: str | None = Field(default=None, min_length=1, max_length=200)
     api_key: str = Field(default="", max_length=1000)
@@ -62,14 +63,32 @@ class TaskCreate(BaseModel):
     folder: str | None = Field(default=None, max_length=40, pattern=r"^[a-z0-9_]+$")
     path: str = Field(default="", max_length=500)
     query: str | None = Field(default=None, max_length=200)
+    name: str | None = Field(default=None, max_length=100)
+    format: Literal["docx", "xlsx"] | None = None
+    title: str = Field(default="", max_length=200)
+    trash_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{12}$")
+    key: Literal["play_pause", "next", "previous", "volume_up", "volume_down", "mute"] | None = None
 
     @model_validator(mode="after")
     def inputs_match_kind(self):
         if self.kind in agent.ACTIONS:
             if self.kind == "open_app" and not self.app_id:
                 raise ValueError("An open_app task needs 'app_id'.")
-            if self.kind in ("list_folder", "search_files") and not self.folder:
+            if self.kind in ("list_folder", "search_files", "index_documents", "create_note", "create_document",
+                             "move_to_trash") and not self.folder:
                 raise ValueError(f"A {self.kind} task needs 'folder'.")
+            if self.kind in ("create_note", "create_document") and not (self.name or "").strip():
+                raise ValueError(f"A {self.kind} task needs 'name'.")
+            if self.kind in ("create_note", "create_document") and self.text is None:
+                raise ValueError(f"A {self.kind} task needs 'text'.")
+            if self.kind == "create_document" and not self.format:
+                raise ValueError("A create_document task needs 'format' (docx or xlsx).")
+            if self.kind == "move_to_trash" and not self.path.strip().strip("/\\"):
+                raise ValueError("A move_to_trash task needs 'path' (the file).")
+            if self.kind == "restore_from_trash" and not self.trash_id:
+                raise ValueError("A restore_from_trash task needs 'trash_id'.")
+            if self.kind == "media_key" and not self.key:
+                raise ValueError("A media_key task needs 'key'.")
             if self.kind == "search_files" and not (self.query or "").strip():
                 raise ValueError("A search_files task needs non-blank 'query'.")
             if "\x00" in self.path:
@@ -90,6 +109,20 @@ class TaskCreate(BaseModel):
             return {"folder": self.folder, "path": self.path.strip().strip("/\\")}
         if self.kind == "search_files":
             return {"folder": self.folder, "path": self.path.strip().strip("/\\"), "query": (self.query or "").strip()}
+        if self.kind == "index_documents":
+            return {"folder": self.folder}
+        if self.kind in ("create_note", "create_document"):
+            out = {"folder": self.folder, "path": self.path.strip().strip("/\\"), "name": (self.name or "").strip(),
+                   "text": self.text or ""}
+            if self.kind == "create_document":
+                out.update(format=self.format, title=self.title.strip())
+            return out
+        if self.kind == "move_to_trash":
+            return {"folder": self.folder, "path": self.path.strip().strip("/\\")}
+        if self.kind == "restore_from_trash":
+            return {"trash_id": self.trash_id}
+        if self.kind == "media_key":
+            return {"key": self.key}
         base = {"provider": self.provider, "model": (self.model or "").strip()}
         if self.kind == "plan":
             base["goal"] = (self.goal or "").strip()

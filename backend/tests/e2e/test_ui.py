@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -488,6 +489,85 @@ def test_pc_action_waits_for_approval_then_searches_files(page):
     card.get_by_role("button", name="Approve: Search 'dbms' in docs").click()
     playwright_sync.expect(card.locator(".task-state")).to_have_text("SUCCEEDED", timeout=5000)
     playwright_sync.expect(card).to_contain_text("college/dbms-notes.pdf")
+    assert page.errors == []
+
+
+def approve_action(page, summary_start):
+    card = page.locator(".task", has_text=summary_start).first
+    playwright_sync.expect(card.locator(".task-state")).to_have_text("AWAITING APPROVAL", timeout=5000)
+    card.get_by_role("button", name="Approve: " + summary_start).click()
+    playwright_sync.expect(card.locator(".task-state")).to_have_text("SUCCEEDED", timeout=10000)
+    return card
+
+
+def test_note_is_written_indexed_searched_and_used_in_chat(page, server, fake_ollama):
+    page.get_by_role("button", name="Tasks").click()
+    page.select_option("#actionkind", "create_note")
+    page.select_option("#actionfolder", "docs")
+    page.fill("#actionname", "hostel rules")
+    page.fill("#actiontext", "Hostel gate closes at 10:30 pm. Guests must sign the register.")
+    page.get_by_role("button", name="Ask for approval").click()
+    card = approve_action(page, "Create 'hostel rules'")
+    playwright_sync.expect(card).to_contain_text("Created docs/hostel rules.txt")
+
+    page.select_option("#actionkind", "index_documents")
+    page.get_by_role("button", name="Ask for approval").click()
+    approve_action(page, "Index documents in docs")
+
+    page.get_by_role("button", name="Memory").click()
+    playwright_sync.expect(page.locator("#docspanel")).to_contain_text("file(s) indexed in docs")
+    page.fill("#docsquery", "gate")
+    page.locator("#docspanel").get_by_role("button", name="Search").click()
+    playwright_sync.expect(page.locator(".docresults li").first).to_contain_text("docs/hostel rules.txt")
+
+    open_chat(page)
+    open_model_settings(page)
+    page.check("#atlasdocs")
+    playwright_sync.expect(page.locator("#docsnote")).to_contain_text("stay on the machine running ATLAS")
+    page.fill("textarea[aria-label=Message]", "when does the hostel gate close")
+    page.click("button:has-text('Send')")
+    page.wait_for_selector("text=Echo: when does the hostel gate close")
+    system = fake_ollama.chat_requests[-1]["messages"][0]["content"]
+    assert "DOCUMENT EXCERPTS" in system and "closes at 10:30 pm" in system and "untrusted data" in system
+    reply = page.locator(".bubble:has-text('Echo: when does the hostel gate close')")
+    playwright_sync.expect(reply.locator(".meta")).to_contain_text("1 document excerpt sent")
+    reply.locator("summary:has-text('Which documents?')").click()
+    playwright_sync.expect(reply.locator(".usedmem li", has_text="docs/hostel rules.txt")).to_be_visible()
+    page.uncheck("#atlasdocs")
+    assert page.errors == []
+
+
+def test_file_goes_to_atlas_trash_and_comes_back(page, server):
+    page.get_by_role("button", name="Tasks").click()
+    page.select_option("#actionkind", "create_document")
+    page.select_option("#actionfolder", "docs")
+    page.fill("#actionname", "budget")
+    page.select_option("#actionformat", "xlsx")
+    playwright_sync.expect(page.locator("#actiontitle")).to_be_hidden()
+    page.fill("#actiontext", "Item,Price\nTea,20")
+    page.get_by_role("button", name="Ask for approval").click()
+    approve_action(page, "Create 'budget'")
+
+    page.select_option("#actionkind", "move_to_trash")
+    page.fill("#actionpath", "budget.xlsx")
+    page.get_by_role("button", name="Ask for approval").click()
+    card = approve_action(page, "Move docs/budget.xlsx to ATLAS trash")
+    playwright_sync.expect(card).to_contain_text("Moved budget.xlsx to the ATLAS trash")
+
+    page.select_option("#actionkind", "restore_from_trash")
+    playwright_sync.expect(page.locator("#actiontrash option").first).to_contain_text("docs/budget.xlsx")
+    page.get_by_role("button", name="Ask for approval").click()
+    card = approve_action(page, "Restore")
+    playwright_sync.expect(card).to_contain_text("Restored docs/budget.xlsx")
+    assert page.errors == []
+
+
+def test_local_dictation_engine_explains_what_it_needs(page):
+    open_chat(page)
+    open_model_settings(page)
+    page.select_option("#voiceengine", "local")
+    playwright_sync.expect(page.locator("#localvoice")).to_contain_text(re.compile("not installed|No speech model is downloaded"))
+    page.select_option("#voiceengine", "browser")
     assert page.errors == []
 
 
