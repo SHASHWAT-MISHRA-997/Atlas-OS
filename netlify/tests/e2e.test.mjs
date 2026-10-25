@@ -172,8 +172,8 @@ test('a visitor gets a free key, chats, plans, and the key stays on their phone'
   await go(page, 'tasks');
   await page.waitForFunction(() => document.querySelector('#taskkey')?.value === 'my-own-test-key-456');
   await go(page, 'integrations');
-  await page.waitForSelector('text=AI with your own key');
-  for (const gone of ['automations', 'devices', 'agents', 'projects']) assert.equal(await page.locator('[data-section="' + gone + '"]').count(), 0, gone);
+  await page.waitForSelector('.tile >> text=Your key: Groq');
+  for (const gone of ['agents', 'projects']) assert.equal(await page.locator('[data-section="' + gone + '"]').count(), 0, gone);
   assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /\bPC\b|Windows|backend/);
   await noOllama(page);
 
@@ -202,7 +202,7 @@ test('a new version is announced with "Update now", and "Check for update" works
   await page.goto(base + '/');
   await page.waitForSelector('#topstatus .dot');
   // Same version as the page: nothing to update.
-  await page.click('#morebtn');
+  await go(page, 'system');
   await page.click('#checkupdate');
   await page.waitForSelector('#updatenote >> text=You have the latest version (' + version + ')');
   assert.equal(await page.locator('#updatebanner').count(), 0);
@@ -210,7 +210,6 @@ test('a new version is announced with "Update now", and "Check for update" works
   await page.route('**/version.json*', (route) => route.fulfill({ contentType: 'application/json', body: '{"version":"9.9.9"}' }));
   await page.click('#checkupdate');
   await page.waitForSelector('#updatebanner >> text=ATLAS 9.9.9 is ready (you have ' + version + ')');
-  assert.equal(await page.isVisible('#sidebar.open'), false, 'menu closes so the banner is seen');
   await shot(page, '5-update-banner');
   await noSideScroll(page);
   await Promise.all([page.waitForEvent('load'), page.click('#updatenow')]);
@@ -318,12 +317,98 @@ test('every screen opens on a phone with no console errors or warnings', async (
   page.on('console', (m) => { if (m.type() === 'warning') warnings.push(m.text()); });
   await page.goto(base + '/');
   await page.waitForSelector('#topstatus .dot');
-  for (const s of ['chat', 'tasks', 'memory', 'integrations', 'home']) {
+  for (const s of ['chat', 'tasks', 'automations', 'memory', 'integrations', 'devices', 'system', 'home']) {
     await go(page, s);
     await page.waitForSelector('#' + (s === 'home' ? 'home' : 'subview') + ':not(.hidden)');
     await noSideScroll(page);
   }
   assert.deepEqual(page.errors, []);
   assert.deepEqual(warnings, []);
+  await page.context().close();
+});
+
+test('dark and light theme: the switch works, is remembered, and Auto follows the device', async () => {
+  const page = await phone({ colorScheme: 'dark' });
+  await page.goto(base + '/');
+  await page.waitForSelector('#topstatus .dot');
+  const theme = () => page.evaluate(() => document.documentElement.dataset.theme || 'auto');
+  const bg = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim());
+  assert.equal(await theme(), 'auto');
+  assert.equal(await bg(), '#04060d');
+  await page.click('#themetoggle2');
+  assert.equal(await theme(), 'light');
+  assert.equal(await bg(), '#eef2fb');
+  await shot(page, '7-light-theme');
+  await page.reload();
+  await page.waitForSelector('#topstatus .dot');
+  assert.equal(await theme(), 'light', 'remembered before the page paints');
+  await go(page, 'system');
+  await page.click('[data-theme-choice="auto"]');
+  assert.equal(await theme(), 'auto');
+  assert.equal(await bg(), '#04060d', 'Auto follows the dark device setting');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+test('automations run in the browser: a reminder shows, and a schedule is kept', async () => {
+  const page = await phone();
+  page.on('dialog', (d) => d.accept());
+  await page.goto(base + '/');
+  await go(page, 'automations');
+  await page.fill('#autoname', 'Drink water');
+  await page.selectOption('#autokind', 'reminder');
+  await page.fill('#autotext', 'Glass of water now');
+  await page.selectOption('#autoevery', 'hours');
+  await page.fill('#autohours', '2');
+  await page.click('button:has-text("Create automation")');
+  await page.waitForSelector('[data-automation] >> text=EVERY 2 H');
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.automations.v1')));
+  assert.equal(saved.length, 1);
+  const due = Date.parse(saved[0].next_run) - Date.now();
+  assert.ok(due > 1.9 * 3600e3 && due <= 2 * 3600e3, 'next run in about 2 hours');
+  await page.click('[data-automation] >> text=Run now');
+  await page.waitForSelector('#remindbanner >> text=Glass of water now');
+  // A missed run happens once when ATLAS opens again.
+  await page.evaluate(() => { const a = JSON.parse(localStorage.getItem('atlas.os.automations.v1')); a[0].next_run = new Date(Date.now() - 60000).toISOString(); a[0].last_run = null; localStorage.setItem('atlas.os.automations.v1', JSON.stringify(a)); });
+  await page.reload();
+  await page.waitForSelector('#remindbanner >> text=Glass of water now');
+  const after = await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.automations.v1'))[0]);
+  assert.ok(Date.parse(after.next_run) > Date.now(), 'rescheduled into the future');
+  await go(page, 'automations');
+  await page.click('[data-automation] >> text=Delete');
+  await page.waitForSelector('text=No automations yet.');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+test('devices: export leaves keys out unless asked, import restores, erase removes everything', async () => {
+  const page = await phone({ acceptDownloads: true });
+  page.on('dialog', (d) => d.accept());
+  await page.goto(base + '/');
+  await page.evaluate(() => {
+    localStorage.setItem('atlas.cloud.key.groq', JSON.stringify('device-test-key-123'));
+    localStorage.setItem('atlas.os.memories.v1', JSON.stringify([{ id: 'm1', text: 'Exam in December', createdAt: new Date().toISOString() }]));
+  });
+  await page.reload();
+  await go(page, 'devices');
+  await page.waitForSelector('.spec >> text=Memories');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#exportall')]);
+  const backup = JSON.parse((await import('node:fs')).readFileSync(await download.path(), 'utf8'));
+  assert.equal(backup.format, 'atlas-os-backup');
+  assert.ok(backup.data['atlas.os.memories.v1'].includes('Exam in December'));
+  assert.equal(backup.data['atlas.cloud.key.groq'], undefined, 'keys are left out by default');
+  await shot(page, '8-devices');
+
+  await page.click('#eraseall');
+  await page.waitForLoadState('load');
+  // After the reload only the empty task list that ATLAS creates at start is left.
+  assert.deepEqual(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('atlas.') && localStorage.getItem(k) !== '[]')), []);
+
+  await go(page, 'devices');
+  await page.setInputFiles('#importfile', { name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ ...backup, data: { ...backup.data, 'evil.key': 'x', 'atlas.x': { not: 'a string' } } })) });
+  await page.waitForLoadState('load');
+  await page.waitForFunction(() => (localStorage.getItem('atlas.os.memories.v1') || '').includes('Exam in December'));
+  assert.equal(await page.evaluate(() => localStorage.getItem('evil.key')), null, 'only ATLAS items are imported');
+  assert.deepEqual(page.errors, []);
   await page.context().close();
 });

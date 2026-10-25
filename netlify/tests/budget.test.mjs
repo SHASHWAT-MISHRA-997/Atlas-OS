@@ -9,7 +9,7 @@ const dist = new URL('../../dist/', import.meta.url);
 const gz = (path) => gzipSync(readFileSync(new URL(path, dist))).length;
 
 test('code needed to open the app stays under 80 KB compressed', () => {
-  const files = ['index.html', 'static/app.js', 'static/app.css', 'static/cloud.js', 'static/icon.svg'];
+  const files = ['index.html', 'static/theme.js', 'static/app.js', 'static/app.css', 'static/cloud.js', 'static/icon.svg'];
   const total = files.reduce((sum, f) => sum + gz(f), 0);
   assert.ok(total < 80_000, 'first load is ' + total + ' bytes gzipped');
 });
@@ -18,5 +18,7 @@ test('scripts load without blocking the first paint', () => {
   const html = readFileSync(new URL('index.html', dist), 'utf8');
   const scripts = html.match(/<script\b[^>]*>/g) || [];
   assert.ok(scripts.length >= 2);
-  for (const s of scripts) assert.match(s, /\bdefer\b/, s);
+  // theme.js runs first on purpose, so the saved theme applies before paint; it must stay tiny.
+  for (const s of scripts) if (!s.includes('/static/theme.js')) assert.match(s, /\bdefer\b/, s);
+  assert.ok(readFileSync(new URL('static/theme.js', dist)).length < 400, 'theme.js grew');
 });

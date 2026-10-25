@@ -14,12 +14,12 @@ Fakes live only in tests and in the preview server behind `ATLAS_FAKE_MODEL=1`; 
 
 ## Latest report
 
-Date: 2026-10-25, v0.15.0. Environment: Linux container, Node 22, Chromium 141. **Not Safari, not a real phone.**
+Date: 2026-10-25, v0.16.0. Environment: Linux container, Node 22, Chromium 141. **Not Safari, not a real phone.**
 
 | Command | Passed | Failed |
 |---|---|---|
 | `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 25 | 0 |
-| `node --test netlify/tests/e2e.test.mjs` | 5 | 0 |
+| `node --test netlify/tests/e2e.test.mjs` | 8 | 0 |
 | `detect-secrets scan` (excluding tests, node_modules, dist) | no findings | — |
 
 ## Manual checks still needed
@@ -27,3 +27,5 @@ Date: 2026-10-25, v0.15.0. Environment: Linux container, Node 22, Chromium 141. 
 - Real provider chat with the owner's own key on the live site.
 - Real iPad and iPhone in Safari: layout, Paste button, Add to Home Screen.
 - Real Android phone: install prompt.
+- Reminder notifications on a real phone (iPhone and iPad only allow them for an installed app).
+- Smoothness of the animated background on a real low-end phone.
