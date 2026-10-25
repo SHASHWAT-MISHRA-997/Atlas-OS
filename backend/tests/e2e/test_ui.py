@@ -350,11 +350,17 @@ def test_memories_are_sent_to_the_model_only_when_enabled(page, server, fake_oll
     page.click("button:has-text('Send')")
     page.wait_for_selector("text=Echo: who am i")
     assert "User name is Asha" in fake_ollama.chat_requests[-1]["messages"][0]["content"]
+    # The answer says exactly which memories were sent.
+    reply = page.locator(".bubble:has-text('Echo: who am i')")
+    playwright_sync.expect(reply.locator(".meta")).to_contain_text("saved memor")
+    reply.locator("summary:has-text('Which memories?')").click()
+    playwright_sync.expect(reply.locator(".usedmem li", has_text="User name is Asha")).to_be_visible()
     httpx.put(server + "/api/memory/settings", json={"enabled": False}, headers=AUTH)
     page.fill("textarea[aria-label=Message]", "again")
     page.click("button:has-text('Send')")
     page.wait_for_selector("text=Echo: again")
     assert "User name is Asha" not in fake_ollama.chat_requests[-1]["messages"][0]["content"]
+    playwright_sync.expect(page.locator(".bubble:has-text('Echo: again') .meta")).to_contain_text("no saved memories sent")
     httpx.put(server + "/api/memory/settings", json={"enabled": True}, headers=AUTH)
     history = httpx.get(server + "/api/chat/history", headers=AUTH).json()["messages"]
     assert [m["content"] for m in history][-2:] == ["again", "Echo: again"]
