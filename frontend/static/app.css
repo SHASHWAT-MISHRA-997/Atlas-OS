@@ -247,7 +247,9 @@ body{font-size:15px}
   .agenttop{flex-direction:column;gap:4px}
   .agent .badge{order:-1}
   .composer .chips-row{margin-top:6px}
-  .chatstatus,.dictnote{display:none}
+  .dictnote{display:none}
+  .chatstatus{font-size:12.5px}
+  .chatstatus:empty{display:none}
   .chathead h2{font-size:18px}
   #devicename{flex:1 1 100%!important}
   .row>input,.row>select{min-width:0;flex:1 1 100%}

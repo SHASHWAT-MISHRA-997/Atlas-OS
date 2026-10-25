@@ -521,3 +521,45 @@ def test_auto_delete_settings_remove_old_memories_after_confirmation(page, serve
     playwright_sync.expect(page.locator("text=Saved. Deleted now:")).to_contain_text(" 0 memories")
     assert httpx.get(server + "/api/storage/retention", headers=AUTH).json()["memory_days"] is None
     assert page.errors == []
+
+
+SPEECH_STUB = """
+// TEST STUB (mock): records what the app asks the browser to speak instead of playing audio.
+window.__spoken = [];
+class FakeUtterance { constructor(text) { this.text = text; this.lang = ''; this.voice = null; } }
+window.SpeechSynthesisUtterance = FakeUtterance;
+const fakeVoices = [{ name: 'Test Hindi (device)', lang: 'hi-IN', localService: true },
+                    { name: 'Test Hindi (cloud)', lang: 'hi-IN', localService: false },
+                    { name: 'Test English', lang: 'en-US', localService: true }];
+Object.defineProperty(window, 'speechSynthesis', { value: {
+  speaking: false, getVoices: () => fakeVoices, cancel() {}, addEventListener() {},
+  speak(u) { window.__spoken.push({ text: u.text, lang: u.lang, voice: u.voice && u.voice.name }); if (u.onend) u.onend(); },
+} });
+"""
+
+
+def test_voice_language_and_voice_choice_are_used_for_read_aloud(browser, server):
+    context = browser.new_context()
+    context.add_init_script(SPEECH_STUB)
+    pg = context.new_page()
+    pg.goto(server + "/")
+    open_chat(pg)
+    open_model_settings(pg)
+    pg.select_option("#voicelang", "hi-IN")
+    options = pg.locator("#voicename option").all_inner_texts()
+    assert "Test Hindi (device) · on this device" in options and "Test Hindi (cloud) · online" in options
+    assert not any("Test English" in o for o in options)  # only voices for the chosen language
+    pg.select_option("#voicename", "Test Hindi (device)")
+    pg.reload()  # the choice is remembered on this device
+    open_chat(pg)
+    open_model_settings(pg)
+    playwright_sync.expect(pg.locator("#voicelang")).to_have_value("hi-IN")
+    playwright_sync.expect(pg.locator("#voicename")).to_have_value("Test Hindi (device)")
+    pg.get_by_role("button", name="Read replies aloud").click()
+    pg.fill("textarea[aria-label=Message]", "namaste bolo")
+    pg.click("button:has-text('Send')")
+    pg.wait_for_selector("text=Echo: namaste bolo")
+    pg.wait_for_function("() => window.__spoken.length > 0")
+    spoken = pg.evaluate("() => window.__spoken")
+    assert spoken[-1] == {"text": "Echo: namaste bolo", "lang": "hi-IN", "voice": "Test Hindi (device)"}
+    context.close()

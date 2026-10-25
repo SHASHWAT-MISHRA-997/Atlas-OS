@@ -7,6 +7,7 @@
   const MEMORY_KEY = 'atlas.os.memories.v1';
   const CHAT_KEY = 'atlas.os.chat.v1';
   const CHAT_SETTINGS_KEY = 'atlas.os.chat.settings.v1'; // provider + model only, never keys
+  const VOICE_KEY = 'atlas.os.voice.v1'; // speech language + read-aloud voice name
   const MAX_CONVERSATION_CHARS = 46000; // backend limit is 48,000 across all messages
 
   function el(tag, props = {}, children = []) {
@@ -695,6 +696,32 @@
     const routing = el('p', { class: 'notice', role: 'status' });
     const modelStatus = el('p', { class: 'tiny muted' });
 
+
+    // Voice: language for dictation and read-aloud, and which installed voice reads replies.
+    const voicePrefs = { lang: '', voice: '', ...storageGet(VOICE_KEY, {}) };
+    const LANGS = [['', 'Same as this browser'], ['en-IN', 'English (India)'], ['hi-IN', 'Hindi'], ['en-US', 'English (US)'], ['en-GB', 'English (UK)']];
+    const langSelect = el('select', { id: 'voicelang' }, LANGS.map(([value, text]) => el('option', { value, text })));
+    langSelect.value = voicePrefs.lang;
+    const voiceSelect = el('select', { id: 'voicename' });
+    const voiceNote = el('p', { class: 'tiny muted', text: 'Dictation uses your browser\'s speech service; in Chrome and Edge the audio goes to the browser vendor. Voices marked "online" also send the text out. The microphone is the one your phone or browser uses by default.' });
+    const voiceBox = el('div', { class: 'voicebox' }, [
+      el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['VOICE LANGUAGE', langSelect]), el('label', { class: 'field' }, ['READ-ALOUD VOICE', voiceSelect])]),
+      voiceNote,
+    ]);
+    const speechLang = () => voicePrefs.lang || navigator.language || 'en-US';
+    function fillVoices() {
+      const all = 'speechSynthesis' in window ? window.speechSynthesis.getVoices() : [];
+      const base = speechLang().toLowerCase().split('-')[0];
+      const matching = all.filter((v) => v.lang.toLowerCase().startsWith(base));
+      voiceSelect.replaceChildren(el('option', { value: '', text: all.length ? 'Default voice' : 'No voices in this browser' }),
+        ...matching.map((v) => el('option', { value: v.name, text: v.name + (v.localService ? ' · on this device' : ' · online') })));
+      voiceSelect.value = matching.some((v) => v.name === voicePrefs.voice) ? voicePrefs.voice : '';
+    }
+    if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', fillVoices);
+    fillVoices();
+    langSelect.addEventListener('change', () => { voicePrefs.lang = langSelect.value; voicePrefs.voice = ''; storageSet(VOICE_KEY, voicePrefs); fillVoices(); });
+    voiceSelect.addEventListener('change', () => { voicePrefs.voice = voiceSelect.value; storageSet(VOICE_KEY, voicePrefs); });
+
     const settings = el('details', { class: 'panel settings', id: 'chatsettings' }, [
       el('summary', {}, [el('span', { class: 'tiny muted', text: 'MODEL' }), pill]),
       el('p', { class: 'tiny muted', text: 'Local-first: Ollama on the machine running ATLAS is the default. Cloud providers are optional and use your own key. When memory is on, saved memories and recent turns are included in each request.' }),
@@ -706,6 +733,7 @@
       modelList,
       el('div', { class: 'row', style: 'margin-top:10px' }, [loadModels, el('label', { class: 'check', style: 'margin:0' }, [streamToggle, 'Stream replies'])]),
       modelStatus, billingBox, routing,
+      voiceBox,
     ]);
 
     const transcript = el('div', { class: 'transcript', 'aria-live': 'polite', 'aria-label': 'Conversation' });
@@ -715,7 +743,7 @@
     const mic = el('button', { class: 'btn chip', type: 'button', text: '🎙 Dictate', 'aria-label': 'Dictate a message using browser speech recognition' });
     const speak = el('button', { class: 'btn chip', type: 'button', text: '🔊 Read aloud', 'aria-pressed': 'false', 'aria-label': 'Read replies aloud' });
     const clear = el('button', { class: 'btn chip', type: 'button', text: 'Clear chat', 'aria-label': 'Clear chat history' });
-    const status = el('p', { class: 'chatstatus tiny muted', role: 'status', text: 'No message sent yet.' });
+    const status = el('p', { class: 'chatstatus tiny muted', role: 'status', text: '' });
     prompt.addEventListener('input', () => { prompt.style.height = 'auto'; prompt.style.height = Math.min(prompt.scrollHeight, 180) + 'px'; });
     prompt.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); form.requestSubmit(); } });
     const form = el('form', { class: 'composer' }, [
@@ -818,7 +846,9 @@
       if (speak.getAttribute('aria-pressed') !== 'true' || !('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = navigator.language || 'en-US';
+      utterance.lang = speechLang();
+      const chosen = window.speechSynthesis.getVoices().find((x) => x.name === voicePrefs.voice);
+      if (chosen) utterance.voice = chosen;
       utterance.onend = () => { if (!activeGeneration) stop.disabled = true; };
       stop.disabled = false;
       window.speechSynthesis.speak(utterance);
@@ -855,7 +885,7 @@
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) { status.textContent = 'Speech recognition is not supported in this browser. Try Chrome or Edge and allow microphone access.'; return; }
       const recognition = new SR();
-      recognition.lang = navigator.language || 'en-US';
+      recognition.lang = speechLang();
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
       mic.disabled = true;
@@ -866,7 +896,11 @@
         prompt.focus();
         status.textContent = 'Speech captured. Review your message, then press Send.';
       };
-      recognition.onerror = (e) => { status.textContent = 'Speech input failed: ' + (e.error || 'unknown error') + '. Check microphone permission.'; };
+      recognition.onerror = (e) => {
+        const reasons = { 'not-allowed': 'Microphone permission is blocked. Allow it in the browser\'s site settings.', 'no-speech': 'No speech heard. Try again closer to the microphone.',
+          network: 'The browser\'s speech service could not be reached (it needs internet).', 'audio-capture': 'No microphone was found.' };
+        status.textContent = 'Speech input failed: ' + (reasons[e.error] || e.error || 'unknown error');
+      };
       recognition.onend = () => { mic.disabled = false; mic.textContent = '🎙 Dictate'; };
       try { recognition.start(); } catch { mic.disabled = false; mic.textContent = '🎙 Dictate'; status.textContent = 'Could not start speech recognition. Try again.'; }
     });
