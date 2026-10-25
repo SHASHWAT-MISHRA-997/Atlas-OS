@@ -1192,8 +1192,12 @@
         const link = r.url || 'http://<this-computer-address>:' + (location.port || '80') + r.path;
         result.replaceChildren(
           el('p', { class: 'notice', style: 'margin-top:12px', text: 'Open this link on the other device within 10 minutes. It works once.' }),
+          r.qr_svg ? el('img', { id: 'pairqr', class: 'pairqr', src: r.qr_svg, alt: 'QR code of the pairing link. Scan it with the phone camera.' }) : null,
+          r.qr_svg ? el('p', { class: 'tiny muted', text: 'Scan with the phone camera, or open the link below.' }) : null,
           el('code', { id: 'pairlink', style: 'display:block;word-break:break-all;padding:10px;background:#080f20;border-radius:8px', text: link }),
-          r.url ? null : el('p', { class: 'tiny muted', text: 'Replace <this-computer-address> with this computer\'s network address and add it to ATLAS_ALLOWED_HOSTS, or set ATLAS_PUBLIC_URL to get a complete link.' }),
+          r.url ? null : el('p', { class: 'tiny muted', text: 'Replace <this-computer-address> with this computer\'s network address'
+            + (r.lan_address ? ' (on this Wi-Fi it looks like ' + r.lan_address + ')' : '')
+            + ' and add it to ATLAS_ALLOWED_HOSTS, or set ATLAS_PUBLIC_URL to get a complete link and a QR code.' }),
         );
         name.value = '';
       } catch (err) {

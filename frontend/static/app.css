@@ -263,3 +263,6 @@ body{font-size:15px}
   .composer-input{min-height:44px}
 }
 @media(max-width:340px){.composer .chip{font-size:12px;padding:6px 8px}}
+
+/* v0.7 */
+.pairqr{display:block;width:min(240px,70vw);height:auto;margin:12px auto 6px;border-radius:12px;background:#fff;padding:4px;image-rendering:pixelated}

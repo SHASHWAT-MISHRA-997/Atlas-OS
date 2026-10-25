@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import os
+import socket
+
+import segno
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -56,8 +59,29 @@ def create_pairing(body: PairingRequest, request: Request):
     path = f"/?pair={result['code']}"
     # The server cannot know which address the other device should use, so a full
     # link is only offered when the operator configured one.
-    public = (os.getenv("ATLAS_PUBLIC_URL") or "").strip().rstrip("/")
-    return {**result, "path": path, "url": f"{public}{path}" if public else None}
+    base = (os.getenv("ATLAS_PUBLIC_URL") or "").strip().rstrip("/")
+    host = request.headers.get("host", "")
+    if not base and host and not auth.is_loopback(host.rsplit(":", 1)[0].strip("[]")) \
+            and not host.lower().startswith("localhost"):
+        # The owner opened ATLAS by a network address; the host allowlist already accepted it.
+        base = f"{request.url.scheme}://{host}"
+    url = f"{base}{path}" if base else None
+    qr = segno.make(url, error="m").svg_data_uri(scale=6, border=3) if url else None
+    return {**result, "path": path, "url": url, "qr_svg": qr, "lan_address": None if url else lan_address()}
+
+
+def lan_address() -> str | None:
+    """This computer's address on the local network, as a hint for building the link.
+
+    Connecting a UDP socket only picks a route; no packet is sent.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("192.0.2.1", 9))  # TEST-NET-1, never routed on the internet
+            address = sock.getsockname()[0]
+    except OSError:
+        return None
+    return None if address.startswith("127.") else address
 
 
 @router.delete("/api/devices/{device_id}")
