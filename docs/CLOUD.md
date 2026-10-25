@@ -11,7 +11,7 @@ Gateway credits are never used, so visitors cannot spend the owner's quota.
 
 | Feature | Online | Notes |
 |---|---|---|
-| AI Chat (streaming, Stop, memories sent with each message) | Yes | Free cloud providers only: Groq, Google Gemini, OpenRouter (free models only), with your own key |
+| AI Chat (streaming, Stop, memories sent with each message) | Yes | Free cloud providers by default: Groq, Google Gemini, OpenRouter (free models only), with your own key; optional paid OpenAI; auto-switch between free providers on limits |
 | Memory, chat history | Yes | Stored **in this browser only**. Another phone starts empty. Memory → Export moves them |
 | Tasks: plan a goal, summarize long text | Yes | Run while the page is open; saved in this browser. The key is held in memory for the task only |
 | Home quick plan | Yes | Uses your key and the chat's model |
@@ -21,7 +21,7 @@ Gateway credits are never used, so visitors cannot spend the owner's quota.
 
 ## Getting a free key
 
-The online version offers only providers with a free tier. There is no Ollama or local model online.
+The online version offers providers with a free tier first, plus one optional paid provider (OpenAI, for models such as GPT-6 Astra), clearly marked "(paid)". There is no Ollama or local model online.
 
 | Provider | Key page | Free part |
 |---|---|---|
@@ -30,6 +30,10 @@ The online version offers only providers with a free tier. There is no Ollama or
 | OpenRouter | https://openrouter.ai/settings/keys | Only models whose ID ends in `:free` are listed |
 
 Free limits are set by each provider and change. ATLAS cannot promise a provider stays free.
+
+**Auto-switch:** when the chosen free provider answers "rate limit" (429) or is down (5xx), ATLAS sends the same message to the next free provider you saved a key for, and the reply names who answered. Each key still goes only to its own provider. It never switches into the paid provider. Turn it off in AI Chat → Model settings.
+
+**Paid (optional):** OpenAI ([key page](https://platform.openai.com/api-keys)) has no free tier; every message is billed to your own OpenAI account. A paid Google key works with the Gemini provider and lists paid models such as Gemini 4 Argon.
 
 1. Open AI Chat (or tap "Set up my free key" on Home).
 2. In "Get your free AI key", choose a provider and tap "Open … key page".
