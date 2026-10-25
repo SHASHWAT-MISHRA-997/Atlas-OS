@@ -11,9 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, devices, storage, task_engine
+from . import auth, automations, devices, storage, task_engine
 from .config import get_settings
 from .providers import ProviderError, ollama_status
+from .routers import automations as automations_router
 from .routers import desktop, llm, memory, tasks
 from .routers import devices as devices_router
 from .routers import docs as docs_router
@@ -36,9 +37,11 @@ async def lifespan(_: FastAPI):
         except (storage.StorageError, OSError, sqlite3.Error):
             pass  # storage problems are reported by the routes that need it
     await task_engine.manager.start()
+    await automations.scheduler.start()
     try:
         yield
     finally:
+        await automations.scheduler.stop()
         await task_engine.manager.stop()
 
 
@@ -97,6 +100,7 @@ def create_app() -> FastAPI:
     application.include_router(memory.router)
     application.include_router(docs_router.router)
     application.include_router(voice_router.router)
+    application.include_router(automations_router.router)
     application.include_router(devices_router.router)
 
     @application.get("/health")

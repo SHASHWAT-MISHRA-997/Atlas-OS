@@ -162,6 +162,14 @@
   // ---------------------------------------------------------------- task plan (simulation)
   let planCount = 0;
 
+  /** The chat's local model if one is chosen, otherwise the first model installed in Ollama ('' if none). */
+  async function localModel() {
+    const saved = storageGet(CHAT_SETTINGS_KEY, {});
+    if ((!saved.provider || saved.provider === 'ollama') && saved.model) return saved.model;
+    const data = await api('/api/llm/models', { method: 'POST', body: { provider: 'ollama' } }).catch(() => ({ models: [] }));
+    return (data.models || [])[0] || '';
+  }
+
   async function runTask() {
     const message = $('message');
     const cmd = $('command').value.trim() || $('globalcmd').value.trim();
@@ -177,13 +185,37 @@
     }
     $('run').disabled = true;
     $('taskstate').textContent = 'PLANNING…';
+    const box = $('tasksteps');
     try {
+      const model = await localModel();
+      if (model) {
+        const saved = { model };
+        // A real plan written by the local model, as a background task (same as Tasks → Plan a goal).
+        message.textContent = 'Asking ' + saved.model + ' on this PC for a plan…';
+        let task = await api('/api/tasks', { method: 'POST', body: { kind: 'plan', provider: 'ollama', model: saved.model, goal: cmd } });
+        const until = Date.now() + 180000;
+        while (!TASK_TERMINAL.includes(task.state) && Date.now() < until) {
+          await new Promise((r) => setTimeout(r, 700));
+          task = await api('/api/tasks/' + task.id);
+        }
+        if (task.state !== 'Succeeded') throw new Error(task.error ? task.error.message : 'The plan is still running; see Tasks.');
+        planCount += 1;
+        $('taskcount').textContent = String(planCount).padStart(2, '0');
+        $('taskstate').textContent = 'PLAN READY · ' + saved.model.toUpperCase();
+        message.textContent = 'Written by ' + saved.model + ' on this PC. ' + (task.output.notice || 'Nothing was executed.');
+        box.replaceChildren(...task.output.steps.map((step, i) => el('div', { class: 'task' }, [
+          el('span', { class: 'icon', text: String(i + 1).padStart(2, '0') }),
+          el('div', {}, [el('strong', { text: step.title }), el('p', { text: step.detail || '' })]),
+        ])));
+        log('plan written by ' + saved.model + '; steps=' + task.output.steps.length);
+        $('globalcmd').value = '';
+        return;
+      }
       const plan = await api('/api/tasks/plan', { method: 'POST', body: { command: cmd } });
       planCount += 1;
       $('taskcount').textContent = String(planCount).padStart(2, '0');
-      message.textContent = plan.notice + ' For a plan written by your model, use the Tasks screen.';
+      message.textContent = plan.notice + ' This is a fixed example plan, because no local model is installed in Ollama.';
       $('taskstate').textContent = 'PLAN READY · ' + plan.mode.toUpperCase();
-      const box = $('tasksteps');
       box.replaceChildren();
       plan.steps.forEach((step, i) => {
         const detail = i === 0 ? 'Request captured: ' + plan.command : 'Planned step: not executed.';
@@ -1643,11 +1675,108 @@
     }, 1000);
   }
 
+  // ---------------------------------------------------------------- automations
+  async function renderAutomations(v) {
+    v.append(el('h2', { text: 'Automations' }), el('p', {
+      class: 'muted',
+      text: 'Create a task on a schedule, in this PC\'s time. Automations only create tasks: PC actions and cloud models still wait for your approval each time, and local plans run on their own. If the PC was off at the scheduled time, it runs once when ATLAS starts again.',
+    }));
+    const planModel = await localModel();
+    const desktop = await api('/api/desktop/status').catch(() => ({ enabled: false, folders: [] }));
+    const kinds = [['plan', 'Plan a goal with the local model']];
+    if (desktop.enabled) kinds.push(['index_documents', 'Re-index documents (needs approval)'], ['web_search', 'Open a web search (needs approval)'], ['open_url', 'Open a website (needs approval)']);
+    const name = el('input', { id: 'autoname', maxlength: '100', placeholder: 'e.g. Morning plan' });
+    const kind = el('select', { id: 'autokind' }, kinds.map(([value, text]) => el('option', { value, text })));
+    const goal = el('input', { id: 'autogoal', maxlength: '2000', placeholder: 'e.g. Plan my study day' });
+    const folder = el('select', { id: 'autofolder' }, (desktop.folders || []).map((f) => el('option', { value: f, text: f })));
+    const words = el('input', { id: 'autowords', maxlength: '200', placeholder: 'e.g. weather Jaipur' });
+    const url = el('input', { id: 'autourl', type: 'url', maxlength: '2000', placeholder: 'https://example.com' });
+    const every = el('select', { id: 'autoevery' }, [['day', 'Every day'], ['week', 'Every week'], ['hours', 'Every few hours']].map(([value, text]) => el('option', { value, text })));
+    const time = el('input', { id: 'autotime', type: 'time', value: '08:00' });
+    const day = el('select', { id: 'autoday' }, ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((d, i) => el('option', { value: String(i), text: d })));
+    const hours = el('input', { id: 'autohours', type: 'number', min: '1', max: '24', value: '4' });
+    const fields = {
+      goal: el('label', { class: 'field' }, ['GOAL', goal]), folder: el('label', { class: 'field' }, ['FOLDER', folder]),
+      words: el('label', { class: 'field' }, ['SEARCH FOR', words]), url: el('label', { class: 'field' }, ['WEB ADDRESS', url]),
+      time: el('label', { class: 'field' }, ['TIME', time]), day: el('label', { class: 'field' }, ['DAY', day]), hours: el('label', { class: 'field' }, ['EVERY (HOURS)', hours]),
+    };
+    const note = el('p', { class: 'notice', role: 'status', text: planModel ? 'Plans use ' + planModel + ' on this PC.' : 'Plans need a model installed in Ollama on this PC.' });
+    const create = el('button', { class: 'btn primary', type: 'submit', text: 'Create automation' });
+    const form = el('form', { class: 'panel', style: 'margin-top:14px', 'aria-label': 'New automation' }, [
+      el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['NAME', name]), el('label', { class: 'field' }, ['WHAT', kind]), fields.goal, fields.folder, fields.words, fields.url,
+        el('label', { class: 'field' }, ['WHEN', every]), fields.time, fields.day, fields.hours]),
+      el('div', { class: 'row', style: 'margin-top:10px' }, [create]), note,
+    ]);
+    const list = el('div', { class: 'tasklist', id: 'automationlist', style: 'margin-top:14px' });
+    v.append(form, list);
+    function sync() {
+      fields.goal.classList.toggle('hidden', kind.value !== 'plan');
+      fields.folder.classList.toggle('hidden', kind.value !== 'index_documents');
+      fields.words.classList.toggle('hidden', kind.value !== 'web_search');
+      fields.url.classList.toggle('hidden', kind.value !== 'open_url');
+      fields.time.classList.toggle('hidden', every.value === 'hours');
+      fields.day.classList.toggle('hidden', every.value !== 'week');
+      fields.hours.classList.toggle('hidden', every.value !== 'hours');
+    }
+    kind.addEventListener('change', sync);
+    every.addEventListener('change', sync);
+    sync();
+    const when = (iso) => (iso ? new Date(iso).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+    const what = (t) => (t.kind === 'plan' ? 'Plan: ' + t.params.goal : t.kind === 'index_documents' ? 'Re-index ' + t.params.folder : t.kind === 'web_search' ? 'Search: ' + t.params.query : t.kind === 'open_url' ? 'Open ' + t.params.url : t.kind);
+    async function refresh() {
+      let items;
+      try { items = (await api('/api/automations')).automations; } catch (err) { list.replaceChildren(el('p', { class: 'warn', text: 'Could not load automations: ' + err.message })); return; }
+      list.replaceChildren(...(items.length ? items.map((a) => {
+        const act = async (path, init) => {
+          try { await api('/api/automations/' + a.id + path, init); } catch (err) { note.textContent = err.message; }
+          refresh();
+        };
+        return el('div', { class: 'task', style: 'display:block', 'data-automation': a.id }, [
+          el('div', { class: 'agenttop' }, [el('strong', { text: a.name }), el('span', { class: 'badge', text: a.enabled ? a.schedule_text.toUpperCase() : 'PAUSED' })]),
+          el('div', { class: 'tiny muted', text: what(a.task) }),
+          el('div', { class: 'tiny muted', text: 'Next: ' + (a.enabled ? when(a.next_run) : 'paused') + ' · Last: ' + when(a.last_run) + (a.last_task_id ? ' (task created, see Tasks)' : '') }),
+          a.last_error ? el('p', { class: 'warn', text: 'Last run failed: ' + a.last_error }) : null,
+          el('div', { class: 'row', style: 'margin-top:8px' }, [
+            el('button', { class: 'btn', type: 'button', text: 'Run now', onclick: () => act('/run', { method: 'POST' }) }),
+            el('button', { class: 'btn', type: 'button', text: a.enabled ? 'Pause' : 'Resume', onclick: () => act('', { method: 'PATCH', body: { enabled: !a.enabled } }) }),
+            el('button', { class: 'btn', type: 'button', text: 'Delete', 'aria-label': 'Delete automation ' + a.name, onclick: () => { if (confirm('Delete "' + a.name + '"?')) act('', { method: 'DELETE' }); } }),
+          ]),
+        ].filter(Boolean));
+      }) : [el('div', { class: 'task', text: 'No automations yet.' })]));
+    }
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const task = { kind: kind.value };
+      if (kind.value === 'plan') {
+        if (!planModel) { note.textContent = 'Plans need a model installed in Ollama on this PC.'; return; }
+        Object.assign(task, { provider: 'ollama', model: planModel, goal: goal.value.trim() });
+      }
+      if (kind.value === 'index_documents') task.folder = folder.value;
+      if (kind.value === 'web_search') task.query = words.value.trim();
+      if (kind.value === 'open_url') task.url = url.value.trim();
+      const schedule = { every: every.value };
+      if (every.value !== 'hours') schedule.time = time.value;
+      if (every.value === 'week') schedule.day = Number(day.value);
+      if (every.value === 'hours') schedule.hours = Number(hours.value);
+      create.disabled = true;
+      try {
+        const a = await api('/api/automations', { method: 'POST', body: { name: name.value.trim(), task, schedule } });
+        note.textContent = 'Created "' + a.name + '". Next run: ' + when(a.next_run) + '.';
+        name.value = ''; goal.value = ''; words.value = ''; url.value = '';
+        refresh();
+      } catch (err) {
+        note.textContent = 'Could not create it: ' + err.message;
+      } finally {
+        create.disabled = false;
+      }
+    });
+    refresh();
+  }
+
   // ---------------------------------------------------------------- simple pages
   const pages = {
     agents: ['Agents', 'These are role definitions only. They are not yet connected to model execution or automation.', ['Data Analyst', 'Software Engineer', 'BI Builder', 'QA Agent']],
     projects: ['Projects', 'Projects are not implemented yet.', ['No saved projects']],
-    automations: ['Automations', 'Automation triggers are not implemented yet.', ['No schedules configured']],
   };
 
   function renderIntegrations(v) {
@@ -1800,6 +1929,7 @@
     if (page === 'tasks') return renderTasks(v);
     if (page === 'integrations') return renderIntegrations(v);
     if (page === 'devices') return renderDevices(v);
+    if (page === 'automations') return renderAutomations(v);
     const p = pages[page];
     v.append(el('h2', { text: p[0] }), el('p', { class: 'muted', text: p[1] }));
     p[2].forEach((t) => v.append(el('div', { class: 'task', text: t })));

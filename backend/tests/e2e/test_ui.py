@@ -225,6 +225,8 @@ def test_status_panel_shows_real_backend_and_ollama_state(page):
 
 
 def test_task_plan_comes_from_backend(page):
+    # MOCK: Ollama reports no installed models, so Home falls back to the fixed example plan.
+    page.route("**/api/llm/models", lambda r: r.fulfill(json={"provider": "ollama", "models": []}))
     page.fill("#command", "Plan a test")
     page.click("#run")
     page.wait_for_selector("text=PLAN READY · SIMULATION")
@@ -687,6 +689,44 @@ def test_fallback_model_answers_only_when_ticked_and_is_labelled(page, fake_olla
     assert fake_ollama.chat_requests[-1]["model"] == "fake-small:1b"
     page.uncheck("#atlasfallback")
     page.fill("#atlasmodel", "fake-small:1b")
+
+
+def test_home_plan_uses_the_local_model_once_one_is_chosen(page):
+    open_chat(page)  # picks the installed fake model and saves it as the chat model
+    page.locator(".tabbar, #sidebar").get_by_role("button", name="Home").first.click()
+    page.fill("#command", "Plan a weekend trip to Jaipur")
+    page.click("#run")
+    playwright_sync.expect(page.locator("#taskstate")).to_have_text("PLAN READY · FAKE-SMALL:1B", timeout=15000)
+    assert "Book train" in page.locator("#tasksteps").inner_text()
+    playwright_sync.expect(page.locator("#message")).to_contain_text("Written by fake-small:1b on this PC")
+    assert page.errors == []
+
+
+def test_automation_is_created_run_paused_and_deleted(page, server):
+    open_chat(page)
+    page.locator("#sidebar").get_by_role("button", name="Automations").click()
+    page.fill("#autoname", "Morning plan")
+    page.fill("#autogoal", "Plan my study day")
+    page.select_option("#autoevery", "week")
+    page.select_option("#autoday", "0")
+    page.fill("#autotime", "07:30")
+    page.get_by_role("button", name="Create automation").click()
+    card = page.locator("[data-automation]", has_text="Morning plan")
+    playwright_sync.expect(card).to_contain_text("EVERY MONDAY AT 07:30")
+    card.get_by_role("button", name="Run now").click()
+    playwright_sync.expect(card).to_contain_text("task created")
+    task_id = httpx.get(server + "/api/automations", headers=AUTH).json()["automations"][0]["last_task_id"]
+    for _ in range(50):
+        if httpx.get(f"{server}/api/tasks/{task_id}", headers=AUTH).json()["state"] == "Succeeded":
+            break
+        time.sleep(0.2)
+    assert httpx.get(f"{server}/api/tasks/{task_id}", headers=AUTH).json()["params"]["goal"] == "Plan my study day"
+    card.get_by_role("button", name="Pause").click()
+    playwright_sync.expect(card.locator(".badge")).to_have_text("PAUSED")
+    page.once("dialog", lambda d: d.accept())
+    card.get_by_role("button", name="Delete automation Morning plan").click()
+    playwright_sync.expect(page.locator("#automationlist")).to_contain_text("No automations yet.")
+    assert page.errors == []
 
 
 def test_app_shell_opens_offline_after_first_visit(browser, server):
