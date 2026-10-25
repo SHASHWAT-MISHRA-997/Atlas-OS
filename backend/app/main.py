@@ -1,4 +1,5 @@
 """ATLAS OS API entry point: `uvicorn app.main:app` from the backend directory."""
+import os
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,7 +18,7 @@ from .routers import desktop, llm, memory, tasks
 from .routers import devices as devices_router
 from .security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 
 CANDIDATE_ROOT = Path(__file__).resolve().parents[2]
 ROOT = CANDIDATE_ROOT if (CANDIDATE_ROOT / "frontend" / "index.html").exists() else Path(__file__).resolve().parents[1]
@@ -135,10 +136,12 @@ def create_app() -> FastAPI:
             # The device gets its own revocable token, never the install token. Redirect so the
             # code does not stay in the address bar or history.
             response = RedirectResponse("/", status_code=303)
-            response.headers["set-cookie"] = auth.session_cookie_header(device_token)
+            secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https" \
+                or (os.getenv("ATLAS_PUBLIC_URL") or "").startswith("https://")
+            response.headers["set-cookie"] = auth.session_cookie_header(device_token, secure=secure)
             return response
         response = FileResponse(FRONTEND / "index.html")
-        if (auth.auth_required() and auth.is_loopback(request.client.host if request.client else None)
+        if (auth.auth_required() and auth.is_same_computer(request.client.host if request.client else None, request.headers)
                 and auth.identify(request.cookies.get(auth.COOKIE)) is None):
             # A browser on this machine is the owner, unless it already has a working session.
             response.headers["set-cookie"] = auth.session_cookie_header(auth.get_token())

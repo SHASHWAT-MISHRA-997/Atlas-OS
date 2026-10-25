@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from .base import ChatMessage, ChatResult, ProviderError, ProviderSpec
+from .tls import tls_context
 
 MAX_ERROR_BODY = 4096
 
@@ -79,7 +80,7 @@ class OpenAICompatibleClient:
         attempt = 0
         while True:
             try:
-                async with httpx.AsyncClient(timeout=self._timeout(), follow_redirects=False) as client:
+                async with httpx.AsyncClient(timeout=self._timeout(), follow_redirects=False, verify=tls_context()) as client:
                     response = await client.post(url, headers=self._headers(), json=payload)
                 break
             except httpx.ConnectError:
@@ -128,7 +129,7 @@ class OpenAICompatibleClient:
         attempt = 0
         while True:
             try:
-                async with httpx.AsyncClient(timeout=self._timeout(), follow_redirects=False) as client:
+                async with httpx.AsyncClient(timeout=self._timeout(), follow_redirects=False, verify=tls_context()) as client:
                     async with client.stream("POST", url, headers=self._headers(), json=payload) as response:
                         if response.status_code >= 400:
                             body = await response.aread()
@@ -187,7 +188,7 @@ class OpenAICompatibleClient:
     async def list_models(self) -> list[str]:
         url = self.spec.base_url + "/models"
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0), follow_redirects=False) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0), follow_redirects=False, verify=tls_context()) as client:
                 response = await client.get(url, headers=self._headers())
         except httpx.TimeoutException:
             raise ProviderError(504, "timeout", "Provider timed out while listing models.") from None

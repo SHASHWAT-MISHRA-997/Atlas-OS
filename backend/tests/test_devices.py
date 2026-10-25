@@ -177,3 +177,29 @@ def test_pairing_link_uses_the_network_address_the_owner_opened(monkeypatch):
     c = owner()
     r = c.post("/api/devices/pairing", json={}, headers={"host": "192.168.1.5:8000"}).json()
     assert r["url"] == f"http://192.168.1.5:8000/?pair={r['code']}" and r["qr_svg"]
+
+
+@pytest.mark.parametrize("headers", [
+    {"x-forwarded-for": "100.64.0.7"},                      # nginx / generic reverse proxy
+    {"tailscale-user-login": "someone@example.com"},        # Tailscale Serve
+    {"cf-connecting-ip": "203.0.113.9"},                     # Cloudflare tunnel
+    {"forwarded": "for=203.0.113.9;proto=https"},
+], ids=["x-forwarded-for", "tailscale", "cloudflare", "forwarded"])
+def test_a_proxy_on_this_computer_does_not_make_visitors_the_owner(headers):
+    r = client(LOCAL).get("/", headers=headers)
+    assert "set-cookie" not in r.headers
+    assert client(LOCAL).get("/api/devices", headers=headers).status_code == 401
+
+
+def test_loopback_connection_with_a_network_host_name_is_not_the_owner(monkeypatch):
+    # e.g. a tunnel that rewrites nothing but connects from 127.0.0.1 with the public name
+    monkeypatch.setenv("ATLAS_ALLOWED_HOSTS", "atlas.tailnet.ts.net")
+    r = client(LOCAL).get("/", headers={"host": "atlas.tailnet.ts.net"})
+    assert "set-cookie" not in r.headers
+
+
+def test_device_cookie_is_secure_when_atlas_is_served_over_https(monkeypatch):
+    monkeypatch.setenv("ATLAS_PUBLIC_URL", "https://atlas.tailnet.ts.net")
+    code = owner().post("/api/devices/pairing", json={}).json()["code"]
+    r = client(PHONE).get(f"/?pair={code}", follow_redirects=False)
+    assert r.headers["set-cookie"].endswith("; Secure")

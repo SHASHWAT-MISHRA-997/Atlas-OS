@@ -620,3 +620,20 @@ def test_more_sheet_keeps_keyboard_focus_inside_and_returns_it(browser, server):
     assert pg.evaluate("() => document.activeElement.id") == "morebtn"
     assert not pg.evaluate("() => document.getElementById('main').inert")
     context.close()
+
+
+def test_pairing_shows_a_qr_code_when_the_link_is_known(page, server):
+    # MOCK: the pairing response is replaced with one that has a full link, as when
+    # ATLAS_PUBLIC_URL is set. The real response is covered by test_devices.py.
+    import segno
+    url = "http://192.168.1.5:8000/?pair=TESTCODE"
+    body = {"code": "TESTCODE", "expires_in": 600, "path": "/?pair=TESTCODE", "url": url,
+            "qr_svg": segno.make(url, error="m").svg_data_uri(scale=6, border=3), "lan_address": None}
+    page.route("**/api/devices/pairing", lambda route: route.fulfill(status=201, json=body))
+    page.locator("#sidebar").get_by_role("button", name="Devices").click()
+    page.click("button:has-text('Create pairing link')")
+    playwright_sync.expect(page.locator("#pairqr")).to_be_visible()
+    assert page.locator("#pairqr").evaluate("img => img.naturalWidth") > 0
+    playwright_sync.expect(page.locator("#pairlink")).to_have_text(url)
+    text = page.locator("#subview").inner_text()
+    assert "null" not in text.split() and "undefined" not in text

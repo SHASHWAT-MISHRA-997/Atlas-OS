@@ -603,8 +603,12 @@
     const ranked = all.map((m, i) => ({ m, i, s: score(m.text) })).sort((a, b) => b.s - a.s || a.i - b.i);
     const picked = [];
     let size = 0;
+    const seen = new Set();
     for (const { m } of ranked) {
       if (picked.length >= MAX_MEMORIES_SENT) break;
+      const key = m.text.trim().toLowerCase();
+      if (seen.has(key)) continue;  // the same note saved twice is sent once
+      seen.add(key);
       if (size + m.text.length > MAX_MEMORY_CHARS) continue;
       picked.push(m);
       size += m.text.length;
@@ -1287,7 +1291,7 @@
       );
       return;
     }
-    v.append(el('p', { class: 'muted', text: 'Pair a phone or another computer. Each device gets its own login that you can remove here at any time. Pairing links work once and expire after 10 minutes. Traffic is plain HTTP, so pair only on a network you trust.' }));
+    v.append(el('p', { class: 'muted', text: 'Pair a phone or another computer. Each device gets its own login that you can remove here at any time. Pairing links work once and expire after 10 minutes.' + (location.protocol === 'https:' ? '' : ' Traffic is plain HTTP, so pair only on a network you trust.') }));
     const name = el('input', { id: 'devicename', maxlength: '40', placeholder: 'Device name', 'aria-label': 'Device name', style: 'padding:9px;border:1px solid #304771;border-radius:8px;background:#080f20;color:white;min-width:0;flex:1' });
     const create = el('button', { class: 'btn primary', type: 'submit', text: 'Create pairing link' });
     const result = el('div', { 'aria-live': 'polite' });
@@ -1300,7 +1304,7 @@
       try {
         const r = await api('/api/devices/pairing', { method: 'POST', body: { name: name.value.trim() || null } });
         const link = r.url || 'http://<this-computer-address>:' + (location.port || '80') + r.path;
-        result.replaceChildren(
+        result.replaceChildren(...[
           el('p', { class: 'notice', style: 'margin-top:12px', text: 'Open this link on the other device within 10 minutes. It works once.' }),
           r.qr_svg ? el('img', { id: 'pairqr', class: 'pairqr', src: r.qr_svg, alt: 'QR code of the pairing link. Scan it with the phone camera.' }) : null,
           r.qr_svg ? el('p', { class: 'tiny muted', text: 'Scan with the phone camera, or open the link below.' }) : null,
@@ -1308,7 +1312,7 @@
           r.url ? null : el('p', { class: 'tiny muted', text: 'Replace <this-computer-address> with this computer\'s network address'
             + (r.lan_address ? ' (on this Wi-Fi it looks like ' + r.lan_address + ')' : '')
             + ' and add it to ATLAS_ALLOWED_HOSTS, or set ATLAS_PUBLIC_URL to get a complete link and a QR code.' }),
-        );
+        ].filter(Boolean));
         name.value = '';
       } catch (err) {
         result.replaceChildren(el('p', { class: 'warn', style: 'margin-top:12px', text: 'Could not create a link: ' + err.message }));

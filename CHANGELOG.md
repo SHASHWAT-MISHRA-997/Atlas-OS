@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased — mobile polish (branch `atlas/mobile-redesign`)
+## 0.7.0 — 2026-10-25 (branch `atlas/v0.7`)
+
+### Added
+- Installable app (PWA): manifest, icons, and a service worker that shows the app shell when the PC is offline. It never caches `/api` data.
+- Pairing QR code when the link's address is known, and a Wi-Fi address hint when it is not.
+- Each chat answer lists exactly which saved memories were sent. Memories that share words with the message are sent first.
+- Opt-in auto-delete for chat history and memories after 7, 30, 90 or 365 days (Memory screen, `/api/storage/retention`).
+- Voice: choose the speech language (English India, US or UK, Hindi) and the read-aloud voice. Voices are labelled on-device or online, and microphone errors are clearer.
+- `python -m app.serve`, with optional HTTPS (`ATLAS_TLS_CERT`, `ATLAS_TLS_KEY`), and `docs/REMOTE_ACCESS.md`.
+- Research write-up (`docs/RESEARCH.md`), a latency benchmark (`backend/research/bench_latency.py`) and 30 red-team cases (`tests/test_redteam_actions.py`).
+- Accessibility checks with axe-core on every screen, and contrast tests for gradient buttons.
+
+### Fixed
+- **Security:** a tunnel or reverse proxy on the PC (Tailscale Serve, cloudflared, nginx) made every visitor the owner. The owner login now needs direct same-computer access.
+- **Security:** paired devices could open apps through `/api/desktop/launch` without an approval. It is now owner-only.
+- Every chat message waited about 49 ms because a TLS context was rebuilt per request. ATLAS's overhead is now about 6 ms.
+- Main buttons had 3.3:1 text contrast; they now meet WCAG AA (5.1:1 or better).
+- The More sheet now moves keyboard focus inside and returns it on close, and the page behind is inert.
+- The chat status line is visible on phones again, so microphone errors are not hidden.
+
+## 0.6.1 — 2026-10-23 mobile polish (merged as PR #3)
 
 ### Fixed
 - Symbols that showed as boxes on some Android phones are now inline SVG icons.
