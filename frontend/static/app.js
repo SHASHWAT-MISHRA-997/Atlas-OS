@@ -7,6 +7,7 @@
   const MEMORY_KEY = 'atlas.os.memories.v1';
   const CHAT_KEY = 'atlas.os.chat.v1';
   const CHAT_SETTINGS_KEY = 'atlas.os.chat.settings.v1'; // provider + model only, never keys
+  const CLOUD_ACK_KEY = 'atlas.cloud.ack.'; // + provider id: routing/billing notice confirmed on this device (online version)
   const VOICE_KEY = 'atlas.os.voice.v1'; // speech language + read-aloud voice name
   const DOCS_KEY = 'atlas.os.chat.usedocs.v1'; // whether chat searches indexed documents
   const MAX_CONVERSATION_CHARS = 46000; // backend limit is 48,000 across all messages
@@ -119,7 +120,11 @@
 
   function showPairingBanner() {
     if ($('pairbanner')) return;
-    const banner = el('div', { id: 'pairbanner', class: 'warn', role: 'alert', style: 'margin-bottom:14px' }, [
+    if (document.getElementById('cloudgate')) return;
+    const banner = el('div', { id: 'pairbanner', class: 'warn', role: 'alert', style: 'margin-bottom:14px' }, isCloud() ? [
+      el('strong', { text: 'This device is not signed in to ATLAS. ' }),
+      el('span', { text: 'Reload the page to sign in, or open a pairing link from the owner\'s phone (Devices → Create pairing link).' }),
+    ] : [
       el('strong', { text: 'This device is not signed in to ATLAS. ' }),
       el('span', { text: 'On the computer running ATLAS, open Devices, create a pairing link and open it on this device. (Or run `python -m app.auth token` in the backend folder.) Opening ATLAS on that computer itself signs in automatically.' }),
     ]);
@@ -128,6 +133,8 @@
 
   // ---------------------------------------------------------------- status
   let systemStatus = null;
+  /** True in the Netlify cloud edition (frontend/cloud/cloud.js answers /api there). */
+  const isCloud = () => !!(systemStatus && systemStatus.cloud);
 
   function statusRow(state, label) {
     return el('div', { class: 'statusrow' }, [el('span', { class: 'dot ' + state, 'aria-hidden': 'true' }), el('span', { text: label })]);
@@ -138,6 +145,22 @@
     try {
       systemStatus = await api('/api/system/status');
       const s = systemStatus;
+      if (s.cloud) {
+        const names = s.cloud.providers.map((p) => p.label).join(', ');
+        box.replaceChildren(
+          statusRow('', 'ATLAS online (v' + s.api.version + ')'),
+          statusRow(names ? 'warn' : 'off', names ? 'AI: ' + names + ' (cloud)' : 'AI: no key set up yet'),
+          statusRow('off', 'PC actions: need ATLAS on your PC'),
+          statusRow('off', 'Memory: this browser only'),
+          statusRow('', 'Signed in: ' + (s.cloud.me ? s.cloud.me.name + (s.cloud.me.kind === 'owner' ? ' (owner)' : '') : 'no')),
+        );
+        $('ollamastat').textContent = 'Off';
+        $('topstatus').replaceChildren(el('span', { class: 'dot ' + (names ? '' : 'off'), 'aria-hidden': 'true' }), el('span', { text: (names ? 'AI ready' : 'AI not set up') + ' · Cloud' }));
+        $('topstatus').title = names ? 'Cloud AI ready: ' + names : 'Add an AI key in Netlify to chat';
+        document.querySelector('#home .subtitle').textContent = 'Describe the outcome. ATLAS asks your cloud AI model for a plan you can inspect. Nothing is executed.';
+        document.querySelector('footer').textContent = 'ATLAS OS online · Chat goes to the cloud AI model shown in AI Chat. Memory and chat history stay in this browser. Do not enter passwords or sensitive data.';
+        return;
+      }
       box.replaceChildren(
         statusRow('', 'API online (v' + s.api.version + ')'),
         statusRow(s.ollama.available ? (s.ollama.count ? '' : 'warn') : 'off',
@@ -165,9 +188,26 @@
   /** The chat's local model if one is chosen, otherwise the first model installed in Ollama ('' if none). */
   async function localModel() {
     const saved = storageGet(CHAT_SETTINGS_KEY, {});
+    if (isCloud()) return '';
     if ((!saved.provider || saved.provider === 'ollama') && saved.model) return saved.model;
     const data = await api('/api/llm/models', { method: 'POST', body: { provider: 'ollama' } }).catch(() => ({ models: [] }));
     return (data.models || [])[0] || '';
+  }
+
+  /** The model for Home plans: { provider, model, where } or null. Online it is the chat's cloud model. */
+  async function planTarget() {
+    if (!isCloud()) {
+      const model = await localModel();
+      return model ? { provider: 'ollama', model, where: 'on this PC' } : null;
+    }
+    const providers = systemStatus.cloud.providers;
+    if (!providers.length) throw new Error('No AI key is set up yet. Follow "Set up AI" at the top of the page.');
+    const saved = storageGet(CHAT_SETTINGS_KEY, {});
+    const p = providers.find((x) => x.id === saved.provider) || providers[0];
+    let model = p.id === saved.provider ? saved.model : '';
+    if (!model) model = ((await api('/api/llm/models', { method: 'POST', body: { provider: p.id } })).models || [])[0] || '';
+    if (!model) throw new Error('No model is available from ' + p.label + '. Pick one in AI Chat → Model settings.');
+    return { provider: p.id, model, where: 'on ' + p.label + ' (cloud)' };
   }
 
   async function runTask() {
@@ -187,12 +227,13 @@
     $('taskstate').textContent = 'PLANNING…';
     const box = $('tasksteps');
     try {
-      const model = await localModel();
-      if (model) {
-        const saved = { model };
+      await ensureStatus();
+      const target = await planTarget();
+      if (target) {
+        const saved = target;
         // A real plan written by the local model, as a background task (same as Tasks → Plan a goal).
-        message.textContent = 'Asking ' + saved.model + ' on this PC for a plan…';
-        let task = await api('/api/tasks', { method: 'POST', body: { kind: 'plan', provider: 'ollama', model: saved.model, goal: cmd } });
+        message.textContent = 'Asking ' + saved.model + ' ' + saved.where + ' for a plan…';
+        let task = await api('/api/tasks', { method: 'POST', body: { kind: 'plan', provider: saved.provider, model: saved.model, goal: cmd } });
         const until = Date.now() + 180000;
         while (!TASK_TERMINAL.includes(task.state) && Date.now() < until) {
           await new Promise((r) => setTimeout(r, 700));
@@ -202,7 +243,7 @@
         planCount += 1;
         $('taskcount').textContent = String(planCount).padStart(2, '0');
         $('taskstate').textContent = 'PLAN READY · ' + saved.model.toUpperCase();
-        message.textContent = 'Written by ' + saved.model + ' on this PC. ' + (task.output.notice || 'Nothing was executed.');
+        message.textContent = 'Written by ' + saved.model + ' ' + saved.where + '. ' + (task.output.notice || 'Nothing was executed.');
         box.replaceChildren(...task.output.steps.map((step, i) => el('div', { class: 'task' }, [
           el('span', { class: 'icon', text: String(i + 1).padStart(2, '0') }),
           el('div', {}, [el('strong', { text: step.title }), el('p', { text: step.detail || '' })]),
@@ -790,7 +831,7 @@
     }
     const providers = catalogue.providers.filter((p) => p.enabled);
     const saved = storageGet(CHAT_SETTINGS_KEY, {});
-    const providerSelect = el('select', { id: 'atlasprovider' }, providers.map((p) => el('option', { value: p.id, text: p.label + (p.local ? '' : ' · may bill') })));
+    const providerSelect = el('select', { id: 'atlasprovider' }, providers.map((p) => el('option', { value: p.id, text: p.label + (p.local || isCloud() ? '' : ' · may bill') })));
     providerSelect.value = providers.some((p) => p.id === saved.provider) ? saved.provider : catalogue.default_provider;
     const modelInput = el('input', { id: 'atlasmodel', list: 'atlasmodels', autocomplete: 'off', placeholder: 'Model ID', value: saved.model || '' });
     const modelList = el('datalist', { id: 'atlasmodels' });
@@ -820,8 +861,9 @@
     langSelect.value = voicePrefs.lang;
     const voiceSelect = el('select', { id: 'voicename' });
     const voiceNote = el('p', { class: 'tiny muted', text: 'Browser dictation uses your browser\'s speech service; in Chrome and Edge the audio goes to the browser vendor. Browser voices marked "online" also send the text out. "ATLAS on this PC" keeps audio and text on the PC running ATLAS.' });
-    const engineSelect = el('select', { id: 'voiceengine' }, [el('option', { value: 'browser', text: 'Browser speech service' }), el('option', { value: 'local', text: 'ATLAS on this PC (local)' })]);
-    engineSelect.value = voicePrefs.engine === 'local' ? 'local' : 'browser';
+    const engineSelect = el('select', { id: 'voiceengine' }, [el('option', { value: 'browser', text: 'Browser speech service' }), isCloud() ? null : el('option', { value: 'local', text: 'ATLAS on this PC (local)' })]);
+    engineSelect.value = voicePrefs.engine === 'local' && !isCloud() ? 'local' : 'browser';
+    if (isCloud()) voiceNote.textContent = 'Dictation and read-aloud use your browser\'s speech service; in Chrome and Edge the audio goes to the browser vendor. Private on-device voice and hands-free "Hey ATLAS" need ATLAS on your PC.';
     const localVoice = el('div', { id: 'localvoice', class: 'tiny muted' });
     const voiceBox = el('div', { class: 'voicebox' }, [
       el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['VOICE LANGUAGE', langSelect]), el('label', { class: 'field' }, ['READ-ALOUD VOICE', voiceSelect]), el('label', { class: 'field' }, ['DICTATION ENGINE', engineSelect])]),
@@ -859,14 +901,14 @@
 
     // Read-aloud on the PC (Piper), microphone choice and hands-free "Hey ATLAS".
     const ttsSelect = el('select', { id: 'ttsengine' }, [el('option', { value: 'browser', text: 'Browser voices' }), el('option', { value: 'local', text: 'ATLAS on this PC (local)' })]);
-    ttsSelect.value = voicePrefs.ttsEngine === 'local' ? 'local' : 'browser';
+    ttsSelect.value = voicePrefs.ttsEngine === 'local' && !isCloud() ? 'local' : 'browser';
     const localVoiceSelect = el('select', { id: 'localvoicename' });
     const localVoiceField = el('label', { class: 'field hidden' }, ['PC VOICE', localVoiceSelect]);
     const localTts = el('div', { id: 'localtts', class: 'tiny muted' });
     const micSelect = el('select', { id: 'micselect' }, [el('option', { value: '', text: 'Default microphone' })]);
     const handsFree = el('input', { type: 'checkbox', id: 'handsfree' });
     const handsFreeNote = el('p', { class: 'tiny muted', id: 'handsfreenote', role: 'status' });
-    voiceBox.append(
+    if (!isCloud()) voiceBox.append(
       el('div', { class: 'grid-fields', style: 'margin-top:10px' }, [el('label', { class: 'field' }, ['READ-ALOUD ENGINE', ttsSelect]), localVoiceField, el('label', { class: 'field' }, ['MICROPHONE (ATLAS ON THIS PC)', micSelect])]),
       localTts,
       el('label', { class: 'check' }, [handsFree, 'Hands-free: say "Hey ATLAS" and then your request (needs dictation on this PC; works only while this page is open)']),
@@ -942,7 +984,9 @@
 
     const settings = el('details', { class: 'panel settings', id: 'chatsettings' }, [
       el('summary', {}, [el('span', { class: 'tiny muted', text: 'MODEL' }), pill]),
-      el('p', { class: 'tiny muted', text: 'Local-first: Ollama on the machine running ATLAS is the default. Cloud providers are optional and use your own key. When memory is on, saved memories and recent turns are included in each request.' }),
+      el('p', { class: 'tiny muted', text: isCloud()
+        ? 'Online version: replies come from the cloud AI model below, using the key set in Netlify (this app never sees it). When memory is on, saved memories and recent turns are included in each request.'
+        : 'Local-first: Ollama on the machine running ATLAS is the default. Cloud providers are optional and use your own key. When memory is on, saved memories and recent turns are included in each request.' }),
       el('div', { class: 'grid-fields' }, [
         el('label', { class: 'field' }, ['PROVIDER', providerSelect]),
         el('label', { class: 'field' }, ['MODEL', modelInput]),
@@ -951,7 +995,7 @@
       modelList,
       el('div', { class: 'row', style: 'margin-top:10px' }, [loadModels, el('label', { class: 'check', style: 'margin:0' }, [streamToggle, 'Stream replies'])]),
       modelStatus, billingBox, routing, fallbackBox,
-      el('label', { class: 'check' }, [docsToggle, 'Use my documents: search files you indexed (Tasks → PC actions) and send matching excerpts with each message']),
+      isCloud() ? null : el('label', { class: 'check' }, [docsToggle, 'Use my documents: search files you indexed (Tasks → PC actions) and send matching excerpts with each message']),
       docsNote,
       voiceBox,
     ]);
@@ -985,10 +1029,14 @@
       keyField.classList.toggle('hidden', !p.key_required);
       keyInput.placeholder = p.server_key_configured ? 'Optional: server key configured' : 'Paste key for this page session';
       billingBox.classList.toggle('hidden', p.local);
-      billingLabel.textContent = 'I understand that requests to ' + p.label + ' leave this machine and may be billed to my account. Free tiers and prices are set by the provider and change.';
+      billingLabel.textContent = isCloud()
+        ? 'I understand that my messages go to ' + p.label + '. ' + (p.billing || '')
+        : 'I understand that requests to ' + p.label + ' leave this machine and may be billed to my account. Free tiers and prices are set by the provider and change.';
       routeBadge.replaceChildren(icon(p.local ? 'lock' : 'cloud'), el('span', { text: p.local ? 'Stays on your PC' : 'Sends to ' + p.label }));
       routeBadge.classList.toggle('cloud', !p.local);
-      if (!p.local) settings.open = true;
+      // Online, the notice is confirmed once per provider on this device; otherwise once per page visit.
+      if (isCloud()) billingAck.checked = storageGet(CLOUD_ACK_KEY + p.id, false) === true;
+      if (!p.local && !billingAck.checked) settings.open = true;
       routing.textContent = p.local
         ? 'Data routing: messages go to Ollama on the machine running the ATLAS backend. Nothing is sent to a cloud provider.'
         : 'Data routing: messages, saved memories, recent turns and (if turned on) document excerpts are sent to ' + p.label + '. See ' + p.docs_url + ' for models and terms.';
@@ -1101,9 +1149,10 @@
       window.speechSynthesis.speak(utterance);
     }
 
+    billingAck.addEventListener('change', () => { if (isCloud()) storageSet(CLOUD_ACK_KEY + current().id, billingAck.checked); });
     providerSelect.addEventListener('change', () => {
-      refreshProviderUi();
       billingAck.checked = false;
+      refreshProviderUi();
       modelInput.value = '';
       storageSet(CHAT_SETTINGS_KEY, { ...storageGet(CHAT_SETTINGS_KEY, {}), provider: providerSelect.value, model: '' });
       discoverModels(true);
@@ -1416,7 +1465,9 @@
     v.replaceChildren();
     v.append(el('h2', { text: 'Tasks' }), el('p', {
       class: 'muted',
-      text: 'Background jobs run by the ATLAS backend. Progress, states and timings are real. Model tasks only call the model you choose. PC actions (when enabled) do one fixed thing each and always wait for your approval. Nothing runs shell commands.',
+      text: isCloud()
+        ? 'Plans and summaries written by the cloud AI model you choose. They run while this page is open and are saved in this browser. PC actions need ATLAS on your PC.'
+        : 'Background jobs run by the ATLAS backend. Progress, states and timings are real. Model tasks only call the model you choose. PC actions (when enabled) do one fixed thing each and always wait for your approval. Nothing runs shell commands.',
     }));
     let catalogue;
     try {
@@ -1428,7 +1479,7 @@
     const providers = catalogue.providers.filter((p) => p.enabled);
     const saved = storageGet(CHAT_SETTINGS_KEY, {});
     const kind = el('select', { id: 'taskkind' }, [el('option', { value: 'plan', text: 'Plan a goal' }), el('option', { value: 'summarize_text', text: 'Summarize long text' })]);
-    const provider = el('select', { id: 'taskprovider' }, providers.map((p) => el('option', { value: p.id, text: p.label + (p.local ? '' : ' · may bill') })));
+    const provider = el('select', { id: 'taskprovider' }, providers.map((p) => el('option', { value: p.id, text: p.label + (p.local || isCloud() ? '' : ' · may bill') })));
     provider.value = providers.some((p) => p.id === saved.provider) ? saved.provider : catalogue.default_provider;
     const model = el('input', { id: 'taskmodel', placeholder: 'Model ID', value: saved.model || '', autocomplete: 'off' });
     const key = el('input', { id: 'taskkey', type: 'password', placeholder: 'API key (kept in memory only until the task ends)', autocomplete: 'off' });
@@ -1447,7 +1498,9 @@
     v.append(form);
     const desktop = await api('/api/desktop/status').catch(() => null);
     if (desktop && desktop.enabled) v.append(actionForm(desktop));
-    else v.append(el('p', { class: 'tiny muted', style: 'margin-top:10px', text: 'PC actions are off. They can be enabled only on the computer running ATLAS (ATLAS_ENABLE_DESKTOP_AGENT=true).' }));
+    else v.append(el('p', { class: 'tiny muted', style: 'margin-top:10px', text: isCloud()
+      ? 'PC actions (open apps, files, media keys, websites on your PC) need ATLAS installed on your Windows PC. This online version cannot touch any computer.'
+      : 'PC actions are off. They can be enabled only on the computer running ATLAS (ATLAS_ENABLE_DESKTOP_AGENT=true).' }));
     v.append(list);
 
     function actionForm(d) {
@@ -1561,16 +1614,16 @@
     provider.addEventListener('change', async () => {
       refreshForm();
       model.value = '';
-      if (current().local) {
+      if (current().local || isCloud()) {
         try {
-          const data = await api('/api/llm/models', { method: 'POST', body: { provider: 'ollama' } });
+          const data = await api('/api/llm/models', { method: 'POST', body: { provider: current().id } });
           if (data.models.length) model.value = data.models[0];
         } catch { /* user can type a model */ }
       }
     });
     refreshForm();
-    if (!model.value && current().local) {
-      api('/api/llm/models', { method: 'POST', body: { provider: 'ollama' } }).then((d) => { if (!model.value && d.models.length) model.value = d.models[0]; }).catch(() => {});
+    if (!model.value && (current().local || isCloud())) {
+      api('/api/llm/models', { method: 'POST', body: { provider: current().id } }).then((d) => { if (!model.value && d.models.length) model.value = d.models[0]; }).catch(() => {});
     }
 
     form.addEventListener('submit', async (e) => {
@@ -1677,6 +1730,11 @@
 
   // ---------------------------------------------------------------- automations
   async function renderAutomations(v) {
+    await ensureStatus();
+    if (isCloud()) {
+      v.append(el('h2', { text: 'Automations' }), el('p', { class: 'notice', text: 'Scheduled tasks need ATLAS running on your PC, which keeps time even when your phone is off. The online version cannot run them yet.' }));
+      return;
+    }
     v.append(el('h2', { text: 'Automations' }), el('p', {
       class: 'muted',
       text: 'Create a task on a schedule, in this PC\'s time. Automations only create tasks: PC actions and cloud models still wait for your approval each time, and local plans run on their own. If the PC was off at the scheduled time, it runs once when ATLAS starts again.',
@@ -1781,7 +1839,11 @@
 
   function renderIntegrations(v) {
     const s = systemStatus;
-    const rows = s ? [
+    const rows = s && s.cloud ? [
+      'Cloud AI models: ' + (s.cloud.providers.length ? s.cloud.providers.map((p) => p.label).join(', ') : 'none yet (add a key in Netlify)'),
+      'Local models (Ollama), desktop agent, files, local voice: need ATLAS on your PC',
+      'Calendar / email / messaging: not implemented', 'Other devices: pair them in Devices (one-time links, per-device logins)',
+    ] : s ? [
       'Local models (Ollama): ' + (s.ollama.available ? 'reachable, ' + s.ollama.count + ' model(s)' : 'not reachable'),
       'Cloud model providers: ' + (s.external_providers_enabled ? 'allowed with your own key' : 'disabled by server configuration'),
       'Desktop agent: ' + (s.desktop_agent_enabled ? 'enabled on this machine (allowlisted apps only)' : 'off'),

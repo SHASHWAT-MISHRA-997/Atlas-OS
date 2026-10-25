@@ -18,7 +18,7 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith('/api/') || url.pathname === '/health' || url.search.includes('pair=')) return;
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/cloud/') || url.pathname === '/health' || url.search.includes('pair=')) return;
   // Network first, so a running ATLAS always serves the newest code; the cache is only a fallback.
   event.respondWith(fetch(request).then((response) => {
     if (response.ok && (request.mode === 'navigate' || SHELL.includes(url.pathname) || url.pathname.startsWith('/static/'))) {

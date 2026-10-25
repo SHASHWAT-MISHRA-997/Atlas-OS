@@ -1,0 +1,16 @@
+/* ATLAS OS cloud edition: sign-in screen and setup card (Netlify build only). */
+.cloudgate{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:16px;background:#050913f2;overflow-y:auto}
+.cg-card{width:100%;max-width:440px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(145deg,#111c35,#0a1022);padding:22px;box-shadow:0 20px 60px #0008}
+.cg-card h1{font-size:clamp(24px,7vw,32px);letter-spacing:-.5px;margin:12px 0 8px;overflow-wrap:anywhere}
+.cg-brand{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cg-brand strong{letter-spacing:1px}
+.cg-brand span{font-size:10px;letter-spacing:1.5px;color:var(--blue);border:1px solid #2c4b8a;border-radius:99px;padding:2px 8px}
+.cg-intro{color:var(--muted);margin:0 0 14px;overflow-wrap:anywhere}
+.cg-field{display:grid;gap:6px;font-size:11px;letter-spacing:.8px;color:var(--muted);margin-bottom:12px}
+.cg-field input{width:100%;min-width:0;padding:11px;border:1px solid #304771;border-radius:10px;background:#080f20;color:var(--text);font-size:16px}
+.cg-card .btn{width:100%;min-height:46px}
+.cg-msg{min-height:1.5em;margin:10px 0 0;color:#f3e2a8;overflow-wrap:anywhere}
+.cg-foot{font-size:11px;color:var(--muted);margin:12px 0 0;border-top:1px solid var(--line);padding-top:12px}
+.cloudsetup{margin-bottom:14px;font-size:13px;overflow-wrap:anywhere}
+.cloudsetup ol{margin:8px 0 0;padding-left:20px;display:grid;gap:6px}
+.cloudsetup a{color:var(--blue)}

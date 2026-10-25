@@ -1,0 +1,27 @@
+# ATLAS OS cloud edition on Netlify: the normal frontend plus one function (netlify/functions/atlas.mjs).
+# The full local app (FastAPI backend, PC actions, local models) is not deployed here; see docs/CLOUD.md.
+[build]
+  command = "node scripts/netlify/build.mjs"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Headers for static files only (function responses set their own).
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+    Permissions-Policy = "camera=(), geolocation=(), microphone=(self)"
+    Cross-Origin-Opener-Policy = "same-origin"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"

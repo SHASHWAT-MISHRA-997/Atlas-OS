@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0 — 2026-10-25 (branch `atlas/cloud`)
+
+### Added
+- **ATLAS online on Netlify** (`netlify.toml`, `netlify/`, `frontend/cloud/`, `docs/CLOUD.md`). Use ATLAS from a phone with no PC: AI Chat with a real cloud model (Groq, Gemini, OpenAI or Claude; key set in Netlify, never in the app), memory and chat history in the browser, plan and summarize tasks, Home quick plan, and device pairing.
+- Owner sign-in for the online version: the first device claims it (optionally with an access code), other devices join with one-time links, and the owner can remove them. Only token hashes are stored.
+- A "Set up AI" card explains how to add a key in Netlify when none is set.
+- Node tests for the function (17) and browser tests for the online version (2), with a labelled FAKE model. New `cloud` CI job.
+
+### Changed
+- In the online version, PC-only features (PC actions, document search, local voice, hands-free, automations) say they need ATLAS on the PC instead of showing PC settings.
+- The service worker never caches `/cloud/` responses.
+
 ## 0.9.0 — 2026-10-25 (branch `atlas/v0.9`)
 
 ### Added
