@@ -1,4 +1,4 @@
-# Handoff — 2026-10-25 (v0.13.0)
+# Handoff — 2026-10-25 (v0.13.1)
 
 ## State
 
@@ -7,6 +7,7 @@
 
 ## New in v0.13
 
+- v0.13.1: the online key card is a plain text box with a Paste button and cleans pasted keys (the owner could not add a key on the phone; Netlify logs showed one key check succeed but no chat).
 - Redesign and new logo (see CHANGELOG 0.13.0). The owner said the old UI was confusing, overlapping and the logo boring; this is the response. Judged from Chromium screenshots at 360 px and 1280 px only.
 
 ## New in v0.12

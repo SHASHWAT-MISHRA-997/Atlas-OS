@@ -92,6 +92,10 @@
   // Online version: each visitor's own provider keys. Kept for this page visit only, or in this
   // browser when the visitor ticks "Remember". They are sent only with that visitor's own requests.
   const CLOUD_KEY_PREFIX = 'atlas.cloud.key.';
+  /** How each free provider's keys begin, to spot a key pasted under the wrong provider. */
+  const KEY_PREFIX = { groq: 'gsk_', gemini: 'AIza', openrouter: 'sk-or-' };
+  /** A pasted key without spaces, line breaks, invisible characters or surrounding quotes. */
+  const cleanKey = (text) => String(text || '').replace(/[\s\u200b-\u200d\u2060\ufeff]/g, '').replace(/^["'`]+|["'`]+$/g, '');
   const sessionKeys = {};
   const cloudKey = {
     get(id) { return sessionKeys[id] || storageGet(CLOUD_KEY_PREFIX + id, '') || ''; },
@@ -423,9 +427,14 @@
 
   function readLocalChat() {
     const items = storageGet(CHAT_KEY, []);
-    return Array.isArray(items)
-      ? items.filter((m) => m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string').slice(-40)
-      : [];
+    if (!Array.isArray(items)) return [];
+    const list = items.filter((m) => m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string').slice(-40);
+    // Messages saved before v0.13.1 have no id; give them one so they can be deleted or edited.
+    if (list.some((m) => !m.id)) {
+      list.forEach((m) => { if (!m.id) m.id = newId(); });
+      storageSet(CHAT_KEY, list);
+    }
+    return list;
   }
 
   function newId() {
@@ -481,7 +490,17 @@
     },
     async appendChat(message) {
       if (this.server) return api('/api/chat/history', { method: 'POST', body: { role: message.role, content: message.content.slice(0, 20000), meta: message.meta || null } });
-      storageSet(CHAT_KEY, [...readLocalChat(), message].slice(-40));
+      const saved = { ...message, id: newId() };
+      storageSet(CHAT_KEY, [...readLocalChat(), saved].slice(-40));
+      return saved;
+    },
+    /** Delete one message, or with `following` that message and every later one (used by Edit). */
+    async deleteChat(id, following) {
+      if (this.server) return api('/api/chat/history/' + encodeURIComponent(id) + (following ? '?following=true' : ''), { method: 'DELETE' });
+      const items = readLocalChat();
+      const at = items.findIndex((m) => m.id === id);
+      if (at < 0) throw new Error('Message not found.');
+      storageSet(CHAT_KEY, following ? items.slice(0, at) : items.filter((m) => m.id !== id));
     },
     async clearChat() {
       if (this.server) return api('/api/chat/history/clear', { method: 'POST', body: { confirm: true } });
@@ -1048,7 +1067,7 @@
     const stop = el('button', { class: 'btn chip', type: 'button', disabled: true, 'aria-label': 'Stop generating and speaking' }, [icon('stop', 'filled'), 'Stop']);
     const mic = el('button', { class: 'btn chip', type: 'button', text: 'Dictate', 'aria-label': 'Dictate a message using browser speech recognition' });
     const speak = el('button', { class: 'btn chip', type: 'button', text: 'Read aloud', 'aria-pressed': 'false', 'aria-label': 'Read replies aloud' });
-    const clear = el('button', { class: 'btn chip', type: 'button', text: 'Clear', 'aria-label': 'Clear chat history' });
+    const clear = el('button', { class: 'btn chip', type: 'button', text: 'Clear all', 'aria-label': 'Delete all chat messages' });
     const status = el('p', { class: 'chatstatus tiny muted', role: 'status', text: '' });
     prompt.addEventListener('input', () => { prompt.style.height = 'auto'; prompt.style.height = Math.min(prompt.scrollHeight, 180) + 'px'; });
     prompt.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); form.requestSubmit(); } });
@@ -1060,7 +1079,10 @@
     // Online: a "Get your free AI key" card, shown until this provider has a key.
     const cardProvider = el('select', { id: 'keycardprovider', 'aria-label': 'Free AI provider' }, providers.map((p) => el('option', { value: p.id, text: p.label })));
     const cardLink = el('a', { id: 'getkeylink', class: 'btn primary', target: '_blank', rel: 'noopener' });
-    const cardKey = el('input', { id: 'keycardinput', type: 'password', autocomplete: 'off', placeholder: 'Paste your key here' });
+    // A plain text box: phone keyboards hide their clipboard button in password boxes, and seeing the
+    // key helps check that all of it was pasted. It is cleared once saved.
+    const cardKey = el('input', { id: 'keycardinput', type: 'text', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', placeholder: 'Paste your key here' });
+    const cardPaste = el('button', { id: 'keycardpaste', class: 'btn', type: 'button', text: 'Paste' });
     const cardRemember = el('input', { type: 'checkbox', id: 'keycardremember', checked: true });
     const cardSave = el('button', { id: 'keycardsave', class: 'btn primary', type: 'button', text: 'Save key' });
     const cardNote = el('p', { class: 'tiny muted' });
@@ -1071,7 +1093,8 @@
       el('label', { class: 'field' }, ['1. CHOOSE A FREE PROVIDER', cardProvider]),
       el('p', { class: 'keystep', text: '2. Open the key page, sign in (Google sign-in works), tap "Create API key" and copy the key.' }),
       cardLink,
-      el('label', { class: 'field', style: 'margin-top:12px' }, ['3. PASTE YOUR KEY', cardKey]),
+      el('label', { class: 'field', style: 'margin-top:12px', for: 'keycardinput' }, ['3. PASTE YOUR KEY']),
+      el('div', { class: 'keyrow' }, [cardKey, cardPaste]),
       el('label', { class: 'check' }, [cardRemember, 'Remember my key on this phone (saved only in this browser)']),
       cardNote, cardSave, cardStatus,
     ]) : null;
@@ -1167,7 +1190,7 @@
         ]));
         return;
       }
-      items.forEach((m) => transcript.append(bubble(m.role, m.content, m.meta)));
+      items.forEach((m) => transcript.append(withActions(bubble(m.role, m.content, m.meta), m.role, m.content, m.id)));
       scrollChat();
     }
 
@@ -1185,6 +1208,39 @@
       ]);
       node.body = body;
       node.metaLine = metaLine;
+      return node;
+    }
+
+    /** Copy / Edit / Delete under a saved message. `id` may be a promise while the message is being saved. */
+    function withActions(node, role, content, id) {
+      const getId = async () => { const v = await id; return v && typeof v === 'object' ? v.id : v; };
+      const busy = () => { if (activeGeneration) { status.textContent = 'Wait for the reply to finish (or press Stop) first.'; return true; } return false; };
+      const copy = el('button', { class: 'msgbtn', type: 'button', text: 'Copy', 'aria-label': 'Copy this message' });
+      const del = el('button', { class: 'msgbtn', type: 'button', text: 'Delete', 'aria-label': 'Delete this message' });
+      copy.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(content); status.textContent = 'Copied.'; } catch { status.textContent = 'Copy is blocked by this browser. Press and hold the text to copy it.'; }
+      });
+      del.addEventListener('click', async () => {
+        if (busy() || !confirm('Delete this message?')) return;
+        try { await store.deleteChat(await getId(), false); status.textContent = 'Message deleted.'; } catch (err) { status.textContent = 'Could not delete: ' + err.message; }
+        showHistory();
+      });
+      const buttons = [copy];
+      if (role === 'user') {
+        const edit = el('button', { class: 'msgbtn', type: 'button', text: 'Edit', 'aria-label': 'Edit this message and send it again' });
+        edit.addEventListener('click', async () => {
+          if (busy() || !confirm('Edit this message? It goes back into the message box, and the replies after it are removed.')) return;
+          try { await store.deleteChat(await getId(), true); } catch (err) { status.textContent = 'Could not edit: ' + err.message; return; }
+          await showHistory();
+          prompt.value = content;
+          prompt.dispatchEvent(new Event('input'));
+          prompt.focus();
+          status.textContent = 'Change your message, then press Send.';
+        });
+        buttons.push(edit);
+      }
+      buttons.push(del);
+      node.append(el('div', { class: 'msgactions' }, buttons));
       return node;
     }
 
@@ -1226,6 +1282,7 @@
       cardProvider.value = p.id;
       cardLink.href = p.key_url;
       cardLink.textContent = 'Open ' + p.label + ' key page ↗';
+      cardKey.placeholder = KEY_PREFIX[p.id] ? 'Starts with ' + KEY_PREFIX[p.id] : 'Paste your key here';
       cardNote.textContent = 'Your messages go to ' + p.label + '. ' + (p.billing || '');
     }
     if (keyCard) {
@@ -1234,18 +1291,35 @@
         providerSelect.dispatchEvent(new Event('change'));
         cardStatus.textContent = '';
       });
+      cardPaste.addEventListener('click', async () => {
+        try {
+          cardKey.value = cleanKey(await navigator.clipboard.readText());
+          cardStatus.classList.remove('warn');
+          cardStatus.textContent = cardKey.value ? 'Pasted. Now tap Save key.' : 'The clipboard is empty. Copy the key first.';
+        } catch {
+          cardStatus.classList.add('warn');
+          cardStatus.textContent = 'This browser did not allow reading the clipboard. Press and hold the box above, then tap Paste.';
+          cardKey.focus();
+        }
+      });
       cardSave.addEventListener('click', async () => {
         const p = current();
-        const key = cardKey.value.trim();
+        const key = cleanKey(cardKey.value);
+        cardKey.value = key;
         cardStatus.classList.remove('warn');
-        if (!/^[\x21-\x7e]{8,400}$/.test(key)) { cardStatus.classList.add('warn'); cardStatus.textContent = 'Paste the whole ' + p.label + ' key (no spaces).'; return; }
+        const wrongKind = KEY_PREFIX[p.id] && key && !key.startsWith(KEY_PREFIX[p.id]);
+        if (!/^[\x21-\x7e]{8,400}$/.test(key)) {
+          cardStatus.classList.add('warn');
+          cardStatus.textContent = key ? 'That does not look like a whole key. Copy the ' + p.label + ' key again and paste all of it.' : 'Paste your ' + p.label + ' key first.';
+          return;
+        }
         cardSave.disabled = true;
         cardStatus.textContent = 'Checking your key with ' + p.label + '…';
         try {
           await api('/api/llm/models', { method: 'POST', body: { provider: p.id, api_key: key } });
         } catch (err) {
           cardStatus.classList.add('warn');
-          cardStatus.textContent = err.message;
+          cardStatus.textContent = err.message + (wrongKind ? ' ' + p.label + ' keys start with ' + KEY_PREFIX[p.id] + '; check that you picked the right provider above.' : '');
           return;
         } finally {
           cardSave.disabled = false;
@@ -1264,7 +1338,7 @@
 
     billingAck.addEventListener('change', () => { if (isCloud()) storageSet(CLOUD_ACK_KEY + current().id, billingAck.checked); });
     if (isCloud()) {
-      const keepKey = () => { cloudKey.set(current().id, keyInput.value.trim(), rememberKey.checked); status.textContent = ''; updateKeyCard(); refreshStatus(); };
+      const keepKey = () => { keyInput.value = cleanKey(keyInput.value); cloudKey.set(current().id, keyInput.value, rememberKey.checked); status.textContent = ''; updateKeyCard(); refreshStatus(); };
       keyInput.addEventListener('change', () => { keepKey(); if (keyInput.value.trim()) discoverModels(true); });
       rememberKey.addEventListener('change', keepKey);
     }
@@ -1482,8 +1556,8 @@
       const saveTurn = (message) => store.appendChat(message).catch((err) => log('could not save chat turn: ' + err.message));
       const userSaved = saveTurn({ role: 'user', content: text });
 
-      if (transcript.querySelector('p.muted')) transcript.replaceChildren();
-      transcript.append(bubble('user', text));
+      if (transcript.querySelector('p.muted, .emptychat')) transcript.replaceChildren();
+      transcript.append(withActions(bubble('user', text), 'user', text, userSaved));
       const reply = bubble('assistant', '', 'Waiting for ' + p.label + '…');
       transcript.append(reply);
       scrollChat();
@@ -1548,7 +1622,7 @@
           ]));
         }
         await userSaved;  // keep turns in order
-        await saveTurn({ role: 'assistant', content: answer, meta: metaText });
+        withActions(reply, 'assistant', answer, saveTurn({ role: 'assistant', content: answer, meta: metaText }));
         status.textContent = 'Reply received from ' + p.label + '.';
         log('chat reply from ' + p.id + '/' + model + (meta.latency_ms != null ? ' in ' + meta.latency_ms + ' ms' : ''));
         speakText(answer);
@@ -1742,7 +1816,7 @@
       if (isCloud()) key.value = '';
       refreshForm();
       model.value = '';
-      if (current().local || isCloud()) {
+      if (current().local || (isCloud() && key.value.trim())) {
         try {
           const data = await api('/api/llm/models', { method: 'POST', body: { provider: current().id, api_key: key.value.trim() } });
           if (data.models.length) model.value = data.models[0];
@@ -1750,7 +1824,7 @@
       }
     });
     refreshForm();
-    if (!model.value && (current().local || isCloud())) {
+    if (!model.value && (current().local || (isCloud() && key.value.trim()))) {
       api('/api/llm/models', { method: 'POST', body: { provider: current().id, api_key: key.value.trim() } }).then((d) => { if (!model.value && d.models.length) model.value = d.models[0]; }).catch(() => {});
     }
 

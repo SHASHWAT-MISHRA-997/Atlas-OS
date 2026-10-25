@@ -95,8 +95,12 @@ test('a visitor gets a free key, chats, plans, and the key stays on their phone'
   assert.equal(await page.isVisible('#keycard'), true);
   assert.equal(await page.evaluate(() => localStorage.getItem('atlas.cloud.key.groq')), null);
 
-  // The visitor's own key: saved, models load, chat works.
-  await page.fill('#keycardinput', 'my-own-test-key-456');
+  // Phone keyboards hide clipboard suggestions in password boxes, so this is a plain text box with a Paste button.
+  assert.equal(await page.getAttribute('#keycardinput', 'type'), 'text');
+  assert.equal(await page.isVisible('#keycardpaste'), true);
+
+  // The visitor's own key, pasted messily (spaces, quotes, an invisible character): cleaned, saved, models load, chat works.
+  await page.fill('#keycardinput', '  "my-own-test-\u200bkey-456 "  ');
   await page.click('#keycardsave');
   await page.waitForSelector('#keycard', { state: 'hidden' });
   await page.waitForFunction(() => /^fake-/.test(document.querySelector('#atlasmodel')?.value || ''));
@@ -117,6 +121,31 @@ test('a visitor gets a free key, chats, plans, and the key stays on their phone'
   assert.equal(await page.inputValue('#atlaskey'), 'my-own-test-key-456');
   assert.equal(await page.isVisible('#keycard'), false);
   assert.equal(await page.$eval('#chatsettings', (d) => d.open), false, 'notice already confirmed on this device');
+
+  // Each message has Copy / Edit / Delete, and "Clear all" removes everything (each asks first).
+  page.on('dialog', (d) => d.accept());
+  const chatLog = () => page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.chat.v1') || '[]').map((m) => m.role + ':' + m.content));
+  await page.fill('.composer-input', 'second question');
+  await page.click('.sendbtn');
+  await page.waitForSelector('.bubble >> text=FAKE reply to: second question');
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('atlas.os.chat.v1') || '[]').length === 4);
+  await shot(page, '4-message-actions');
+  // Delete only the first reply.
+  await page.locator('.bubble', { hasText: 'FAKE reply to: namaste' }).getByRole('button', { name: 'Delete this message' }).click();
+  await page.waitForFunction(() => !document.body.innerText.includes('FAKE reply to: namaste'));
+  assert.deepEqual(await chatLog(), ['user:namaste', 'user:second question', 'assistant:FAKE reply to: second question']);
+  // Edit the second question: it returns to the box and its reply is removed; send the changed text.
+  await page.locator('.bubble.user', { hasText: 'second question' }).getByRole('button', { name: 'Edit this message and send it again' }).click();
+  await page.waitForFunction(() => document.querySelector('.composer-input').value === 'second question');
+  assert.deepEqual(await chatLog(), ['user:namaste']);
+  await page.fill('.composer-input', 'better question');
+  await page.click('.sendbtn');
+  await page.waitForSelector('.bubble >> text=FAKE reply to: better question');
+  assert.equal(await page.locator('.bubble', { hasText: 'second question' }).count(), 0);
+  // Clear all.
+  await page.click('button:has-text("Clear all")');
+  await page.waitForSelector('.emptychat');
+  assert.deepEqual(await chatLog(), []);
 
   // Home plan uses the same key.
   await go(page, 'home');

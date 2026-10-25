@@ -137,6 +137,12 @@ def append_chat(body: ChatMessageIn, conversation: str = ConversationId):
         return storage.append_chat(conn, conversation, body.role, body.content, body.meta)
 
 
+@router.delete("/api/chat/history/{message_id}")
+def delete_chat_message(message_id: int, conversation: str = ConversationId, following: bool = False):
+    with storage.connection() as conn:
+        return {"deleted": storage.delete_chat_message(conn, conversation, message_id, following)}
+
+
 @router.post("/api/chat/history/clear")
 def clear_chat(body: Confirm, conversation: str = ConversationId):
     _require_confirm(body)

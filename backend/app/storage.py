@@ -400,6 +400,17 @@ def append_chat(conn: sqlite3.Connection, conversation_id: str, role: str, conte
     return {"id": cur.lastrowid, "role": role, "content": content, "meta": meta, "created_at": created}
 
 
+def delete_chat_message(conn: sqlite3.Connection, conversation_id: str, message_id: int, following: bool = False) -> int:
+    """Delete one message, or (``following``) that message and every later one, as when a message is edited."""
+    sql = ("DELETE FROM chat_messages WHERE conversation_id = ? AND id >= ?" if following
+           else "DELETE FROM chat_messages WHERE conversation_id = ? AND id = ?")
+    with conn:
+        deleted = conn.execute(sql, (conversation_id, message_id)).rowcount
+    if deleted == 0:
+        raise StorageError(404, "not_found", "Message not found.")
+    return deleted
+
+
 def clear_chat(conn: sqlite3.Connection, conversation_id: str) -> int:
     with conn:
         return conn.execute("DELETE FROM chat_messages WHERE conversation_id = ?", (conversation_id,)).rowcount
