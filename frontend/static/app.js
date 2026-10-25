@@ -1250,6 +1250,9 @@
       const body = el('textarea', { id: 'actiontext', rows: '5', maxlength: '100000', 'aria-label': 'File contents', style: 'display:block;width:100%;margin-top:8px;padding:12px;border:1px solid #304771;border-radius:9px;background:#080f20;color:white' });
       const trashPick = el('select', { id: 'actiontrash' });
       const mediaKey = el('select', { id: 'actionkey' }, [['play_pause', 'Play / pause'], ['next', 'Next track'], ['previous', 'Previous track'], ['volume_up', 'Volume up'], ['volume_down', 'Volume down'], ['mute', 'Mute']].map(([v, t]) => el('option', { value: v, text: t })));
+      const url = el('input', { id: 'actionurl', type: 'url', placeholder: 'https://example.com', maxlength: '2000', autocomplete: 'off' });
+      const words = el('input', { id: 'actionwords', placeholder: 'e.g. DBMS normalization', maxlength: '200' });
+      const engine = el('select', { id: 'actionengine' }, [['duckduckgo', 'DuckDuckGo'], ['google', 'Google'], ['bing', 'Bing']].map(([v, t]) => el('option', { value: v, text: t })));
       const risk = el('p', { class: 'tiny muted' });
       const go = el('button', { class: 'btn primary', type: 'submit', text: 'Ask for approval' });
       const appField = el('label', { class: 'field' }, ['APP', app]);
@@ -1262,9 +1265,12 @@
       const titleField = el('label', { class: 'field' }, ['HEADING', title]);
       const trashField = el('label', { class: 'field' }, ['FILE IN TRASH', trashPick]);
       const keyField2 = el('label', { class: 'field' }, ['KEY', mediaKey]);
+      const urlField = el('label', { class: 'field' }, ['WEB ADDRESS', url]);
+      const wordsField = el('label', { class: 'field' }, ['SEARCH FOR', words]);
+      const engineField = el('label', { class: 'field' }, ['SEARCH ENGINE', engine]);
       const f = el('form', { class: 'panel', style: 'margin-top:14px', 'aria-label': 'PC actions' }, [
         el('h3', { text: 'PC actions', style: 'margin:0 0 8px' }),
-        el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['ACTION', what]), appField, folderField, subField, queryField, nameField, fmtField, titleField, trashField, keyField2]),
+        el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['ACTION', what]), appField, folderField, subField, queryField, nameField, fmtField, titleField, trashField, keyField2, urlField, wordsField, engineField]),
         body, risk, go,
       ]);
       const FOLDER_KINDS = ['list_folder', 'search_files', 'index_documents', 'create_note', 'create_document', 'move_to_trash'];
@@ -1287,6 +1293,9 @@
         titleField.classList.toggle('hidden', k !== 'create_document' || fmt.value !== 'docx');
         trashField.classList.toggle('hidden', k !== 'restore_from_trash');
         keyField2.classList.toggle('hidden', k !== 'media_key');
+        urlField.classList.toggle('hidden', k !== 'open_url');
+        wordsField.classList.toggle('hidden', k !== 'web_search');
+        engineField.classList.toggle('hidden', k !== 'web_search');
         body.classList.toggle('hidden', k !== 'create_note' && k !== 'create_document');
         body.placeholder = k === 'create_document' && fmt.value === 'xlsx' ? 'Rows as CSV, e.g.\nItem,Price\nTea,20'
           : k === 'create_document' ? 'Text. Lines starting with # become headings, lines starting with - become bullets.' : 'Note text';
@@ -1311,6 +1320,8 @@
         if (k === 'create_document') { req.format = fmt.value; req.title = fmt.value === 'docx' ? title.value.trim() : ''; }
         if (k === 'restore_from_trash') req.trash_id = trashPick.value;
         if (k === 'media_key') req.key = mediaKey.value;
+        if (k === 'open_url') req.url = url.value.trim();
+        if (k === 'web_search') { req.query = words.value.trim(); req.engine = engine.value; }
         if (k === 'restore_from_trash' && !req.trash_id) { status.textContent = 'The ATLAS trash is empty.'; return; }
         go.disabled = true;
         try {
@@ -1423,6 +1434,7 @@
       if (o.created) children.push(el('p', { class: 'notice', text: 'Created ' + o.folder + '/' + o.created + ' (' + o.bytes.toLocaleString() + ' bytes).' }));
       if (o.trashed) children.push(el('p', { class: 'notice', text: 'Moved ' + o.trashed + ' to the ATLAS trash. ' + o.restore }));
       if (o.restored) children.push(el('p', { class: 'notice', text: 'Restored ' + o.folder + '/' + o.restored + '.' }));
+      if (o.opened) children.push(el('p', { class: 'notice', text: (o.searched ? 'Opened ' + o.engine + ' results for "' + o.searched + '"' : 'Opened ' + o.host) + ' in the browser on the PC.' }));
       if (o.pressed) children.push(el('p', { class: 'notice', text: 'Pressed the ' + o.pressed.replace('_', ' ') + ' key.' }));
       if (o.indexed != null) children.push(el('p', { class: 'notice', text: 'Indexed ' + o.indexed + ' new or changed file(s), ' + o.unchanged + ' unchanged, ' + o.skipped + ' skipped, ' + o.failed + ' unreadable, ' + o.removed + ' removed. ' + o.files + ' file(s) are now searchable.' + (o.stopped_at ? ' Stopped early (' + o.stopped_at + '); run it again to continue.' : '') }));
       if (task.output && task.output.launched) children.push(el('p', { class: 'notice', text: task.output.label + ' was started on the PC.' }));

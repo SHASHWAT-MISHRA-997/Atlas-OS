@@ -24,9 +24,12 @@ import re
 import shutil
 import subprocess
 import time
+import ipaddress
 import uuid
+import webbrowser
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote_plus, urlsplit
 
 from . import docsearch, storage
 from .config import get_settings
@@ -359,6 +362,72 @@ def media_key(key: str) -> dict:
     return {"pressed": key}
 
 
+SEARCH_ENGINES = {"duckduckgo": ("DuckDuckGo", "https://duckduckgo.com/?q="),
+                  "google": ("Google", "https://www.google.com/search?q="),
+                  "bing": ("Bing", "https://www.bing.com/search?q=")}
+MAX_URL_CHARS = 2000
+
+
+def check_url(url: str) -> str:
+    """Only plain http(s) web pages: no file:, javascript:, data:, embedded logins, or this PC/LAN.
+
+    Returns the host as shown on the approval card (internationalised names in their xn-- form,
+    so a look-alike domain cannot hide behind similar letters)."""
+    url = (url or "").strip()
+    if not url or len(url) > MAX_URL_CHARS or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in url):
+        raise AgentError(422, "bad_url", "Enter one web address without spaces (up to 2,000 characters).")
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        raise AgentError(422, "bad_url", "That is not a valid web address.") from None
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise AgentError(422, "bad_scheme", "Only http:// and https:// web addresses can be opened.")
+    if parts.username is not None or parts.password is not None:
+        raise AgentError(422, "bad_url", "Web addresses with a user name or password in them are refused.")
+    host = parts.hostname.rstrip(".")
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if host == "localhost" or host.endswith((".localhost", ".local")) or (ip and not ip.is_global):
+        raise AgentError(422, "private_address", "Addresses on this PC or your local network are not opened by ATLAS.")
+    try:
+        shown = host.encode("idna").decode("ascii")
+    except UnicodeError:
+        raise AgentError(422, "bad_url", "That web address has an invalid name.") from None
+    return shown + (f":{port}" if port else "")
+
+
+def _open(url: str) -> None:
+    try:
+        opened = webbrowser.open(url, new=2)
+    except webbrowser.Error:
+        opened = False
+    if not opened:
+        raise AgentError(503, "no_browser", "No web browser could be started on this PC.")
+
+
+def open_url(url: str) -> dict:
+    require_enabled()
+    host = check_url(url)
+    _open(url.strip())
+    return {"opened": url.strip(), "host": host}
+
+
+def web_search(query: str, engine: str) -> dict:
+    require_enabled()
+    query = (query or "").strip()
+    if not query or len(query) > 200:
+        raise AgentError(422, "bad_query", "Enter search words (up to 200 characters).")
+    if engine not in SEARCH_ENGINES:
+        raise AgentError(422, "unknown_engine", "Choose DuckDuckGo, Google or Bing.")
+    label, base = SEARCH_ENGINES[engine]
+    url = base + quote_plus(query)
+    _open(url)
+    return {"opened": url, "host": urlsplit(url).hostname, "searched": query, "engine": label}
+
+
 def index_documents(folder: str) -> dict:
     require_enabled()
     root, _ = _resolve(folder)
@@ -381,6 +450,9 @@ ACTIONS = {
                       "risk": "Moves one file out of the folder into ATLAS's trash. It is not deleted and can be restored."},
     "restore_from_trash": {"label": "Restore from trash", "risk": "Moves a trashed file back to where it was."},
     "media_key": {"label": "Media control", "risk": "Presses a media key (play/pause, next, volume). Windows only."},
+    "open_url": {"label": "Open a website", "risk": "Opens one http(s) address in your default browser. The site sees your browser's cookies; "
+                                                    "addresses on this PC or your network are refused."},
+    "web_search": {"label": "Search the web", "risk": "Opens a search results page in your default browser. The search words go to the search engine."},
 }
 
 
@@ -403,6 +475,10 @@ def describe(kind: str, params: dict) -> dict:
     elif kind == "restore_from_trash":
         item = next((r for r in list_trash() if r.get("id") == params.get("trash_id")), None)
         summary = f"Restore {item['folder']}/{item['path']} from ATLAS trash" if item else f"Restore trash item {params.get('trash_id')}"
+    elif kind == "open_url":
+        summary = f"Open {params.get('host')} in the browser"
+    elif kind == "web_search":
+        summary = f"Search {SEARCH_ENGINES.get(params.get('engine'), ('the web',))[0]} for '{params.get('query')}'"
     else:
         summary = f"Press media key: {params.get('key')}"
     return {"label": ACTIONS[kind]["label"], "risk": ACTIONS[kind]["risk"], "summary": summary}
@@ -414,6 +490,11 @@ def validate(kind: str, params: dict) -> None:
     if kind == "open_app":
         if params.get("app_id") not in APPS:
             raise AgentError(422, "unknown_app", "That app is not on the allowlist.")
+    elif kind == "open_url":
+        params["host"] = check_url(params.get("url", ""))  # shown on the approval card and bound by its hash
+    elif kind == "web_search":
+        if params.get("engine") not in SEARCH_ENGINES or not (params.get("query") or "").strip():
+            raise AgentError(422, "bad_query", "Enter search words and choose a search engine.")
     elif kind == "media_key":
         if params.get("key") not in MEDIA_KEYS:
             raise AgentError(422, "unknown_key", "Unknown media key.")
@@ -448,6 +529,10 @@ def run(kind: str, params: dict) -> dict:
         return restore_from_trash(params["trash_id"])
     if kind == "media_key":
         return media_key(params["key"])
+    if kind == "open_url":
+        return open_url(params["url"])
+    if kind == "web_search":
+        return web_search(params["query"], params["engine"])
     raise AgentError(422, "unknown_action", "Unknown action.")
 
 

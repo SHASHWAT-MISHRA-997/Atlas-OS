@@ -267,3 +267,28 @@ def test_indexing_does_not_follow_links_out_of_the_folder(api, env, tmp_path, mo
 @pytest.mark.parametrize("q", ['"', "NEAR(a b)", "a OR", "*", "col:val", "') DROP TABLE doc_chunks; --"])
 def test_search_syntax_cannot_break_the_query(api, env, q):
     assert api.get("/api/docs/search", params={"q": q}).status_code == 200
+
+
+# --- browser control (v0.9) ------------------------------------------------------------------
+
+@pytest.mark.parametrize("url", [
+    "file:///C:/Windows/System32/config/SAM", "javascript:alert(1)", "data:text/html,<script>x</script>",
+    "ms-settings:privacy", "\\\\server\\share", "https://user:pass@example.com/", "http://localhost:8000/api/memory",
+    "http://127.0.0.1:8000/", "http://[::1]/", "http://192.168.1.1/admin", "http://10.0.0.5/", "http://169.254.169.254/latest/",
+    "http://printer.local/", "https://example.com/ calc.exe", "https://example.com/\nnext", "http://0.0.0.0/",
+], ids=["file", "javascript", "data", "ms-settings", "unc", "credentials", "localhost-api", "loopback", "ipv6-loopback",
+        "router", "private-10", "cloud-metadata", "mdns", "space", "newline", "zero"])
+def test_only_public_web_pages_can_be_opened(api, env, url, monkeypatch):
+    opened = []
+    monkeypatch.setattr(agent.webbrowser, "open", lambda u, new=0: opened.append(u) or True)
+    assert create(api, kind="open_url", url=url).status_code == 422
+    assert opened == [] and env["launched"] == []
+
+
+def test_search_words_cannot_change_the_search_address(api, env, monkeypatch):
+    opened = []
+    monkeypatch.setattr(agent.webbrowser, "open", lambda u, new=0: opened.append(u) or True)
+    task = create(api, kind="web_search", query="x&q=evil#https://evil.example/", engine="bing").json()
+    api.post(f"/api/tasks/{task['id']}/approve", json={"approval_hash": task["approval_hash"]})
+    settle(api, task["id"], 0.5)
+    assert opened == ["https://www.bing.com/search?q=x%26q%3Devil%23https%3A%2F%2Fevil.example%2F"]
