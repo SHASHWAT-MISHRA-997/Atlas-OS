@@ -1,0 +1,20 @@
+{
+  "name": "atlas-os-cloud",
+  "private": true,
+  "type": "module",
+  "description": "Netlify build of the ATLAS OS cloud edition (frontend + one function). The local app lives in backend/.",
+  "scripts": {
+    "build": "node scripts/netlify/build.mjs",
+    "test": "node --test netlify/tests/cloud.test.mjs",
+    "dev": "node scripts/netlify/dev-server.mjs"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^11.1.6"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
+  }
+}

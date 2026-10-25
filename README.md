@@ -4,7 +4,9 @@
 
 ATLAS OS is an AI assistant you run on your own computer. It is **not** an operating system and **not** production-ready. This README describes only what exists today; see [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the status of every feature.
 
-## What it does today (v0.9.0)
+## What it does today (v0.10.0)
+
+**New: an online version for phones** at https://atlas-os-sm.netlify.app (Netlify). It has AI Chat with a cloud model, memory, plans and summaries, and device pairing, but no PC control. See [docs/CLOUD.md](docs/CLOUD.md).
 
 - **Chat with a local model through Ollama** (the default). Replies stream in, and the Stop button really cancels generation. Installed models are found automatically, and you get clear errors when Ollama or a model is missing.
 - **Optional cloud models** with your own key: OpenAI, Groq, OpenRouter, NVIDIA NIM, Together, Cerebras, Fireworks and DeepSeek. Each reply says which provider and model answered. Cloud use needs an explicit billing and data-routing acknowledgement, and can be switched off for the whole server.
@@ -98,7 +100,9 @@ The image runs in production mode as a non-root user. Your browser reaches the c
 
 ## Deployment
 
-There is no deployment. Hosting this build publicly is **not safe**: it has only a single shared token, no TLS of its own and no per-user separation. A hosted Ollama URL cannot reach the user's PC. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The full app (PC actions, local models, server storage) is meant to run on your own PC; hosting it publicly is **not safe** (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
+
+The separate **online version** on Netlify is built for hosting: per-device sign-in, keys only in Netlify environment variables, data in each browser, and no PC access. See [docs/CLOUD.md](docs/CLOUD.md).
 
 ## Data and privacy
 
@@ -120,4 +124,4 @@ Stop the server, delete the folder and the `.venv`, delete the data folder above
 
 ## Project docs
 
-[Audit](docs/PROJECT_AUDIT.md) · [Feature matrix](docs/FEATURE_MATRIX.md) · [Phone and remote access](docs/REMOTE_ACCESS.md) · [Research](docs/RESEARCH.md) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) · [Test plan](docs/TEST_PLAN.md) · [Decisions](docs/DECISIONS.md) · [Handoff](docs/HANDOFF.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
+[Audit](docs/PROJECT_AUDIT.md) · [Feature matrix](docs/FEATURE_MATRIX.md) · [Phone and remote access](docs/REMOTE_ACCESS.md) · [Online version](docs/CLOUD.md) · [Research](docs/RESEARCH.md) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) · [Test plan](docs/TEST_PLAN.md) · [Decisions](docs/DECISIONS.md) · [Handoff](docs/HANDOFF.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)

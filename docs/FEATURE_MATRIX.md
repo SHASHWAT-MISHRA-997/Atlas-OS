@@ -116,6 +116,20 @@ Last updated: 2026-10-25 (v0.9.0), branch `atlas/v0.9`.
 | More sheet keeps focus inside and returns it | Verified (Chromium) | e2e `test_more_sheet_keeps_keyboard_focus_*` |
 | Reduced motion | Implemented | `prefers-reduced-motion` CSS (from v7) |
 
+## Online version on Netlify (v0.10)
+
+| Feature | Location | Status | Evidence / gap |
+|---|---|---|---|
+| Static build of the app with the cloud layer | `scripts/netlify/build.mjs`, `netlify.toml` | Verified (Linux) | Build runs in CI and in the browser tests. Not yet verified on Netlify's own build servers from this workspace |
+| Owner claim, optional access code, one-time pairing links (10 min), device removal, self sign-out | `netlify/lib/cloud.mjs` | Verified (Node, in-memory store) | `netlify/tests/cloud.test.mjs`; e2e pairs and removes a second device. Real Netlify Blobs not exercised here |
+| Chat to Groq, OpenAI (incl. Netlify AI Gateway), Anthropic and Gemini, streamed, with errors as messages | `netlify/lib/cloud.mjs` | Verified (Node, **fake** provider responses) | Request and stream formats checked against stubs written from each provider's documented API. **No real provider call has been made**: needs the owner's key in Netlify |
+| Model lists per provider, with a suggested default when listing fails | `/cloud/models` | Verified (fake responses) | Live lists not checked |
+| Memory, chat history, tasks in the browser | `frontend/cloud/cloud.js`, `app.js` | Verified (Chromium, FAKE model) | `netlify/tests/e2e.test.mjs`. No sync between devices |
+| PC-only features clearly refused online | `cloud.js`, `app.js` | Verified (Chromium) | Tasks, Automations and voice settings say they need ATLAS on the PC |
+| "Set up AI" guide when no key is set | `cloud.js` | Verified (Chromium) | e2e `without an AI key…` |
+| Rate limit on the function | `netlify/functions/atlas.mjs` (`config.rateLimit`) | Implemented | Netlify platform feature; not testable locally |
+| Live site | https://atlas-os-sm.netlify.app | See HANDOFF | Netlify project created from this workspace; deploy status is recorded in `docs/HANDOFF.md` |
+
 ## Research (Milestone K)
 
 | Question | Status | Evidence |
