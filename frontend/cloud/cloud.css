@@ -1,12 +1,16 @@
 /* ATLAS OS online edition (Netlify build only). */
 .cloudsetup{margin-bottom:14px;font-size:13px;overflow-wrap:anywhere}
 .keyhelp{margin-top:6px}
-.keyhelp a{color:var(--blue)}
-.keycard{margin-bottom:14px;border-color:var(--blue)}
-.keycard h3{margin:0 0 6px}
-.keycard .keystep{margin:10px 0 8px}
-.keycard #getkeylink{display:inline-flex;text-decoration:none;max-width:100%;overflow-wrap:anywhere}
-.keycard #keycardsave{margin-top:8px}
-.keybanner{margin-bottom:14px;border-color:var(--blue)}
-.keybanner p{margin:6px 0 10px}
+.keycard,.keybanner{border-color:#4c3fb0;background:linear-gradient(160deg,#1a1840,#111522 70%)}
+.keycard h3{font-size:19px;margin:0 0 6px}
+.keycard .field{margin-top:14px}
+.keycard .keystep{margin:14px 0 10px;color:var(--soft)}
+.keycard #getkeylink{text-decoration:none;max-width:100%;overflow-wrap:anywhere;text-align:center}
+.keycard #keycardsave{width:100%;margin-top:12px}
+.keycard [role=status]:empty{display:none}
+.keycard [role=status]{margin-top:10px}
+.keybanner strong{font-size:17px}
+.keybanner p{margin:6px 0 12px;color:var(--soft)}
 .keybanner .row a{text-decoration:none}
+/* Planned-only screens are hidden online so the menu shows what works. */
+.nav [data-section=agents],.nav [data-section=projects]{display:none}

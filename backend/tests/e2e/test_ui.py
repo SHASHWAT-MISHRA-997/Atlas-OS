@@ -231,7 +231,7 @@ def test_task_plan_comes_from_backend(page):
     page.route("**/api/llm/models", lambda r: r.fulfill(json={"provider": "ollama", "models": []}))
     page.fill("#command", "Plan a test")
     page.click("#run")
-    page.wait_for_selector("text=PLAN READY · SIMULATION")
+    page.wait_for_selector("#taskstate:has-text('PLAN READY · SIMULATION')")
     assert "Request captured: Plan a test" in page.locator("#tasksteps").inner_text()
 
 

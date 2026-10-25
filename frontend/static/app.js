@@ -172,7 +172,7 @@
         showKeyBanner(withKey.length ? null : s.cloud.providers);
         $('topstatus').replaceChildren(el('span', { class: 'dot ' + (withKey.length ? '' : 'off'), 'aria-hidden': 'true' }), el('span', { text: (withKey.length ? 'AI ready' : 'Add your key') + ' · Cloud' }));
         $('topstatus').title = withKey.length ? 'Using your own key: ' + withKey.join(', ') : 'Open AI Chat and add your free API key';
-        document.querySelector('#home .subtitle').textContent = 'Describe the outcome. ATLAS asks your cloud AI model for a plan you can inspect. Nothing is executed.';
+        document.querySelector('#home .subtitle').textContent = 'ATLAS asks your free cloud AI for a step-by-step plan you can check. Nothing is executed.';
         document.querySelector('footer').textContent = 'ATLAS OS online · Each person uses their own AI key. Chat goes to the provider you pick. Memory, history and a remembered key stay in this browser. Do not enter passwords or sensitive data in chats.';
         return;
       }
@@ -382,8 +382,8 @@
           { n: latestCsvReport.missingCells, l: 'Missing cells' }, { n: columns.filter((c) => c.numeric).length, l: 'Numeric columns' },
         ].forEach((x) => summary.append(el('div', { class: 'stat' }, [el('strong', { text: x.n.toLocaleString() }), el('small', { text: x.l })])));
         csvResults.append(summary);
-        const th = 'text-align:left;padding:8px;border-bottom:1px solid #304771;color:#91a6ca';
-        const td = 'padding:8px;border-bottom:1px solid #23345a;overflow-wrap:anywhere';
+        const th = 'text-align:left;padding:8px;border-bottom:1px solid var(--line-strong);color:var(--muted)';
+        const td = 'padding:8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere';
         const table = el('table', { style: 'width:100%;border-collapse:collapse;margin-top:14px;font-size:12px' }, [
           el('thead', {}, el('tr', {}, ['Column', 'Non-empty', 'Missing', 'Numeric summary (min / mean / max)'].map((t) => el('th', { text: t, style: th, scope: 'col' })))),
           el('tbody', {}, columns.map((c) => el('tr', {}, [
@@ -548,11 +548,11 @@
       v.append(banner);
     }
     const enabled = el('input', { type: 'checkbox', id: 'memoryenabled' });
-    const input = el('textarea', { id: 'memorytext', maxlength: '1000', rows: '3', placeholder: 'Example: Prefer answers in Hinglish; ATLAS OS should prioritize free AI models.', style: 'display:block;width:100%;margin:8px 0;padding:12px;border:1px solid #304771;border-radius:9px;background:#080f20;color:white' });
+    const input = el('textarea', { id: 'memorytext', maxlength: '1000', rows: '3', placeholder: 'Example: Prefer answers in Hinglish; ATLAS OS should prioritize free AI models.', style: 'display:block;width:100%;margin:8px 0;padding:12px;border:1px solid var(--line-strong);border-radius:9px;background:var(--field);color:white' });
     const save = el('button', { class: 'btn primary', type: 'submit', text: 'Save memory' });
     const clear = el('button', { class: 'btn', type: 'button', text: 'Delete all memories' });
     const exportBtn = el('button', { class: 'btn', type: 'button', text: 'Export JSON' });
-    const search = el('input', { type: 'search', id: 'memorysearch', placeholder: 'Search memories', 'aria-label': 'Search memories', style: 'padding:9px;border:1px solid #304771;border-radius:8px;background:#080f20;color:white;min-width:0;flex:1' });
+    const search = el('input', { type: 'search', id: 'memorysearch', placeholder: 'Search memories', 'aria-label': 'Search memories', style: 'padding:9px;border:1px solid var(--line-strong);border-radius:8px;background:var(--field);color:white;min-width:0;flex:1' });
     const form = el('form', { class: 'panel', style: 'margin-top:16px' }, [
       el('label', { class: 'check', style: 'margin:0 0 10px' }, [enabled, 'Use saved memories in AI Chat']),
       el('label', { for: 'memorytext', text: 'Memory to save' }), input, el('div', { class: 'row' }, [save, exportBtn, clear]),
@@ -588,7 +588,7 @@
           },
         });
         list.append(el('div', { class: 'task', style: 'display:block' }, [
-          el('p', { text: item.text, style: 'white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 10px;color:#dce9ff' }),
+          el('p', { text: item.text, style: 'white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 10px;color:var(--text)' }),
           el('div', { class: 'tiny muted', text: 'Saved ' + new Date(item.createdAt).toLocaleString() }),
           el('div', { class: 'row', style: 'margin-top:9px' }, [edit, del]),
         ]));
@@ -1046,9 +1046,9 @@
     const prompt = el('textarea', { rows: '1', maxlength: '12000', placeholder: 'Ask ATLAS…', 'aria-label': 'Message', class: 'composer-input' });
     const send = el('button', { class: 'btn primary sendbtn', type: 'submit', text: 'Send' });
     const stop = el('button', { class: 'btn chip', type: 'button', disabled: true, 'aria-label': 'Stop generating and speaking' }, [icon('stop', 'filled'), 'Stop']);
-    const mic = el('button', { class: 'btn chip', type: 'button', text: '🎙 Dictate', 'aria-label': 'Dictate a message using browser speech recognition' });
-    const speak = el('button', { class: 'btn chip', type: 'button', text: '🔊 Read aloud', 'aria-pressed': 'false', 'aria-label': 'Read replies aloud' });
-    const clear = el('button', { class: 'btn chip', type: 'button', text: 'Clear chat', 'aria-label': 'Clear chat history' });
+    const mic = el('button', { class: 'btn chip', type: 'button', text: 'Dictate', 'aria-label': 'Dictate a message using browser speech recognition' });
+    const speak = el('button', { class: 'btn chip', type: 'button', text: 'Read aloud', 'aria-pressed': 'false', 'aria-label': 'Read replies aloud' });
+    const clear = el('button', { class: 'btn chip', type: 'button', text: 'Clear', 'aria-label': 'Clear chat history' });
     const status = el('p', { class: 'chatstatus tiny muted', role: 'status', text: '' });
     prompt.addEventListener('input', () => { prompt.style.height = 'auto'; prompt.style.height = Math.min(prompt.scrollHeight, 180) + 'px'; });
     prompt.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); form.requestSubmit(); } });
@@ -1159,7 +1159,7 @@
       transcript.replaceChildren();
       if (!items.length) {
         transcript.append(el('div', { class: 'emptychat' }, [
-          el('div', { class: 'emptylogo', 'aria-hidden': 'true' }, [icon('logo')]),
+          el('img', { class: 'emptylogo', src: '/static/icon.svg', alt: '', width: '56', height: '56' }),
           el('strong', { text: 'Namaste! What should we work on?' }),
           el('p', { class: 'muted', text: 'History is stored in ' + store.label + '.' }),
           el('div', { class: 'chips-row' }, ['Explain DBMS normalization simply', 'Plan my study week', 'Write a polite leave email'].map((t) =>
@@ -1219,7 +1219,10 @@
     function updateKeyCard() {
       if (!keyCard) return;
       const p = current();
-      keyCard.classList.toggle('hidden', !!cloudKey.get(p.id));
+      const needsKey = !cloudKey.get(p.id);
+      // One thing at a time: until this provider has a key, only the key card is shown.
+      keyCard.classList.toggle('hidden', !needsKey);
+      for (const part of [settings, transcript, form]) part.classList.toggle('hidden', needsKey);
       cardProvider.value = p.id;
       cardLink.href = p.key_url;
       cardLink.textContent = 'Open ' + p.label + ' key page ↗';
@@ -1286,7 +1289,7 @@
     speak.addEventListener('click', () => {
       const enabled = speak.getAttribute('aria-pressed') !== 'true';
       speak.setAttribute('aria-pressed', String(enabled));
-      speak.textContent = enabled ? '🔊 Reading aloud' : '🔊 Read aloud';
+      speak.textContent = enabled ? 'Reading aloud' : 'Read aloud';
       if (!enabled && 'speechSynthesis' in window) window.speechSynthesis.cancel();
       if (!enabled) stopPcAudio();
       status.textContent = enabled
@@ -1309,7 +1312,7 @@
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
         recorder = null;
-        mic.textContent = '🎙 Dictate';
+        mic.textContent = 'Dictate';
         mic.disabled = true;
         status.textContent = 'Transcribing on the PC running ATLAS…';
         try {
@@ -1324,7 +1327,7 @@
         }
       };
       recorder.start();
-      mic.textContent = '⏹ Stop recording';
+      mic.textContent = 'Stop recording';
       status.textContent = 'Recording on this device (up to 60 s). Press Stop recording when done.';
     }
 
@@ -1423,7 +1426,7 @@
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
       mic.disabled = true;
-      mic.textContent = '🎙 Listening…';
+      mic.textContent = 'Listening…';
       status.textContent = 'Microphone on: speak now. It turns off when you stop talking.';
       recognition.onresult = (e) => {
         prompt.value = (prompt.value + ' ' + e.results[0][0].transcript).trim();
@@ -1435,8 +1438,8 @@
           network: 'The browser\'s speech service could not be reached (it needs internet).', 'audio-capture': 'No microphone was found.' };
         status.textContent = 'Speech input failed: ' + (reasons[e.error] || e.error || 'unknown error');
       };
-      recognition.onend = () => { mic.disabled = false; mic.textContent = '🎙 Dictate'; };
-      try { recognition.start(); } catch { mic.disabled = false; mic.textContent = '🎙 Dictate'; status.textContent = 'Could not start speech recognition. Try again.'; }
+      recognition.onend = () => { mic.disabled = false; mic.textContent = 'Dictate'; };
+      try { recognition.start(); } catch { mic.disabled = false; mic.textContent = 'Dictate'; status.textContent = 'Could not start speech recognition. Try again.'; }
     });
 
     clear.addEventListener('click', async () => {
@@ -1607,7 +1610,7 @@
     const model = el('input', { id: 'taskmodel', placeholder: 'Model ID', value: saved.model || '', autocomplete: 'off' });
     const key = el('input', { id: 'taskkey', type: 'password', placeholder: 'API key (kept in memory only until the task ends)', autocomplete: 'off' });
     const keyField = el('label', { class: 'field' }, ['API KEY', key]);
-    const input = el('textarea', { id: 'taskinput', rows: '4', 'aria-label': 'Task input', style: 'display:block;width:100%;margin-top:8px;padding:12px;border:1px solid #304771;border-radius:9px;background:#080f20;color:white' });
+    const input = el('textarea', { id: 'taskinput', rows: '4', 'aria-label': 'Task input', style: 'display:block;width:100%;margin-top:8px;padding:12px;border:1px solid var(--line-strong);border-radius:9px;background:var(--field);color:white' });
     const urgent = el('input', { type: 'checkbox', id: 'taskurgent' });
     const submit = el('button', { class: 'btn primary', type: 'submit', text: 'Start task' });
     const status = el('p', { class: 'notice', role: 'status', text: 'No task started from this screen yet.' });
@@ -1635,7 +1638,7 @@
       const fname = el('input', { id: 'actionname', placeholder: 'e.g. shopping list', maxlength: '100' });
       const fmt = el('select', { id: 'actionformat' }, [el('option', { value: 'docx', text: 'Word (.docx)' }), el('option', { value: 'xlsx', text: 'Excel (.xlsx)' })]);
       const title = el('input', { id: 'actiontitle', placeholder: 'Optional heading', maxlength: '200' });
-      const body = el('textarea', { id: 'actiontext', rows: '5', maxlength: '100000', 'aria-label': 'File contents', style: 'display:block;width:100%;margin-top:8px;padding:12px;border:1px solid #304771;border-radius:9px;background:#080f20;color:white' });
+      const body = el('textarea', { id: 'actiontext', rows: '5', maxlength: '100000', 'aria-label': 'File contents', style: 'display:block;width:100%;margin-top:8px;padding:12px;border:1px solid var(--line-strong);border-radius:9px;background:var(--field);color:white' });
       const trashPick = el('select', { id: 'actiontrash' });
       const mediaKey = el('select', { id: 'actionkey' }, [['play_pause', 'Play / pause'], ['next', 'Next track'], ['previous', 'Previous track'], ['volume_up', 'Volume up'], ['volume_down', 'Volume down'], ['mute', 'Mute']].map(([v, t]) => el('option', { value: v, text: t })));
       const url = el('input', { id: 'actionurl', type: 'url', placeholder: 'https://example.com', maxlength: '2000', autocomplete: 'off' });
@@ -1828,7 +1831,7 @@
       if (o.pressed) children.push(el('p', { class: 'notice', text: 'Pressed the ' + o.pressed.replace('_', ' ') + ' key.' }));
       if (o.indexed != null) children.push(el('p', { class: 'notice', text: 'Indexed ' + o.indexed + ' new or changed file(s), ' + o.unchanged + ' unchanged, ' + o.skipped + ' skipped, ' + o.failed + ' unreadable, ' + o.removed + ' removed. ' + o.files + ' file(s) are now searchable.' + (o.stopped_at ? ' Stopped early (' + o.stopped_at + '); run it again to continue.' : '') }));
       if (task.output && task.output.launched) children.push(el('p', { class: 'notice', text: task.output.label + ' was started on the PC.' }));
-      if (task.output && task.output.summary) children.push(el('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere;color:#dce9ff', text: task.output.summary }));
+      if (task.output && task.output.summary) children.push(el('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text)', text: task.output.summary }));
       if (buttons.length) children.push(el('div', { class: 'row', style: 'margin-top:8px' }, buttons));
       return el('div', { class: 'task', style: 'display:block', 'data-task-id': task.id }, children);
     }
@@ -1958,7 +1961,7 @@
 
   // ---------------------------------------------------------------- simple pages
   const pages = {
-    agents: ['Agents', 'These are role definitions only. They are not yet connected to model execution or automation.', ['Data Analyst', 'Software Engineer', 'BI Builder', 'QA Agent']],
+    agents: ['Agents', 'Planned specialist roles. They are descriptions only for now and do not run anything yet.', ['Data Analyst: structures, cleans and analyzes data', 'Software Engineer: plans code changes and software tasks', 'BI Builder: defines KPIs and dashboard layouts', 'QA Agent: prepares test and validation checklists']],
     projects: ['Projects', 'Projects are not implemented yet.', ['No saved projects']],
   };
 
@@ -1974,7 +1977,7 @@
       'Desktop agent: ' + (s.desktop_agent_enabled ? 'enabled on this machine (allowlisted apps only)' : 'off'),
       'File system: not connected', 'Calendar / email / messaging: not implemented', 'Other devices: pair them in Devices (one-time links, per-device logins)',
     ] : ['Backend unreachable: integration status unknown'];
-    v.append(el('h2', { text: 'Integrations' }), el('p', { class: 'muted', text: 'Live status from the ATLAS backend. Nothing here is connected unless it says so.' }));
+    v.append(el('h2', { text: 'Integrations' }), el('p', { class: 'muted', text: s && s.cloud ? 'What this online version can and cannot do.' : 'Live status from the ATLAS backend. Nothing here is connected unless it says so.' }));
     rows.forEach((t) => v.append(el('div', { class: 'task', text: t })));
   }
 
@@ -2016,7 +2019,7 @@
       return;
     }
     v.append(el('p', { class: 'muted', text: 'Pair a phone or another computer. Each device gets its own login that you can remove here at any time. Pairing links work once and expire after 10 minutes.' + (location.protocol === 'https:' ? '' : ' Traffic is plain HTTP, so pair only on a network you trust.') }));
-    const name = el('input', { id: 'devicename', maxlength: '40', placeholder: 'Device name', 'aria-label': 'Device name', style: 'padding:9px;border:1px solid #304771;border-radius:8px;background:#080f20;color:white;min-width:0;flex:1' });
+    const name = el('input', { id: 'devicename', maxlength: '40', placeholder: 'Device name', 'aria-label': 'Device name', style: 'padding:9px;border:1px solid var(--line-strong);border-radius:8px;background:var(--field);color:white;min-width:0;flex:1' });
     const create = el('button', { class: 'btn primary', type: 'submit', text: 'Create pairing link' });
     const result = el('div', { 'aria-live': 'polite' });
     const form = el('form', { class: 'panel', style: 'margin-top:16px' }, [el('div', { class: 'row' }, [name, create]), result]);
@@ -2032,7 +2035,7 @@
           el('p', { class: 'notice', style: 'margin-top:12px', text: 'Open this link on the other device within 10 minutes. It works once.' }),
           r.qr_svg ? el('img', { id: 'pairqr', class: 'pairqr', src: r.qr_svg, alt: 'QR code of the pairing link. Scan it with the phone camera.' }) : null,
           r.qr_svg ? el('p', { class: 'tiny muted', text: 'Scan with the phone camera, or open the link below.' }) : null,
-          el('code', { id: 'pairlink', style: 'display:block;word-break:break-all;padding:10px;background:#080f20;border-radius:8px', text: link }),
+          el('code', { id: 'pairlink', style: 'display:block;word-break:break-all;padding:10px;background:var(--field);border-radius:8px', text: link }),
           r.url ? null : el('p', { class: 'tiny muted', text: 'Replace <this-computer-address> with this computer\'s network address'
             + (r.lan_address ? ' (on this Wi-Fi it looks like ' + r.lan_address + ')' : '')
             + ' and add it to ATLAS_ALLOWED_HOSTS, or set ATLAS_PUBLIC_URL to get a complete link and a QR code.' }),

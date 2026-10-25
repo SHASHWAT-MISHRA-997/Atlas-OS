@@ -22,7 +22,7 @@ const swap = (from, to) => {
   html = html.replace(from, to);
 };
 swap('<small>Local models (Ollama)</small>', '<small>Your AI keys</small>');
-swap('ATLAS asks your local model for a plan', 'ATLAS asks your cloud AI model for a plan');
+swap('ATLAS asks your local model for a step-by-step plan', 'ATLAS asks your free cloud AI for a step-by-step plan');
 html = html
   .replace(appScript, '<link rel="stylesheet" href="/static/cloud.css">\n<script src="/static/cloud.js" defer></script>\n' + appScript)
   .replace('<title>ATLAS OS — Agentic Workspace</title>', '<title>ATLAS OS — Online</title>')

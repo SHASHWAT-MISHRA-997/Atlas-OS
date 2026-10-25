@@ -84,10 +84,9 @@ test('a visitor gets a free key, chats, plans, and the key stays on their phone'
   await shot(page, '2-keycard');
   await noSideScroll(page);
 
-  // Sending without a key points to the card; nothing is sent.
-  await page.fill('.composer-input', 'namaste');
-  await page.click('.sendbtn');
-  await page.waitForSelector('.chatstatus >> text=Paste your own Groq API key first');
+  // Until there is a key, only the key card is shown (no chat box to type into yet).
+  assert.equal(await page.isVisible('.composer'), false);
+  assert.equal(await page.isVisible('#chatsettings'), false);
 
   // A wrong key is checked with the provider and not saved.
   await page.fill('#keycardinput', 'wrong-key-123');
