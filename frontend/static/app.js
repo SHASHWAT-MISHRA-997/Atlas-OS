@@ -777,12 +777,12 @@
 
 
     // Voice: language for dictation and read-aloud, and which installed voice reads replies.
-    const voicePrefs = { lang: '', voice: '', engine: 'browser', ...storageGet(VOICE_KEY, {}) };
+    const voicePrefs = { lang: '', voice: '', engine: 'browser', ttsEngine: 'browser', localVoice: '', mic: '', ...storageGet(VOICE_KEY, {}) };
     const LANGS = [['', 'Same as this browser'], ['en-IN', 'English (India)'], ['hi-IN', 'Hindi'], ['en-US', 'English (US)'], ['en-GB', 'English (UK)']];
     const langSelect = el('select', { id: 'voicelang' }, LANGS.map(([value, text]) => el('option', { value, text })));
     langSelect.value = voicePrefs.lang;
     const voiceSelect = el('select', { id: 'voicename' });
-    const voiceNote = el('p', { class: 'tiny muted', text: 'Dictation uses your browser\'s speech service; in Chrome and Edge the audio goes to the browser vendor. Voices marked "online" also send the text out. The microphone is the one your phone or browser uses by default.' });
+    const voiceNote = el('p', { class: 'tiny muted', text: 'Browser dictation uses your browser\'s speech service; in Chrome and Edge the audio goes to the browser vendor. Browser voices marked "online" also send the text out. "ATLAS on this PC" keeps audio and text on the PC running ATLAS.' });
     const engineSelect = el('select', { id: 'voiceengine' }, [el('option', { value: 'browser', text: 'Browser speech service' }), el('option', { value: 'local', text: 'ATLAS on this PC (local)' })]);
     engineSelect.value = voicePrefs.engine === 'local' ? 'local' : 'browser';
     const localVoice = el('div', { id: 'localvoice', class: 'tiny muted' });
@@ -819,6 +819,76 @@
     }
     engineSelect.addEventListener('change', () => { voicePrefs.engine = engineSelect.value; storageSet(VOICE_KEY, voicePrefs); refreshLocalVoice(); });
     refreshLocalVoice();
+
+    // Read-aloud on the PC (Piper), microphone choice and hands-free "Hey ATLAS".
+    const ttsSelect = el('select', { id: 'ttsengine' }, [el('option', { value: 'browser', text: 'Browser voices' }), el('option', { value: 'local', text: 'ATLAS on this PC (local)' })]);
+    ttsSelect.value = voicePrefs.ttsEngine === 'local' ? 'local' : 'browser';
+    const localVoiceSelect = el('select', { id: 'localvoicename' });
+    const localVoiceField = el('label', { class: 'field hidden' }, ['PC VOICE', localVoiceSelect]);
+    const localTts = el('div', { id: 'localtts', class: 'tiny muted' });
+    const micSelect = el('select', { id: 'micselect' }, [el('option', { value: '', text: 'Default microphone' })]);
+    const handsFree = el('input', { type: 'checkbox', id: 'handsfree' });
+    const handsFreeNote = el('p', { class: 'tiny muted', id: 'handsfreenote', role: 'status' });
+    voiceBox.append(
+      el('div', { class: 'grid-fields', style: 'margin-top:10px' }, [el('label', { class: 'field' }, ['READ-ALOUD ENGINE', ttsSelect]), localVoiceField, el('label', { class: 'field' }, ['MICROPHONE (ATLAS ON THIS PC)', micSelect])]),
+      localTts,
+      el('label', { class: 'check' }, [handsFree, 'Hands-free: say "Hey ATLAS" and then your request (needs dictation on this PC; works only while this page is open)']),
+      handsFreeNote,
+    );
+    let localTtsState = null;
+    async function refreshLocalTts() {
+      localVoiceField.classList.toggle('hidden', ttsSelect.value !== 'local');
+      if (ttsSelect.value !== 'local') { localTts.replaceChildren(); return; }
+      let st;
+      try { st = await api('/api/voice/tts/status'); } catch (err) { localTts.replaceChildren(el('p', { class: 'warn', text: 'Could not check local read-aloud: ' + err.message })); return; }
+      localTtsState = st;
+      localVoiceSelect.replaceChildren(...(st.voices.length
+        ? st.available.filter((v) => st.voices.includes(v.voice)).map((v) => el('option', { value: v.voice, text: v.label }))
+        : [el('option', { value: '', text: 'No voice downloaded' })]));
+      if (st.voices.includes(voicePrefs.localVoice)) localVoiceSelect.value = voicePrefs.localVoice;
+      if (!st.engine_installed) {
+        localTts.replaceChildren(el('p', { class: 'warn', text: 'Local read-aloud is not installed on the PC running ATLAS. On that PC run: pip install -r backend/requirements-voice.txt, then restart ATLAS. Until then, replies are read with browser voices.' }));
+        return;
+      }
+      const parts = [el('p', { text: st.voices.length ? 'Replies are spoken by the PC running ATLAS; the text is not sent anywhere else.' : 'No PC voice is downloaded yet; browser voices are used until you download one.' })];
+      if (st.download.running) parts.push(el('p', { role: 'status', text: 'Downloading ' + st.download.voice + '…' }));
+      if (st.download.error) parts.push(el('p', { class: 'warn', text: st.download.error }));
+      const me = await api('/api/devices/current').catch(() => ({}));
+      if (me.kind !== 'device' && !st.download.running) {
+        parts.push(el('div', { class: 'row' }, st.available.filter((v) => !st.voices.includes(v.voice)).map((v) => el('button', {
+          class: 'btn', type: 'button', text: 'Download ' + v.label + ' (~' + v.approx_mb + ' MB)',
+          onclick: async () => {
+            if (!confirm('Download the voice "' + v.label + '" (about ' + v.approx_mb + ' MB) from Hugging Face to this PC?')) return;
+            try { await api('/api/voice/tts/download', { method: 'POST', body: { voice: v.voice, confirm: true } }); } catch (err) { status.textContent = 'Download did not start: ' + err.message; }
+            refreshLocalTts();
+          },
+        }))));
+      }
+      localTts.replaceChildren(...parts);
+      if (st.download.running) setTimeout(() => { if (document.body.contains(localTts)) refreshLocalTts(); }, 2000);
+    }
+    ttsSelect.addEventListener('change', () => { voicePrefs.ttsEngine = ttsSelect.value; storageSet(VOICE_KEY, voicePrefs); refreshLocalTts(); });
+    localVoiceSelect.addEventListener('change', () => { voicePrefs.localVoice = localVoiceSelect.value; storageSet(VOICE_KEY, voicePrefs); });
+    refreshLocalTts();
+
+    async function fillMics() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+      const mics = (await navigator.mediaDevices.enumerateDevices().catch(() => [])).filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default');
+      micSelect.replaceChildren(el('option', { value: '', text: 'Default microphone' }),
+        ...mics.map((d, i) => el('option', { value: d.deviceId, text: d.label || 'Microphone ' + (i + 1) + ' (name shown after you allow the microphone)' })));
+      micSelect.value = mics.some((d) => d.deviceId === voicePrefs.mic) ? voicePrefs.mic : '';
+    }
+    micSelect.addEventListener('change', () => { voicePrefs.mic = micSelect.value; storageSet(VOICE_KEY, voicePrefs); });
+    fillMics();
+    const micConstraints = () => ({ audio: voicePrefs.mic ? { deviceId: { exact: voicePrefs.mic }, echoCancellation: true, noiseSuppression: true } : { echoCancellation: true, noiseSuppression: true } });
+    const localDictationReady = () => !!(localStt && localStt.engine_installed && localStt.models.length && window.MediaRecorder);
+    const sttLanguage = () => { const l = (voicePrefs.lang || '').split('-')[0]; return l === 'hi' || l === 'en' ? l : 'auto'; };
+    async function transcribeBlob(blob) {
+      const r = await fetch('/api/voice/transcribe?language=' + sttLanguage(), { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'HTTP ' + r.status);
+      return data;
+    }
     const speechLang = () => voicePrefs.lang || navigator.language || 'en-US';
     function fillVoices() {
       const all = 'speechSynthesis' in window ? window.speechSynthesis.getVoices() : [];
@@ -966,8 +1036,24 @@
       return node;
     }
 
+    let pcAudio = null;
+    function stopPcAudio() { if (pcAudio) { pcAudio.pause(); URL.revokeObjectURL(pcAudio.src); pcAudio = null; } }
+    async function speakOnPc(text) {
+      stopPcAudio();
+      const r = await fetch('/api/voice/tts/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text.slice(0, 5000), voice: localVoiceSelect.value || null }) });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(typeof d.detail === 'string' ? d.detail : 'HTTP ' + r.status); }
+      pcAudio = new Audio(URL.createObjectURL(await r.blob()));
+      pcAudio.onended = () => { stopPcAudio(); if (!activeGeneration) stop.disabled = true; };
+      stop.disabled = false;
+      await pcAudio.play();
+    }
     function speakText(text) {
-      if (speak.getAttribute('aria-pressed') !== 'true' || !('speechSynthesis' in window)) return;
+      if (speak.getAttribute('aria-pressed') !== 'true') return;
+      if (ttsSelect.value === 'local' && localTtsState && localTtsState.engine_installed && localTtsState.voices.length) {
+        speakOnPc(text).catch((err) => { status.textContent = 'Read-aloud on the PC failed: ' + err.message; });
+        return;
+      }
+      if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = speechLang();
@@ -992,6 +1078,7 @@
     stop.addEventListener('click', () => {
       if (activeGeneration) activeGeneration.controller.abort();
       if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      stopPcAudio();
       stop.disabled = !activeGeneration;
     });
 
@@ -1000,6 +1087,7 @@
       speak.setAttribute('aria-pressed', String(enabled));
       speak.textContent = enabled ? '🔊 Reading aloud' : '🔊 Read aloud';
       if (!enabled && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+      if (!enabled) stopPcAudio();
       status.textContent = enabled
         ? ('speechSynthesis' in window ? 'New replies will be read aloud with your browser\'s voices. Press Stop to interrupt.' : 'This browser has no speech synthesis.')
         : 'Voice output off.';
@@ -1009,7 +1097,8 @@
     async function dictateLocally() {
       if (recorder) { recorder.stop(); return; }
       let stream;
-      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { status.textContent = 'Microphone permission is blocked or no microphone was found.'; return; }
+      try { stream = await navigator.mediaDevices.getUserMedia(micConstraints()); } catch { status.textContent = 'Microphone permission is blocked or no microphone was found.'; return; }
+      fillMics();
       const chunks = [];
       recorder = new MediaRecorder(stream);
       const limit = setTimeout(() => recorder && recorder.stop(), 60000);
@@ -1022,11 +1111,8 @@
         mic.textContent = '🎙 Dictate';
         mic.disabled = true;
         status.textContent = 'Transcribing on the PC running ATLAS…';
-        const lang = (voicePrefs.lang || '').split('-')[0];
         try {
-          const r = await fetch('/api/voice/transcribe?language=' + (lang === 'hi' || lang === 'en' ? lang : 'auto'), { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
-          const data = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'HTTP ' + r.status);
+          const data = await transcribeBlob(blob);
           prompt.value = (prompt.value + ' ' + data.text).trim();
           prompt.focus();
           status.textContent = data.text ? 'Transcribed locally (' + data.model + ', ' + data.seconds + ' s). Review your message, then press Send.' : 'No speech heard. Try again.';
@@ -1041,8 +1127,94 @@
       status.textContent = 'Recording on this device (up to 60 s). Press Stop recording when done.';
     }
 
+    // Hands-free: a small voice-activity detector on this device cuts speech into short clips; each clip
+    // is transcribed by ATLAS on the PC, and only clips starting with "Hey ATLAS" (or "ATLAS") are used.
+    const WAKE = /^\W*(?:(?:hey|hi|ok|okay|हे|ऐ)\W+)?(?:atlas|एटलस|ऐटलस)(?=[\s,.!?:;-]|$)[\s,.!?:;-]*(.*)$/i;
+    let hf = null;
+    function stopHandsFree(message) {
+      if (!hf) return;
+      clearInterval(hf.timer);
+      if (hf.recorder && hf.recorder.state !== 'inactive') { hf.discard = true; hf.recorder.stop(); }
+      hf.stream.getTracks().forEach((t) => t.stop());
+      hf.ctx.close().catch(() => {});
+      hf = null;
+      handsFree.checked = false;
+      mic.classList.remove('listening');
+      handsFreeNote.textContent = message || 'Hands-free is off.';
+    }
+    async function startHandsFree() {
+      if (!localDictationReady()) {
+        handsFree.checked = false;
+        handsFreeNote.textContent = 'Hands-free needs dictation on this PC: choose "ATLAS on this PC" as the dictation engine and download a speech model. It never uses the browser\'s online speech service, because that would send everything you say to the browser vendor.';
+        return;
+      }
+      let stream;
+      try { stream = await navigator.mediaDevices.getUserMedia(micConstraints()); } catch { handsFree.checked = false; handsFreeNote.textContent = 'Microphone permission is blocked or no microphone was found.'; return; }
+      fillMics();
+      const ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      const samples = new Float32Array(analyser.fftSize);
+      hf = { stream, ctx, recorder: null, chunks: [], floor: 0.01, loud: 0, quiet: 0, started: 0, awaitingCommand: 0, discard: false, timer: 0 };
+      mic.classList.add('listening');
+      handsFreeNote.textContent = 'Listening for "Hey ATLAS"… Speech is cut into short clips on this device and transcribed by ATLAS on the PC; clips without "Hey ATLAS" are dropped. Nothing is kept.';
+      hf.timer = setInterval(() => {
+        if (!hf) return;
+        if (!document.body.contains(transcript)) { stopHandsFree(); return; }
+        analyser.getFloatTimeDomainData(samples);
+        let sum = 0;
+        for (const x of samples) sum += x * x;
+        const rms = Math.sqrt(sum / samples.length);
+        const busy = activeGeneration || (pcAudio && !pcAudio.paused) || ('speechSynthesis' in window && window.speechSynthesis.speaking);
+        const threshold = Math.max(0.02, hf.floor * 3);
+        if (!hf.recorder) {
+          hf.floor = hf.floor * 0.98 + rms * 0.02;  // follows the room's background noise
+          hf.loud = rms > threshold && !busy ? hf.loud + 1 : 0;
+          if (hf.loud >= 3) {  // ~150 ms of speech starts a clip
+            hf.chunks = [];
+            hf.discard = false;
+            hf.recorder = new MediaRecorder(stream);
+            hf.recorder.ondataavailable = (e) => { if (e.data.size && hf) hf.chunks.push(e.data); };
+            hf.recorder.onstop = () => onClip();
+            hf.recorder.start();
+            hf.started = Date.now();
+            hf.quiet = 0;
+          }
+          return;
+        }
+        hf.quiet = rms > threshold ? 0 : hf.quiet + 1;
+        if (hf.quiet >= 16 || Date.now() - hf.started > 8000) hf.recorder.stop();  // ~0.8 s of quiet ends it; 8 s at most
+      }, 50);
+    }
+    async function onClip() {
+      if (!hf) return;
+      const recorder = hf.recorder;
+      hf.recorder = null;
+      if (hf.discard || Date.now() - hf.started < 400) return;
+      const blob = new Blob(hf.chunks, { type: recorder.mimeType || 'audio/webm' });
+      let text = '';
+      try { text = (await transcribeBlob(blob)).text.trim(); } catch (err) { if (hf) handsFreeNote.textContent = 'Could not transcribe: ' + err.message; return; }
+      if (!hf || !text) return;
+      const woke = text.match(WAKE);
+      let request = woke ? woke[1].trim() : (Date.now() < hf.awaitingCommand ? text : '');
+      if (woke && !request) {
+        hf.awaitingCommand = Date.now() + 8000;
+        handsFreeNote.textContent = 'Yes? Say your request now.';
+        return;
+      }
+      if (!request) return;
+      hf.awaitingCommand = 0;
+      request = request.replace(/^[,.!?\s]+/, '');
+      handsFreeNote.textContent = 'Heard: "' + request + '". Sending…';
+      prompt.value = request;
+      form.requestSubmit();
+      setTimeout(() => { if (hf) handsFreeNote.textContent = 'Listening for "Hey ATLAS"…'; }, 1500);
+    }
+    handsFree.addEventListener('change', () => { if (handsFree.checked) startHandsFree(); else stopHandsFree(); });
+
     mic.addEventListener('click', () => {
-      if (engineSelect.value === 'local' && localStt && localStt.engine_installed && localStt.models.length && window.MediaRecorder) { dictateLocally(); return; }
+      if (engineSelect.value === 'local' && localDictationReady()) { dictateLocally(); return; }
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) { status.textContent = 'Speech recognition is not supported in this browser. Try Chrome or Edge and allow microphone access.'; return; }
       const recognition = new SR();

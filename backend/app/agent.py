@@ -17,6 +17,7 @@ restored. Nothing is ever deleted permanently by an action.
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import platform
@@ -24,7 +25,6 @@ import re
 import shutil
 import subprocess
 import time
-import ipaddress
 import uuid
 import webbrowser
 from datetime import UTC, datetime
