@@ -2,13 +2,14 @@
 
 Set ATLAS_ENABLE_DESKTOP_AGENT=true only when the backend runs on the user's own PC.
 Typed actions with approval run as tasks (POST /api/tasks with an action kind);
-/launch is the original direct, confirm-flag launcher.
+/launch is the original direct, confirm-flag launcher. It skips approval, so only the owner
+(a browser on the PC itself) may use it; paired devices must go through approved tasks.
 """
 from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import agent
@@ -27,7 +28,10 @@ def desktop_status():
 
 
 @router.post("/launch")
-def desktop_launch(body: DesktopLaunchRequest):
+def desktop_launch(body: DesktopLaunchRequest, request: Request):
+    principal = request.scope.get("state", {}).get("principal") or {}
+    if principal.get("kind") == "device":
+        raise HTTPException(status_code=403, detail="Paired devices start apps through an approved task (Tasks → PC actions).")
     if not agent.enabled():
         raise HTTPException(status_code=403, detail="Desktop agent is disabled. Enable it only on your own local PC.")
     if not body.confirm:

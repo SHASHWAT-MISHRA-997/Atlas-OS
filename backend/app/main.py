@@ -1,4 +1,6 @@
 """ATLAS OS API entry point: `uvicorn app.main:app` from the backend directory."""
+import os
+import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,7 +18,7 @@ from .routers import desktop, llm, memory, tasks
 from .routers import devices as devices_router
 from .security import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 
 CANDIDATE_ROOT = Path(__file__).resolve().parents[2]
 ROOT = CANDIDATE_ROOT if (CANDIDATE_ROOT / "frontend" / "index.html").exists() else Path(__file__).resolve().parents[1]
@@ -25,6 +27,12 @@ FRONTEND = ROOT / "frontend"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if storage.server_storage_enabled():
+        try:
+            with storage.connection() as conn:
+                storage.apply_retention(conn)
+        except (storage.StorageError, OSError, sqlite3.Error):
+            pass  # storage problems are reported by the routes that need it
     await task_engine.manager.start()
     try:
         yield
@@ -110,6 +118,12 @@ def create_app() -> FastAPI:
     if static_dir.is_dir():
         application.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+    @application.get("/sw.js", include_in_schema=False)
+    def service_worker():
+        # Served from the root so it may control "/". no-cache: a new version is picked up on the next visit.
+        return FileResponse(FRONTEND / "static" / "sw.js", media_type="text/javascript",
+                            headers={"Cache-Control": "no-cache"})
+
     @application.get("/", include_in_schema=False)
     def frontend(request: Request, pair: str | None = None):
         if pair is not None:
@@ -122,10 +136,12 @@ def create_app() -> FastAPI:
             # The device gets its own revocable token, never the install token. Redirect so the
             # code does not stay in the address bar or history.
             response = RedirectResponse("/", status_code=303)
-            response.headers["set-cookie"] = auth.session_cookie_header(device_token)
+            secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https" \
+                or (os.getenv("ATLAS_PUBLIC_URL") or "").startswith("https://")
+            response.headers["set-cookie"] = auth.session_cookie_header(device_token, secure=secure)
             return response
         response = FileResponse(FRONTEND / "index.html")
-        if (auth.auth_required() and auth.is_loopback(request.client.host if request.client else None)
+        if (auth.auth_required() and auth.is_same_computer(request.client.host if request.client else None, request.headers)
                 and auth.identify(request.cookies.get(auth.COOKIE)) is None):
             # A browser on this machine is the owner, unless it already has a working session.
             response.headers["set-cookie"] = auth.session_cookie_header(auth.get_token())

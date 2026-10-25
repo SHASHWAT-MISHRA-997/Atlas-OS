@@ -33,7 +33,7 @@ from urllib.parse import urlparse
 from . import devices, storage
 
 COOKIE = "atlas_session"
-PUBLIC_PATHS = {"/", "/health", "/favicon.ico"}
+PUBLIC_PATHS = {"/", "/health", "/favicon.ico", "/sw.js"}
 PUBLIC_PREFIXES = ("/static/",)
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -102,6 +102,24 @@ def is_loopback(host: str | None) -> bool:
     return (host or "") in LOOPBACK
 
 
+PROXY_HEADERS = ("x-forwarded-for", "forwarded", "x-real-ip", "x-forwarded-host", "tailscale-user-login",
+                 "cf-connecting-ip", "true-client-ip")
+
+
+def is_same_computer(client_host: str | None, headers) -> bool:
+    """True only for a browser on the machine running ATLAS, talking to it directly.
+
+    A reverse proxy or tunnel on this machine (Tailscale Serve, cloudflared, nginx) also connects
+    from 127.0.0.1, so loopback alone is not enough: the Host must be a loopback name and no
+    forwarding headers may be present. Otherwise every remote visitor would become the owner.
+    """
+    if not is_loopback(client_host):
+        return False
+    if any(name in headers for name in PROXY_HEADERS):
+        return False
+    return _host_only(headers.get("host", "")) in LOOPBACK
+
+
 def _host_only(value: str) -> str:
     value = value.strip().lower()
     if value.startswith("["):  # [::1]:8000
@@ -109,8 +127,8 @@ def _host_only(value: str) -> str:
     return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
 
 
-def session_cookie_header(token: str) -> str:
-    return f"{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict"
+def session_cookie_header(token: str, secure: bool = False) -> str:
+    return f"{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict" + ("; Secure" if secure else "")
 
 
 def clear_cookie_header() -> str:

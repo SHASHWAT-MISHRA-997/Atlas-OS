@@ -13,6 +13,7 @@ import httpx
 from ..config import get_settings
 from .base import Capabilities, ProviderError, ProviderSpec
 from .openai_compat import OpenAICompatibleClient
+from .tls import tls_context
 
 CLOUD_PROVIDERS: dict[str, tuple[str, str, str]] = {
     # id: (label, OpenAI-compatible base URL, docs)
@@ -81,7 +82,7 @@ async def ollama_status() -> dict:
     """Probe the configured Ollama service and list installed models (never downloads any)."""
     url = get_settings().ollama_base_url + "/api/tags"
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(3.0, connect=1.0), follow_redirects=False) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(3.0, connect=1.0), follow_redirects=False, verify=tls_context()) as client:
             response = await client.get(url)
     except httpx.TimeoutException:
         return {"available": False, "reason": "timeout", "message": "Local Ollama did not respond in time."}

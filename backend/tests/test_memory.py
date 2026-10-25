@@ -144,7 +144,7 @@ def test_export_contains_memories_chat_and_settings():
     assert data["format"] == "atlas-os-export" and data["version"] == 1
     assert data["memories"][0]["text"] == "export me"
     assert data["chat"]["default"][0]["content"] == "hello"
-    assert data["settings"] == {"memory_enabled": True}
+    assert data["settings"] == {"memory_enabled": True, "retention": {"chat_days": None, "memory_days": None}}
 
 
 def test_backup_and_restore_round_trip():

@@ -17,7 +17,7 @@ import sys
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .config import get_settings
@@ -89,6 +89,10 @@ MIGRATIONS: list[str] = [
         message TEXT NOT NULL
     );
     CREATE INDEX task_events_task ON task_events(task_id, id);
+    """,
+    # 3: retention rules delete chat by age
+    """
+    CREATE INDEX chat_created ON chat_messages(created_at);
     """,
 ]
 
@@ -181,6 +185,49 @@ def set_memory_enabled(conn: sqlite3.Connection, enabled: bool) -> None:
     with conn:
         conn.execute("INSERT INTO settings(key, value) VALUES ('memory_enabled', ?) "
                      "ON CONFLICT(key) DO UPDATE SET value = excluded.value", ("true" if enabled else "false",))
+
+
+RETENTION_KEYS = {"chat_days": "chat_retention_days", "memory_days": "memory_retention_days"}
+MAX_RETENTION_DAYS = 3650
+
+
+def get_retention(conn: sqlite3.Connection) -> dict:
+    """Days to keep chat and memories; None means keep until deleted by hand (the default)."""
+    out = {}
+    for name, key in RETENTION_KEYS.items():
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        out[name] = int(row["value"]) if row and row["value"].isdigit() else None
+    return out
+
+
+def set_retention(conn: sqlite3.Connection, chat_days: int | None, memory_days: int | None) -> dict:
+    with conn:
+        for key, days in ((RETENTION_KEYS["chat_days"], chat_days), (RETENTION_KEYS["memory_days"], memory_days)):
+            if days is None:
+                conn.execute("DELETE FROM settings WHERE key = ?", (key,))
+            else:
+                if not 1 <= days <= MAX_RETENTION_DAYS:
+                    raise StorageError(422, "bad_retention", f"Retention must be 1-{MAX_RETENTION_DAYS} days, or off.")
+                conn.execute("INSERT INTO settings(key, value) VALUES (?, ?) "
+                             "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, str(days)))
+    return apply_retention(conn)
+
+
+def apply_retention(conn: sqlite3.Connection, now: datetime | None = None) -> dict:
+    """Delete chat messages and memories older than their retention period. Returns what was deleted."""
+    rules = get_retention(conn)
+    now = now or datetime.now(UTC)
+    deleted = {"chat": 0, "memories": 0}
+    with conn:
+        if rules["chat_days"]:
+            cutoff = (now - timedelta(days=rules["chat_days"])).isoformat(timespec="seconds")
+            deleted["chat"] = conn.execute("DELETE FROM chat_messages WHERE created_at < ?", (cutoff,)).rowcount
+        if rules["memory_days"]:
+            # A memory edited recently counts as recent.
+            cutoff = (now - timedelta(days=rules["memory_days"])).isoformat(timespec="seconds")
+            deleted["memories"] = conn.execute(
+                "DELETE FROM memories WHERE COALESCE(updated_at, created_at) < ?", (cutoff,)).rowcount
+    return {**rules, "deleted": deleted}
 
 
 # --- memories ----------------------------------------------------------------
@@ -321,7 +368,7 @@ def export_all(conn: sqlite3.Connection) -> dict:
         "format": "atlas-os-export",
         "version": 1,
         "exported_at": _now(),
-        "settings": {"memory_enabled": get_memory_enabled(conn)},
+        "settings": {"memory_enabled": get_memory_enabled(conn), "retention": get_retention(conn)},
         "memories": list_memories(conn, limit=MAX_MEMORIES),
         "chat": {cid: list_chat(conn, cid, MAX_CHAT_MESSAGES) for (cid,) in
                  conn.execute("SELECT DISTINCT conversation_id FROM chat_messages").fetchall()},

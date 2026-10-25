@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -350,11 +351,17 @@ def test_memories_are_sent_to_the_model_only_when_enabled(page, server, fake_oll
     page.click("button:has-text('Send')")
     page.wait_for_selector("text=Echo: who am i")
     assert "User name is Asha" in fake_ollama.chat_requests[-1]["messages"][0]["content"]
+    # The answer says exactly which memories were sent.
+    reply = page.locator(".bubble:has-text('Echo: who am i')")
+    playwright_sync.expect(reply.locator(".meta")).to_contain_text("saved memor")
+    reply.locator("summary:has-text('Which memories?')").click()
+    playwright_sync.expect(reply.locator(".usedmem li", has_text="User name is Asha")).to_be_visible()
     httpx.put(server + "/api/memory/settings", json={"enabled": False}, headers=AUTH)
     page.fill("textarea[aria-label=Message]", "again")
     page.click("button:has-text('Send')")
     page.wait_for_selector("text=Echo: again")
     assert "User name is Asha" not in fake_ollama.chat_requests[-1]["messages"][0]["content"]
+    playwright_sync.expect(page.locator(".bubble:has-text('Echo: again') .meta")).to_contain_text("no saved memories sent")
     httpx.put(server + "/api/memory/settings", json={"enabled": True}, headers=AUTH)
     history = httpx.get(server + "/api/chat/history", headers=AUTH).json()["messages"]
     assert [m["content"] for m in history][-2:] == ["again", "Echo: again"]
@@ -482,3 +489,151 @@ def test_pc_action_waits_for_approval_then_searches_files(page):
     playwright_sync.expect(card.locator(".task-state")).to_have_text("SUCCEEDED", timeout=5000)
     playwright_sync.expect(card).to_contain_text("college/dbms-notes.pdf")
     assert page.errors == []
+
+
+def test_app_shell_opens_offline_after_first_visit(browser, server):
+    context = browser.new_context()
+    pg = context.new_page()
+    pg.goto(server + "/")
+    pg.evaluate("() => navigator.serviceWorker.ready")
+    pg.wait_for_function("() => navigator.serviceWorker.controller !== null", timeout=15000)
+    context.set_offline(True)
+    pg.reload()
+    # The cached shell renders; live data shows as offline instead of pretending to work.
+    playwright_sync.expect(pg.locator(".tabbar, .sidebar").first).to_be_attached()
+    playwright_sync.expect(pg.locator("#topstatus")).to_contain_text("Offline", timeout=10000)
+    context.set_offline(False)
+    context.close()
+
+
+def test_auto_delete_settings_remove_old_memories_after_confirmation(page, server):
+    old = (datetime.now(UTC) - timedelta(days=40)).isoformat(timespec="seconds")
+    httpx.post(server + "/api/memory/import", json={"memories": [{"text": "Very old exam timetable", "created_at": old}]}, headers=AUTH)
+    page.wait_for_selector("text=Memory: ATLAS storage (SQLite)")
+    open_memory(page)
+    page.wait_for_selector("text=Very old exam timetable")
+    page.once("dialog", lambda d: d.accept())
+    page.select_option("#memoryretention", "30")
+    playwright_sync.expect(page.locator("text=Saved. Deleted now:")).not_to_contain_text(" 0 memories")
+    playwright_sync.expect(page.locator("text=Very old exam timetable")).to_have_count(0)
+    assert httpx.get(server + "/api/storage/retention", headers=AUTH).json() == {"chat_days": None, "memory_days": 30}
+    page.select_option("#memoryretention", "")  # loosening needs no confirmation
+    playwright_sync.expect(page.locator("text=Saved. Deleted now:")).to_contain_text(" 0 memories")
+    assert httpx.get(server + "/api/storage/retention", headers=AUTH).json()["memory_days"] is None
+    assert page.errors == []
+
+
+SPEECH_STUB = """
+// TEST STUB (mock): records what the app asks the browser to speak instead of playing audio.
+window.__spoken = [];
+class FakeUtterance { constructor(text) { this.text = text; this.lang = ''; this.voice = null; } }
+window.SpeechSynthesisUtterance = FakeUtterance;
+const fakeVoices = [{ name: 'Test Hindi (device)', lang: 'hi-IN', localService: true },
+                    { name: 'Test Hindi (cloud)', lang: 'hi-IN', localService: false },
+                    { name: 'Test English', lang: 'en-US', localService: true }];
+Object.defineProperty(window, 'speechSynthesis', { value: {
+  speaking: false, getVoices: () => fakeVoices, cancel() {}, addEventListener() {},
+  speak(u) { window.__spoken.push({ text: u.text, lang: u.lang, voice: u.voice && u.voice.name }); if (u.onend) u.onend(); },
+} });
+"""
+
+
+def test_voice_language_and_voice_choice_are_used_for_read_aloud(browser, server):
+    context = browser.new_context()
+    context.add_init_script(SPEECH_STUB)
+    pg = context.new_page()
+    pg.goto(server + "/")
+    open_chat(pg)
+    open_model_settings(pg)
+    pg.select_option("#voicelang", "hi-IN")
+    options = pg.locator("#voicename option").all_inner_texts()
+    assert "Test Hindi (device) · on this device" in options and "Test Hindi (cloud) · online" in options
+    assert not any("Test English" in o for o in options)  # only voices for the chosen language
+    pg.select_option("#voicename", "Test Hindi (device)")
+    pg.reload()  # the choice is remembered on this device
+    open_chat(pg)
+    open_model_settings(pg)
+    playwright_sync.expect(pg.locator("#voicelang")).to_have_value("hi-IN")
+    playwright_sync.expect(pg.locator("#voicename")).to_have_value("Test Hindi (device)")
+    pg.get_by_role("button", name="Read replies aloud").click()
+    pg.fill("textarea[aria-label=Message]", "namaste bolo")
+    pg.click("button:has-text('Send')")
+    pg.wait_for_selector("text=Echo: namaste bolo")
+    pg.wait_for_function("() => window.__spoken.length > 0")
+    spoken = pg.evaluate("() => window.__spoken")
+    assert spoken[-1] == {"text": "Echo: namaste bolo", "lang": "hi-IN", "voice": "Test Hindi (device)"}
+    context.close()
+
+
+def axe_violations(pg, label):
+    from axe_playwright_python.sync_playwright import Axe
+    results = Axe().run(pg, options={"runOnly": {"type": "tag", "values": ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]}})
+    found = []
+    for v in results.response["violations"]:
+        if v["impact"] in ("serious", "critical"):
+            targets = [", ".join(n["target"]) for n in v["nodes"]][:4]
+            found.append(f"[{label}] {v['id']} ({v['impact']}): {v['help']} -> {targets}")
+    return found
+
+
+@pytest.mark.parametrize("viewport", [{"width": 1280, "height": 900}, {"width": 390, "height": 844}], ids=["desktop", "phone"])
+def test_every_screen_passes_automated_accessibility_checks(browser, server, viewport):
+    """axe-core (WCAG 2.1 A/AA rules). Automated checks find only part of real accessibility problems."""
+    context = browser.new_context(viewport=viewport, is_mobile=viewport["width"] < 700)
+    pg = context.new_page()
+    pg.goto(server + "/")
+    playwright_sync.expect(pg.locator("#topstatus")).to_contain_text("Online")
+    problems = axe_violations(pg, "home")
+    phone = viewport["width"] < 700
+    for name in ["AI Chat", "Tasks", "Memory", "Agents", "Projects", "Automations", "Integrations", "Devices"]:
+        if phone:
+            if name in ("AI Chat", "Tasks", "Memory"):
+                pg.locator(".tabbar").get_by_role("button", name=name).click()
+            else:
+                pg.locator("#morebtn").click()
+                pg.locator("#sidebar").get_by_role("button", name=name).click()
+        else:
+            pg.locator("#sidebar").get_by_role("button", name=name).click()
+        pg.wait_for_timeout(400)
+        if name == "AI Chat":
+            open_model_settings(pg)
+        problems += axe_violations(pg, name)
+    if phone:
+        pg.locator("#morebtn").click()
+        pg.wait_for_timeout(400)
+        problems += axe_violations(pg, "More sheet")
+    context.close()
+    assert problems == [], "\n".join(problems)
+
+
+def test_more_sheet_keeps_keyboard_focus_inside_and_returns_it(browser, server):
+    context = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True)
+    pg = context.new_page()
+    pg.goto(server + "/")
+    pg.locator("#morebtn").focus()
+    pg.keyboard.press("Enter")
+    playwright_sync.expect(pg.locator("#sidebar.open")).to_have_count(1)
+    assert pg.evaluate("() => document.activeElement.closest('#sidebar') !== null")
+    assert pg.evaluate("() => document.getElementById('main').inert")
+    pg.keyboard.press("Escape")
+    playwright_sync.expect(pg.locator("#sidebar.open")).to_have_count(0)
+    assert pg.evaluate("() => document.activeElement.id") == "morebtn"
+    assert not pg.evaluate("() => document.getElementById('main').inert")
+    context.close()
+
+
+def test_pairing_shows_a_qr_code_when_the_link_is_known(page, server):
+    # MOCK: the pairing response is replaced with one that has a full link, as when
+    # ATLAS_PUBLIC_URL is set. The real response is covered by test_devices.py.
+    import segno
+    url = "http://192.168.1.5:8000/?pair=TESTCODE"
+    body = {"code": "TESTCODE", "expires_in": 600, "path": "/?pair=TESTCODE", "url": url,
+            "qr_svg": segno.make(url, error="m").svg_data_uri(scale=6, border=3), "lan_address": None}
+    page.route("**/api/devices/pairing", lambda route: route.fulfill(status=201, json=body))
+    page.locator("#sidebar").get_by_role("button", name="Devices").click()
+    page.click("button:has-text('Create pairing link')")
+    playwright_sync.expect(page.locator("#pairqr")).to_be_visible()
+    assert page.locator("#pairqr").evaluate("img => img.naturalWidth") > 0
+    playwright_sync.expect(page.locator("#pairlink")).to_have_text(url)
+    text = page.locator("#subview").inner_text()
+    assert "null" not in text.split() and "undefined" not in text
