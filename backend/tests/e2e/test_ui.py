@@ -141,6 +141,7 @@ def server(fake_ollama, tmp_path_factory):
     (docs / "college" / "dbms-notes.pdf").write_bytes(b"x")
     env = {**os.environ, "ATLAS_OLLAMA_BASE_URL": f"http://127.0.0.1:{fake_ollama.port}",
            "ATLAS_ENABLE_DESKTOP_AGENT": "true", "ATLAS_AGENT_FOLDERS": f"docs={docs}",
+           "ATLAS_FALLBACK_PROVIDER": "ollama", "ATLAS_FALLBACK_MODEL": "fake-small:1b",
            "ATLAS_DATA_DIR": str(tmp_path_factory.mktemp("atlas-data")),
            "ATLAS_API_TOKEN": E2E_TOKEN, "ATLAS_AUTH_REQUIRED": "true",
            "ATLAS_LLM_RATE_LIMIT_PER_MINUTE": "1000", "PYTHONPATH": str(BACKEND)}
@@ -669,6 +670,23 @@ def test_browser_actions_wait_for_approval(page):
     page.get_by_role("button", name="Ask for approval").click()
     playwright_sync.expect(page.locator("p.notice[role=status]").first).to_contain_text("Only http:// and https://")
     assert [e for e in page.errors if "status of 422" not in e] == []  # the refusal itself is logged by the browser
+
+
+def test_fallback_model_answers_only_when_ticked_and_is_labelled(page, fake_ollama):
+    open_chat(page)
+    open_model_settings(page)
+    page.fill("#atlasmodel", "fake-missing")
+    page.fill("textarea[aria-label=Message]", "fallback please")
+    page.click("button:has-text('Send')")
+    playwright_sync.expect(page.locator(".chatstatus")).to_contain_text("does not recognise this model", timeout=10000)
+    page.check("#atlasfallback")
+    page.fill("textarea[aria-label=Message]", "fallback please")
+    page.click("button:has-text('Send')")
+    reply = page.locator(".bubble:has-text('Echo: fallback please')")
+    playwright_sync.expect(reply.locator(".meta")).to_contain_text("fallback: Ollama (local) failed, model not found", timeout=10000)
+    assert fake_ollama.chat_requests[-1]["model"] == "fake-small:1b"
+    page.uncheck("#atlasfallback")
+    page.fill("#atlasmodel", "fake-small:1b")
 
 
 def test_app_shell_opens_offline_after_first_visit(browser, server):

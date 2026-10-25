@@ -770,6 +770,11 @@
     const billingLabel = el('span');
     const billingBox = el('label', { class: 'check' }, [billingAck, billingLabel]);
     const routing = el('p', { class: 'notice', role: 'status' });
+    const fb = catalogue.fallback;
+    const fallbackToggle = el('input', { type: 'checkbox', id: 'atlasfallback', checked: !!storageGet(CHAT_SETTINGS_KEY, {}).fallback });
+    const fallbackBox = el('label', { class: 'check' + (fb ? '' : ' hidden') }, [fallbackToggle,
+      fb ? 'If the chosen model fails (not running, out of memory, busy), answer with ' + fb.label + ' · ' + fb.model + (fb.local ? ' on this machine' : ', using the server\'s key: leaves this PC and may bill the owner') : '']);
+    fallbackToggle.addEventListener('change', () => storageSet(CHAT_SETTINGS_KEY, { ...storageGet(CHAT_SETTINGS_KEY, {}), fallback: fallbackToggle.checked }));
     const docsToggle = el('input', { type: 'checkbox', id: 'atlasdocs', checked: storageGet(DOCS_KEY, false) === true });
     const docsNote = el('p', { class: 'tiny muted', id: 'docsnote' });
     docsToggle.addEventListener('change', () => { storageSet(DOCS_KEY, docsToggle.checked); refreshDocsNote(); });
@@ -913,7 +918,7 @@
       ]),
       modelList,
       el('div', { class: 'row', style: 'margin-top:10px' }, [loadModels, el('label', { class: 'check', style: 'margin:0' }, [streamToggle, 'Stream replies'])]),
-      modelStatus, billingBox, routing,
+      modelStatus, billingBox, routing, fallbackBox,
       el('label', { class: 'check' }, [docsToggle, 'Use my documents: search files you indexed (Tasks → PC actions) and send matching excerpts with each message']),
       docsNote,
       voiceBox,
@@ -1068,11 +1073,11 @@
       refreshProviderUi();
       billingAck.checked = false;
       modelInput.value = '';
-      storageSet(CHAT_SETTINGS_KEY, { provider: providerSelect.value, model: '' });
+      storageSet(CHAT_SETTINGS_KEY, { ...storageGet(CHAT_SETTINGS_KEY, {}), provider: providerSelect.value, model: '' });
       discoverModels(true);
     });
     modelInput.addEventListener('input', updatePill);
-    modelInput.addEventListener('change', () => storageSet(CHAT_SETTINGS_KEY, { provider: providerSelect.value, model: modelInput.value.trim() }));
+    modelInput.addEventListener('change', () => storageSet(CHAT_SETTINGS_KEY, { ...storageGet(CHAT_SETTINGS_KEY, {}), provider: providerSelect.value, model: modelInput.value.trim() }));
     loadModels.addEventListener('click', () => discoverModels(false));
 
     stop.addEventListener('click', () => {
@@ -1265,8 +1270,8 @@
       try { items = await store.chat(); } catch { /* send without history */ }
       items.push({ role: 'user', content: text });
       const built = await buildMessages(items, docsToggle.checked);
-      const payload = { provider: p.id, model, api_key: keyInput.value.trim(), messages: built.messages };
-      storageSet(CHAT_SETTINGS_KEY, { provider: p.id, model });
+      const payload = { provider: p.id, model, api_key: keyInput.value.trim(), messages: built.messages, allow_fallback: !!fb && fallbackToggle.checked };
+      storageSet(CHAT_SETTINGS_KEY, { provider: p.id, model, fallback: fallbackToggle.checked });
       const saveTurn = (message) => store.appendChat(message).catch((err) => log('could not save chat turn: ' + err.message));
       const userSaved = saveTurn({ role: 'user', content: text });
 
@@ -1303,6 +1308,8 @@
               reply.body.textContent = answer;
               reply.metaLine.textContent = 'Streaming from ' + p.label + '…';
               scrollChat();
+            } else if (event === 'fallback') {
+              reply.metaLine.textContent = data.from.label + ' failed (' + data.from.detail + '). Answering with the fallback ' + data.label + '…';
             } else if (event === 'done') {
               meta = data;
             } else if (event === 'error') {
@@ -1316,7 +1323,8 @@
           answer = data.answer;
           meta = data;
         }
-        const metaText = describeAnswer(meta, p.label) + ' · ' + memoryNote(built.memoriesUsed) +
+        const answeredBy = meta.fallback_from ? fb.label + ' (fallback: ' + meta.fallback_from.label + ' failed, ' + meta.fallback_from.code.replace(/_/g, ' ') + ')' : p.label;
+        const metaText = describeAnswer(meta, answeredBy) + ' · ' + memoryNote(built.memoriesUsed) +
           (docsToggle.checked ? ' · ' + built.excerptsUsed.length + ' document excerpt' + (built.excerptsUsed.length === 1 ? '' : 's') + ' sent' : '');
         reply.body.textContent = answer;
         reply.metaLine.textContent = metaText;
