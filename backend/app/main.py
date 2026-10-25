@@ -1,4 +1,5 @@
 """ATLAS OS API entry point: `uvicorn app.main:app` from the backend directory."""
+import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -25,6 +26,12 @@ FRONTEND = ROOT / "frontend"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if storage.server_storage_enabled():
+        try:
+            with storage.connection() as conn:
+                storage.apply_retention(conn)
+        except (storage.StorageError, OSError, sqlite3.Error):
+            pass  # storage problems are reported by the routes that need it
     await task_engine.manager.start()
     try:
         yield

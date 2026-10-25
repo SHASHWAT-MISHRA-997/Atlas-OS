@@ -543,11 +543,54 @@
       updateMemoryStat();
     });
     v.append(form, el('div', { class: 'row', style: 'margin-top:12px' }, [search]), status, list);
+    if (store.server) v.append(retentionPanel(() => refresh()));
     refresh();
   }
 
   // ---------------------------------------------------------------- chat
   let activeGeneration = null; // { controller }
+
+  /** Opt-in auto-delete for chat history and memories (server storage only). */
+  function retentionPanel(onChange) {
+    const choices = [['', 'Keep until I delete'], ['7', 'Delete after 7 days'], ['30', 'Delete after 30 days'], ['90', 'Delete after 90 days'], ['365', 'Delete after 1 year']];
+    const select = (id) => el('select', { id }, choices.map(([value, text]) => el('option', { value, text })));
+    const chat = select('chatretention');
+    const memory = select('memoryretention');
+    const note = el('p', { class: 'tiny muted', role: 'status', text: 'Off by default. Deleted items cannot be recovered, except from a backup.' });
+    const panel = el('div', { class: 'panel', style: 'margin-top:16px' }, [
+      el('h3', { text: 'Auto-delete', style: 'margin:0 0 8px' }),
+      el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['CHAT HISTORY', chat]), el('label', { class: 'field' }, ['MEMORIES', memory])]),
+      note,
+    ]);
+    const current = { chat_days: null, memory_days: null };
+    api('/api/storage/retention').then((r) => {
+      Object.assign(current, r);
+      chat.value = r.chat_days ? String(r.chat_days) : '';
+      memory.value = r.memory_days ? String(r.memory_days) : '';
+    }).catch((err) => { note.textContent = 'Could not load auto-delete settings: ' + err.message; });
+    async function save(e) {
+      const next = { chat_days: chat.value ? Number(chat.value) : null, memory_days: memory.value ? Number(memory.value) : null };
+      const tightened = (k) => next[k] && (!current[k] || next[k] < current[k]);
+      if ((tightened('chat_days') || tightened('memory_days'))
+          && !confirm('Items older than the new limit will be deleted now. Continue?')) {
+        chat.value = current.chat_days ? String(current.chat_days) : '';
+        memory.value = current.memory_days ? String(current.memory_days) : '';
+        return;
+      }
+      try {
+        const r = await api('/api/storage/retention', { method: 'PUT', body: next });
+        Object.assign(current, { chat_days: r.chat_days, memory_days: r.memory_days });
+        note.textContent = 'Saved. Deleted now: ' + r.deleted.chat + ' chat message(s), ' + r.deleted.memories + ' memor' + (r.deleted.memories === 1 ? 'y' : 'ies') + '.';
+        onChange();
+      } catch (err) {
+        note.textContent = 'Could not save: ' + err.message;
+        e.target.value = e.target === chat ? (current.chat_days ? String(current.chat_days) : '') : (current.memory_days ? String(current.memory_days) : '');
+      }
+    }
+    chat.addEventListener('change', save);
+    memory.addEventListener('change', save);
+    return panel;
+  }
 
   const MAX_MEMORY_CHARS = 6000;
   const MAX_MEMORIES_SENT = 30;

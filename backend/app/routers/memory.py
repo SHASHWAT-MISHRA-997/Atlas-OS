@@ -25,6 +25,11 @@ class MemorySettings(BaseModel):
     enabled: bool
 
 
+class Retention(BaseModel):
+    chat_days: int | None = Field(default=None, ge=1, le=storage.MAX_RETENTION_DAYS)
+    memory_days: int | None = Field(default=None, ge=1, le=storage.MAX_RETENTION_DAYS)
+
+
 class ImportItem(BaseModel):
     text: str = Field(min_length=1, max_length=storage.MAX_MEMORY_CHARS)
     created_at: str | None = Field(default=None, max_length=40)
@@ -49,6 +54,7 @@ def _require_confirm(body: Confirm) -> None:
 @router.get("/api/memory")
 def list_memories(q: str | None = Query(default=None, max_length=200), limit: int = Query(default=200, ge=1, le=1000)):
     with storage.connection() as conn:
+        storage.apply_retention(conn)
         return {"enabled": storage.get_memory_enabled(conn), "count": storage.count_memories(conn),
                 "memories": storage.list_memories(conn, q, limit)}
 
@@ -85,6 +91,18 @@ def put_memory_settings(body: MemorySettings):
         return {"enabled": storage.get_memory_enabled(conn)}
 
 
+@router.get("/api/storage/retention")
+def get_retention():
+    with storage.connection() as conn:
+        return storage.get_retention(conn)
+
+
+@router.put("/api/storage/retention")
+def put_retention(body: Retention):
+    with storage.connection() as conn:
+        return storage.set_retention(conn, body.chat_days, body.memory_days)
+
+
 @router.post("/api/memory/import")
 def import_memories(body: ImportRequest):
     items = [{"text": m.text, "created_at": m.created_at or m.createdAt} for m in body.memories]
@@ -109,6 +127,7 @@ def make_backup():
 @router.get("/api/chat/history")
 def chat_history(conversation: str = ConversationId, limit: int = Query(default=40, ge=1, le=500)):
     with storage.connection() as conn:
+        storage.apply_retention(conn)
         return {"conversation": conversation, "messages": storage.list_chat(conn, conversation, limit)}
 
 

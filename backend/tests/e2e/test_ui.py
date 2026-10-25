@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -503,3 +504,20 @@ def test_app_shell_opens_offline_after_first_visit(browser, server):
     playwright_sync.expect(pg.locator("#topstatus")).to_contain_text("Offline", timeout=10000)
     context.set_offline(False)
     context.close()
+
+
+def test_auto_delete_settings_remove_old_memories_after_confirmation(page, server):
+    old = (datetime.now(UTC) - timedelta(days=40)).isoformat(timespec="seconds")
+    httpx.post(server + "/api/memory/import", json={"memories": [{"text": "Very old exam timetable", "created_at": old}]}, headers=AUTH)
+    page.wait_for_selector("text=Memory: ATLAS storage (SQLite)")
+    open_memory(page)
+    page.wait_for_selector("text=Very old exam timetable")
+    page.once("dialog", lambda d: d.accept())
+    page.select_option("#memoryretention", "30")
+    playwright_sync.expect(page.locator("text=Saved. Deleted now:")).not_to_contain_text(" 0 memories")
+    playwright_sync.expect(page.locator("text=Very old exam timetable")).to_have_count(0)
+    assert httpx.get(server + "/api/storage/retention", headers=AUTH).json() == {"chat_days": None, "memory_days": 30}
+    page.select_option("#memoryretention", "")  # loosening needs no confirmation
+    playwright_sync.expect(page.locator("text=Saved. Deleted now:")).to_contain_text(" 0 memories")
+    assert httpx.get(server + "/api/storage/retention", headers=AUTH).json()["memory_days"] is None
+    assert page.errors == []
