@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.17.0 — 2026-10-26
+
+The last items from the feature plan, for AI Chat:
+- **Thinking level:** Auto, Low, Medium or High in Model settings. Groq and OpenAI get `reasoning_effort`, OpenRouter its `reasoning` field, Gemini a thinking budget, with extra output room for the thinking. A model that cannot think gets the same message again without the setting, and the reply says "thinking: not supported by this model".
+- **Images and PDFs:** an Attach button (up to 4 files, about 3 MB in total). Images are scaled down to 1568 px JPEG in the browser; PDFs go as they are to Gemini, OpenRouter or OpenAI (Groq cannot read PDFs and says so before sending). Files go only with their own message; history keeps only their names, never the file.
+- **Steering:** while a reply is coming, the Send button becomes Steer. A new message stops the reply (its text so far is kept, marked "Redirected by your next message") and is answered at once.
+- **Chat compression:** once more than 16 messages (or about 24,000 characters) are not yet summarized, the older ones are summarized by the same model before the next message, and only the summary plus the newest turns are sent. A Compress button does it on demand; the summary can be read above the chat and is removed by Clear all or by deleting a message it covers. History now keeps 60 messages.
+- **Fix:** Stop did not cancel the request online (the browser shim dropped the abort signal), so a stopped reply kept downloading. It now cancels the request to the provider.
+- The function accepts chat bodies up to 5 MB (model listing stays at 20 KB) and checks every file's type and base64.
+
 ## 0.16.1 — 2026-10-25
 
 - The "Describe a task to plan" box in the top bar showed on every screen. It is removed; plans are made from the goal box on Home (and from the Tasks screen).

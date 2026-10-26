@@ -412,3 +412,107 @@ test('devices: export leaves keys out unless asked, import restores, erase remov
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });
+
+test('chat extras: thinking level, image and PDF attachments, steering mid-reply, and compression of long chats', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  const sent = [];
+  let hold = false;
+  await page.route('**/cloud/chat', async (route) => {
+    const body = JSON.parse(route.request().postData());
+    sent.push(body);
+    // A reply that is still "thinking" (held back) so a new message can redirect it.
+    if (hold && body.messages.at(-1).content === 'write a long essay') { await new Promise((r) => setTimeout(r, 2500)); }
+    try { await route.continue(); } catch { /* the browser stopped this request */ }
+  });
+  await page.goto(base + '/');
+  await go(page, 'chat');
+  await page.fill('#keycardinput', 'gsk_extras_key_123');
+  await page.click('#keycardsave');
+  await page.waitForSelector('#keycard', { state: 'hidden' });
+  await page.waitForFunction(() => /^fake-/.test(document.querySelector('#atlasmodel')?.value || ''));
+  await page.click('#chatsettings summary');
+  if (!(await page.isChecked('#atlasbilling'))) await page.check('#atlasbilling');
+
+  // Thinking level is sent, shown on the model pill, remembered, and reported on the reply.
+  await page.selectOption('#atlasthinking', 'high');
+  await page.waitForSelector('#modelpill >> text=thinking high');
+  await page.fill('.composer-input', 'think hard');
+  await page.click('.sendbtn');
+  await page.locator('.bubble', { hasText: 'FAKE reply to: think hard [thinking: high]' }).waitFor();
+  await page.waitForSelector('.bubble .meta >> text=thinking: high');
+  assert.equal(sent.at(-1).thinking, 'high');
+  await page.selectOption('#atlasthinking', '');
+
+  // An image is scaled in the browser and goes only with its own message; history keeps just its name.
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  await page.setInputFiles('#atlasfiles', { name: 'photo.png', mimeType: 'image/png', buffer: png });
+  await page.waitForSelector('#filechips >> text=photo.jpg');
+  await page.fill('.composer-input', 'what is in this photo');
+  await page.click('.sendbtn');
+  await page.locator('.bubble', { hasText: 'FAKE reply to: what is in this photo [1 file]' }).waitFor();
+  assert.equal(await page.locator('.bubble.user img.thumb').count(), 1, 'the photo shows in the message');
+  const withImage = sent.at(-1).messages.at(-1);
+  assert.equal(withImage.attachments.length, 1);
+  assert.equal(withImage.attachments[0].mime, 'image/jpeg');
+  assert.equal(await page.locator('#filechips .filechip').count(), 0, 'attachments are cleared after sending');
+  await page.fill('.composer-input', 'and now?');
+  await page.click('.sendbtn');
+  await page.locator('.bubble', { hasText: 'FAKE reply to: and now?' }).waitFor();
+  assert.ok(sent.at(-1).messages.every((m) => !m.attachments), 'the image is not sent again');
+  assert.ok(sent.at(-1).messages.some((m) => /\[Attached earlier: photo\.jpg\]/.test(m.content)));
+  assert.ok(!(await page.evaluate(() => localStorage.getItem('atlas.os.chat.v1'))).includes('base64'), 'files are not stored in history');
+
+  // A PDF needs a provider that reads PDFs; Groq says so before anything is sent.
+  const before = sent.length;
+  await page.setInputFiles('#atlasfiles', { name: 'notes.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') });
+  await page.waitForSelector('.chatstatus >> text=cannot read PDFs');
+  await page.fill('.composer-input', 'summarize the pdf');
+  await page.click('.sendbtn');
+  await page.waitForSelector('.chatstatus >> text=cannot read PDFs');
+  assert.equal(sent.length, before);
+  await page.click('#filechips button');
+  await page.fill('.composer-input', '');
+
+  // Steering: a new message while a reply is still coming redirects ATLAS at once.
+  hold = true;
+  await page.fill('.composer-input', 'write a long essay');
+  await page.click('.sendbtn');
+  await page.waitForSelector('.sendbtn >> text=Steer');
+  await page.fill('.composer-input', 'actually, just one line');
+  await page.click('.sendbtn');
+  await page.locator('.bubble', { hasText: 'FAKE reply to: actually, just one line' }).waitFor();
+  await page.waitForSelector('.bubble .meta >> text=Redirected by your next message');
+  await page.waitForSelector('.sendbtn >> text=Send');
+  hold = false;
+
+  // Compression: a long chat sends older turns as a model-written summary.
+  await page.evaluate(() => {
+    const old = [];
+    for (let i = 0; i < 20; i++) old.push({ id: 'old-' + i, role: i % 2 ? 'assistant' : 'user', content: 'old message ' + i });
+    localStorage.setItem('atlas.os.chat.v1', JSON.stringify(old));
+  });
+  await go(page, 'home');
+  await go(page, 'chat');
+  await page.fill('.composer-input', 'after a long chat');
+  await page.click('.sendbtn');
+  await page.locator('.bubble', { hasText: 'FAKE reply to: after a long chat' }).waitFor();
+  const summaryCall = sent.find((b) => /You summarize conversations/.test(b.messages[0].content));
+  assert.ok(summaryCall, 'a summary was requested');
+  assert.match(summaryCall.messages[1].content, /old message 0/);
+  const last = sent.at(-1);
+  assert.match(last.messages[0].content, /SUMMARY OF THE EARLIER CONVERSATION/);
+  assert.ok(last.messages.length <= 1 + 16 + 1, 'only recent turns are sent in full');
+  assert.ok(!last.messages.some((m) => m.content === 'old message 0'), 'summarized turns are not sent again');
+  await page.waitForSelector('.bubble .meta >> text=older chat sent as a summary');
+  await go(page, 'home');
+  await go(page, 'chat');
+  await page.waitForSelector('#chatsummary >> text=compressed into a summary');
+  // Clear all removes the summary too.
+  page.once('dialog', (d) => d.accept());
+  await page.click('button[aria-label="Delete all chat messages"]');
+  await page.waitForSelector('.emptychat');
+  assert.equal(await page.evaluate(() => localStorage.getItem('atlas.os.chat.summary.v1')), null);
+  await shot(page, '9-chat-extras');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});

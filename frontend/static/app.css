@@ -223,6 +223,15 @@ input[type=file]::file-selector-button{min-height:40px;margin-right:10px;border:
 .usedmem{margin-top:6px;font-size:12.5px;color:var(--muted)}
 .usedmem summary{cursor:pointer;min-height:32px;display:flex;align-items:center}
 .usedmem ul{margin:4px 0 0;padding-left:18px}
+.filechips{display:flex;gap:6px;flex-wrap:wrap}.filechips:empty{display:none}.filechips{margin-bottom:8px}
+.filechip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:4px 4px 4px 8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font:12px var(--mono);color:var(--soft)}
+.filechip>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.thumb{display:block;max-width:220px;max-height:180px;border-radius:10px;border:1px solid var(--line);object-fit:cover}.thumb.small{width:28px;height:28px;border-radius:6px}
+.bubblefiles{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.filetag{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:8px;background:color-mix(in srgb,var(--accent) 14%,transparent);font:12px var(--mono)}
+.summarynote{align-self:stretch;border:1px dashed var(--line);border-radius:12px;padding:6px 12px;font-size:13px;color:var(--muted)}
+.summarynote summary{cursor:pointer;min-height:32px;display:flex;align-items:center;font:12px var(--mono);letter-spacing:.4px}
+.summarynote p{white-space:pre-wrap;margin:4px 0 6px}
 progress{appearance:none;-webkit-appearance:none;height:6px;border:0;border-radius:99px;background:var(--field);overflow:hidden}
 progress::-webkit-progress-bar{background:var(--field)}
 progress::-webkit-progress-value{background:linear-gradient(90deg,var(--accent),var(--neon-2));box-shadow:0 0 10px var(--accent)}

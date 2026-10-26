@@ -10,11 +10,18 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.16.1';
+export const VERSION = '0.17.0';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
 const MAX_OUTPUT_TOKENS = 2048;
+// Thinking levels: extra output tokens the model may spend on reasoning before it answers.
+const THINKING = { low: 2048, medium: 6144, high: 14336 };
+// Images and PDFs ride on user messages, base64-encoded. Netlify accepts request bodies up to 6 MB.
+const ATTACH_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'];
+const MAX_ATTACHMENTS = 4;
+const MAX_ATTACH_CHARS = 4_000_000;
+const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 const MODEL_RE = /^[\w.:/@-]{1,120}$/;
 const KEY_RE = /^[\x21-\x7e]{8,400}$/;
 
@@ -23,21 +30,22 @@ const KEY_RE = /^[\x21-\x7e]{8,400}$/;
 export const PROVIDERS = {
   groq: {
     label: 'Groq', kind: 'openai', base: 'https://api.groq.com/openai/v1', keyUrl: 'https://console.groq.com/keys',
+    pdf: false, thinking: 'effort',
     note: 'Free tier with rate limits.', prefer: [/llama-3\.3-70b/, /llama-3\.1-8b/, /llama/],
     skip: /whisper|guard|tts|playai|orpheus|prompt|compound/i,
   },
   gemini: {
-    label: 'Google Gemini', kind: 'gemini', base: 'https://generativelanguage.googleapis.com', keyUrl: 'https://aistudio.google.com/apikey',
+    label: 'Google Gemini', kind: 'gemini', pdf: true, base: 'https://generativelanguage.googleapis.com', keyUrl: 'https://aistudio.google.com/apikey',
     note: 'Free tier with limits. A paid Google key also lists paid models such as Gemini 4 Argon, billed to your Google account.', prefer: [/flash-lite/, /flash/], skip: /image|tts|embedding|aqa|live|audio|vision|learnlm|gemma/i,
     suggested: ['gemini-2.5-flash'],
   },
   openrouter: {
-    label: 'OpenRouter', kind: 'openai', base: 'https://openrouter.ai/api/v1', keyUrl: 'https://openrouter.ai/settings/keys',
+    label: 'OpenRouter', kind: 'openai', pdf: true, thinking: 'openrouter', base: 'https://openrouter.ai/api/v1', keyUrl: 'https://openrouter.ai/settings/keys',
     note: 'Only its free models (IDs ending in ":free") are offered.', prefer: [/llama|deepseek|qwen|gemma/], skip: /^$/, only: /:free$/,
   },
   // Optional and paid (the owner chose to offer it): never a default, never an auto-switch target.
   openai: {
-    label: 'OpenAI (paid)', kind: 'openai', base: 'https://api.openai.com/v1', keyUrl: 'https://platform.openai.com/api-keys', paid: true,
+    label: 'OpenAI (paid)', kind: 'openai', pdf: true, thinking: 'effort', base: 'https://api.openai.com/v1', keyUrl: 'https://platform.openai.com/api-keys', paid: true,
     note: 'Paid, no free tier: every message is billed to your own OpenAI account. GPT-6 Astra costs far more per message than the free providers.',
     prefer: [/^gpt-6-astra$/, /^gpt-6/, /^gpt-5/], tokensField: 'max_completion_tokens',
     skip: /embedding|tts|whisper|dall-e|image|audio|realtime|moderation|transcribe|search|babbage|davinci|instruct|codex/i,
@@ -45,7 +53,7 @@ export const PROVIDERS = {
 };
 export const PROVIDER_ORDER = ['groq', 'gemini', 'openrouter', 'openai'];
 
-const MAX_BODY = 400_000;
+const MAX_BODY = 5_000_000; // a chat with up to about 3 MB of images or PDFs
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
 });
@@ -112,35 +120,58 @@ async function* sseData(body) {
   if (tail) yield tail;
 }
 
-function requestFor(p, model, messages, maxTokens) {
+/** OpenAI-style content: plain text, or text plus image and PDF parts. */
+function openaiContent(m) {
+  if (!m.attachments) return m.content;
+  return [{ type: 'text', text: m.content }, ...m.attachments.map((a) => (a.mime === 'application/pdf'
+    ? { type: 'file', file: { filename: a.name, file_data: 'data:application/pdf;base64,' + a.data } }
+    : { type: 'image_url', image_url: { url: 'data:' + a.mime + ';base64,' + a.data } }))];
+}
+
+function requestFor(p, model, messages, maxTokens, thinking) {
   const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
   const turns = messages.filter((m) => m.role !== 'system');
+  const budget = thinking ? THINKING[thinking] : 0;
   if (p.kind === 'openai') {
-    return {
-      url: p.base + '/chat/completions',
-      headers: { Authorization: 'Bearer ' + p.key },
-      body: { model, messages, stream: true, [p.tokensField || 'max_tokens']: maxTokens },
-    };
+    const body = { model, messages: messages.map((m) => ({ role: m.role, content: openaiContent(m) })), stream: true, [p.tokensField || 'max_tokens']: maxTokens + budget };
+    if (thinking && p.thinking === 'effort') body.reasoning_effort = thinking;
+    if (thinking && p.thinking === 'openrouter') body.reasoning = { effort: thinking, exclude: true };
+    return { url: p.base + '/chat/completions', headers: { Authorization: 'Bearer ' + p.key }, body };
   }
   return {
     url: p.base + '/v1beta/models/' + encodeURIComponent(model) + ':streamGenerateContent?alt=sse',
     headers: { 'x-goog-api-key': p.key },
     body: {
-      contents: turns.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+      contents: turns.map((m) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }, ...(m.attachments || []).map((a) => ({ inlineData: { mimeType: a.mime, data: a.data } }))],
+      })),
       ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
-      generationConfig: { maxOutputTokens: maxTokens },
+      generationConfig: { maxOutputTokens: maxTokens + budget, ...(budget ? { thinkingConfig: { thinkingBudget: budget } } : {}) },
     },
   };
 }
 
 /** Yields text pieces from the provider; fills `result` with finish reason and token usage when known. */
-async function* generate(fetchImpl, p, model, messages, maxTokens, signal, result) {
-  const r = requestFor(p, model, messages, maxTokens);
-  const response = await fetchImpl(r.url, {
-    method: 'POST', signal,
-    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...r.headers },
-    body: JSON.stringify(r.body),
-  });
+async function* generate(fetchImpl, p, model, messages, maxTokens, signal, result, thinking) {
+  const open = (level) => {
+    const r = requestFor(p, model, messages, maxTokens, level);
+    return fetchImpl(r.url, {
+      method: 'POST', signal,
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...r.headers },
+      body: JSON.stringify(r.body),
+    });
+  };
+  let response = await open(thinking);
+  // Not every model accepts a thinking setting; such a model answers once more without it.
+  if (thinking && response.status === 400) {
+    const text = await response.text().catch(() => '');
+    if (!/reason|think|budget|effort/i.test(text)) throw upstreamError(400, text, p.key);
+    result.thinking = 'not supported by this model';
+    response = await open(null);
+  } else if (thinking) {
+    result.thinking = thinking;
+  }
   if (!response.ok) throw upstreamError(response.status, await response.text().catch(() => ''), p.key);
   for await (const data of sseData(response.body)) {
     if (data === '[DONE]') break;
@@ -189,14 +220,28 @@ function validateChat(body, providers) {
   const msgs = body.messages;
   if (!Array.isArray(msgs) || !msgs.length || msgs.length > MAX_MESSAGES) return { error: 'Send between 1 and ' + MAX_MESSAGES + ' messages.' };
   let total = 0;
+  let attachChars = 0;
   for (const m of msgs) {
     if (!m || !['system', 'user', 'assistant'].includes(m.role) || typeof m.content !== 'string') return { error: 'Each message needs a role and text.' };
     total += m.content.length;
+    if (m.attachments === undefined) continue;
+    if (m.role !== 'user' || !Array.isArray(m.attachments) || m.attachments.length > MAX_ATTACHMENTS) return { error: 'Attach up to ' + MAX_ATTACHMENTS + ' files, on your own messages only.' };
+    for (const a of m.attachments) {
+      if (!a || !ATTACH_TYPES.includes(a.mime) || typeof a.data !== 'string' || !BASE64_RE.test(a.data)) return { error: 'Attachments must be PNG, JPEG, WebP or GIF images, or PDF files.' };
+      if (a.mime === 'application/pdf' && !p.pdf) return { error: p.label + ' cannot read PDFs. Pick Google Gemini or OpenRouter for PDFs, or attach an image.' };
+      attachChars += a.data.length;
+    }
   }
+  if (attachChars > MAX_ATTACH_CHARS) return { error: 'The attached files are too large (about 3 MB in total at most).' };
   if (total > MAX_TOTAL_CHARS) return { error: 'The conversation is too long (over ' + MAX_TOTAL_CHARS.toLocaleString('en') + ' characters).' };
   if (!msgs.some((m) => m.role === 'user')) return { error: 'Send at least one user message.' };
   const maxTokens = Math.max(1, Math.min(MAX_OUTPUT_TOKENS, Number(body.max_tokens) || 1024));
-  return { p, msgs: msgs.map((m) => ({ role: m.role, content: m.content })), maxTokens };
+  if (body.thinking !== undefined && body.thinking !== null && !Object.hasOwn(THINKING, body.thinking)) return { error: 'Thinking must be low, medium or high.' };
+  const clean = (a, i) => ({ mime: a.mime, data: a.data, name: (typeof a.name === 'string' && a.name.replace(/[^\w. -]/g, '').slice(0, 80)) || 'file-' + (i + 1) });
+  return {
+    p, maxTokens, thinking: body.thinking || null,
+    msgs: msgs.map((m) => ({ role: m.role, content: m.content, ...(m.attachments && m.attachments.length ? { attachments: m.attachments.map(clean) } : {}) })),
+  };
 }
 
 // ---------------------------------------------------------------- handler
@@ -205,7 +250,7 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
   async function chat(req, body) {
     const v = validateChat(body, providers);
     if (v.error) return fail(422, 'invalid_request', v.error);
-    const { p, msgs, maxTokens } = v;
+    const { p, msgs, maxTokens, thinking } = v;
     const model = body.model;
     const started = Date.now();
     const result = {};
@@ -214,7 +259,7 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
     if (body.stream === false) {
       let answer = '';
       try {
-        for await (const piece of generate(fetchImpl, p, model, msgs, maxTokens, req.signal, result)) answer += piece;
+        for await (const piece of generate(fetchImpl, p, model, msgs, maxTokens, req.signal, result, thinking)) answer += piece;
       } catch (err) {
         return fail(502, 'provider_error', err.message);
       }
@@ -225,7 +270,7 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
     const enc = new TextEncoder();
     const send = (controller, event, data) => controller.enqueue(enc.encode('event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n'));
     // Open the upstream first so a bad key or model is a normal HTTP error, not a broken stream.
-    const iterator = generate(fetchImpl, p, model, msgs, maxTokens, req.signal, result);
+    const iterator = generate(fetchImpl, p, model, msgs, maxTokens, req.signal, result, thinking);
     let first;
     try {
       first = await iterator.next();
@@ -259,7 +304,7 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
         version: VERSION,
         key_mode: 'bring-your-own',
         providers: PROVIDER_ORDER.filter((id) => providers[id]).map((id) => ({
-          id, label: providers[id].label, key_url: providers[id].keyUrl, note: providers[id].note, paid: !!providers[id].paid,
+          id, label: providers[id].label, key_url: providers[id].keyUrl, note: providers[id].note, paid: !!providers[id].paid, pdf: !!providers[id].pdf,
         })),
       });
     }
@@ -267,10 +312,12 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
     if (fromOtherSite(req, url)) return fail(403, 'cross_site', 'ATLAS online only answers its own page.');
     // JSON only: a plain HTML form on another site cannot send this content type.
     if (!/^application\/json\s*(;|$)/i.test(req.headers.get('content-type') || '')) return fail(415, 'json_only', 'Send JSON (Content-Type: application/json).');
-    if (Number(req.headers.get('content-length')) > MAX_BODY) return fail(413, 'too_large', 'Request too large.');
+    // Only chat carries files; listing models needs a few hundred bytes.
+    const limit = path === '/chat' ? MAX_BODY : 20_000;
+    if (Number(req.headers.get('content-length')) > limit) return fail(413, 'too_large', 'Request too large.');
 
     const text = await req.text();
-    if (text.length > MAX_BODY) return fail(413, 'too_large', 'Request too large.');
+    if (text.length > limit) return fail(413, 'too_large', 'Request too large.');
     let body;
     try { body = text ? JSON.parse(text) : {}; } catch { return fail(400, 'invalid_json', 'Request body must be JSON.'); }
     if (!body || typeof body !== 'object') return fail(400, 'invalid_json', 'Request body must be a JSON object.');

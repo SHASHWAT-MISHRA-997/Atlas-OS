@@ -99,8 +99,10 @@ test('form posts and other non-JSON bodies are refused (no cross-site form submi
 
 test('huge bodies are refused before they are read', async () => {
   const t = setup();
-  const r = await t.call('chat', '{"x":"' + 'a'.repeat(500_000) + '"}');
-  assert.equal(r.status, 413);
+  const r = await t.call('chat', '{"x":"' + 'a'.repeat(5_100_000) + '"}');
+  assert.equal(r.status, 413, 'chat: over 5 MB');
+  const m = await t.call('models', '{"x":"' + 'a'.repeat(30_000) + '"}');
+  assert.equal(m.status, 413, 'model listing: over 20 KB');
   const deep = await t.call('chat', '['.repeat(100_000));
   assert.ok([400, 413].includes(deep.status), 'deeply nested JSON is refused, status ' + deep.status);
 });
