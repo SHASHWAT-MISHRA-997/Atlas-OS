@@ -565,7 +565,7 @@ test('Live: camera picture goes with a question, the answer is shown and saved; 
   await page.route('**/cloud/chat', async (route) => { sent.push(JSON.parse(route.request().postData())); await route.continue(); });
   await page.goto(base + '/');
   await go(page, 'live');
-  await page.waitForSelector('text=Live uses the provider, model and key you set in AI Chat');
+  await page.waitForSelector('text=Live needs an AI key');
   await go(page, 'chat');
   await page.fill('#keycardinput', 'gsk_live_key_123');
   await page.click('#keycardsave');
@@ -603,6 +603,103 @@ test('Live: camera picture goes with a question, the answer is shown and saved; 
   assert.ok(links.every((l) => /noopener/.test(l[2])));
   await noSideScroll(page);
   await shot(page, '10-about');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+test('Live real-time voice: streams the mic to Gemini Live, plays and shows the answer, interrupts, mutes, and saves text only', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  // A FAKE Gemini Live server inside the browser: nothing reaches Google.
+  const sockets = [];
+  const got = [];
+  let answered = false;
+  await page.routeWebSocket(/generativelanguage\.googleapis\.com/, (ws) => {
+    sockets.push(ws);
+    if (new URL(ws.url()).searchParams.get('key') === 'AIza-bad-key') { ws.close({ code: 1008, reason: 'API key not valid. Please pass a valid API key.' }); return; }
+    ws.onMessage((raw) => {
+      const msg = JSON.parse(String(raw));
+      got.push(msg);
+      // Google sends JSON in binary frames too; the app must read both.
+      if (msg.setup) ws.send(Buffer.from(JSON.stringify({ setupComplete: {} })));
+      if (msg.realtimeInput && msg.realtimeInput.audio && !answered) {
+        answered = true;
+        const pcm = Buffer.alloc(24000 * 2 * 0.3);
+        for (let i = 0; i < pcm.length / 2; i += 1) pcm.writeInt16LE(Math.round(Math.sin(i / 8) * 8000), i * 2);
+        ws.send(JSON.stringify({ serverContent: { inputTranscription: { text: 'hello atlas' } } }));
+        ws.send(JSON.stringify({ serverContent: { outputTranscription: { text: 'FAKE live hi' } } }));
+        ws.send(JSON.stringify({ serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: pcm.toString('base64') } }] } } }));
+        ws.send(JSON.stringify({ serverContent: { turnComplete: true } }));
+      }
+      if (msg.clientContent) {
+        ws.send(JSON.stringify({ serverContent: { outputTranscription: { text: 'FAKE typed reply' } } }));
+        ws.send(JSON.stringify({ serverContent: { turnComplete: true } }));
+      }
+    });
+  });
+  await page.addInitScript(() => { if (!localStorage.getItem('atlas.cloud.key.gemini')) localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-test-live-key')); });
+  await page.goto(base + '/');
+  await go(page, 'live');
+  await page.waitForSelector('#livemode');
+  assert.equal(await page.inputValue('#livemode'), 'realtime', 'a Gemini key starts in real-time voice');
+  assert.equal(await page.$eval('#livemode option[value=turns]', (o) => o.disabled), true, 'turn by turn needs an AI Chat model');
+  await page.selectOption('#livevoice', 'Kore');
+  await page.click('#liveorb');
+  await page.waitForSelector('#livesaid >> text=FAKE live hi');
+  await page.waitForSelector('#liveheard >> text=hello atlas');
+  assert.equal(sockets.length, 1);
+  assert.equal(new URL(sockets[0].url()).host, 'generativelanguage.googleapis.com');
+  assert.equal(new URL(sockets[0].url()).searchParams.get('key'), 'AIza-test-live-key', 'the key goes only to Google');
+  const setup = got[0].setup;
+  assert.equal(setup.model, 'models/fake-live-native-audio', 'the real-time model comes from the key\'s model list');
+  assert.deepEqual(setup.generationConfig.responseModalities, ['AUDIO']);
+  assert.equal(setup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName, 'Kore');
+  assert.ok(setup.inputAudioTranscription && setup.outputAudioTranscription);
+  assert.match(setup.systemInstruction.parts[0].text, /never claim you did/);
+  const audio = got.find((m) => m.realtimeInput && m.realtimeInput.audio).realtimeInput.audio;
+  assert.equal(audio.mimeType, 'audio/pcm;rate=16000');
+  assert.equal(Buffer.from(audio.data, 'base64').length, 3200, '100 ms of 16 kHz 16-bit audio');
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('atlas.os.chat.v1') || '[]').some((m) => m.content === 'FAKE live hi'));
+  // Google ends each connection after a few minutes: Live carries on in a new one, same conversation.
+  sockets[0].send(JSON.stringify({ sessionResumptionUpdate: { newHandle: 'resume-1', resumable: true } }));
+  sockets[0].send(JSON.stringify({ goAway: { timeLeft: '5s' } }));
+  await page.waitForFunction(() => document.querySelector('#liveorb').dataset.state === 'listening');
+  for (let i = 0; i < 40 && got.filter((m) => m.setup).length < 2; i += 1) await page.waitForTimeout(100);
+  assert.equal(sockets.length, 2);
+  assert.deepEqual(got.filter((m) => m.setup)[1].setup.sessionResumption, { handle: 'resume-1' });
+  // Gemini says the user talked over it: playback stops and it listens.
+  sockets[1].send(JSON.stringify({ serverContent: { interrupted: true } }));
+  await page.waitForSelector('#liveorb[data-state=listening]');
+  // The camera sends pictures while Live is on.
+  await page.click('#livecam');
+  await page.waitForFunction(() => document.querySelector('#livevideo').videoWidth > 0);
+  await page.waitForFunction(() => /Gemini can see it/.test(document.querySelector('#livestatus').textContent));
+  for (let i = 0; i < 40 && !got.some((m) => m.realtimeInput && m.realtimeInput.video); i += 1) await page.waitForTimeout(100);
+  assert.equal(got.find((m) => m.realtimeInput && m.realtimeInput.video).realtimeInput.video.mimeType, 'image/jpeg');
+  // Typing works in real time too, and mute tells Gemini the audio stopped.
+  await page.fill('#livetyped', 'typed question');
+  await page.press('#livetyped', 'Enter');
+  await page.waitForSelector('#livesaid >> text=FAKE typed reply');
+  assert.deepEqual(got.find((m) => m.clientContent).clientContent.turns[0].parts, [{ text: 'typed question' }]);
+  await page.click('#livemute');
+  await page.waitForSelector('#livemute.on');
+  assert.ok(got.some((m) => m.realtimeInput && m.realtimeInput.audioStreamEnd));
+  await page.click('#liveend');
+  await page.waitForSelector('#liveorb[data-state=idle]');
+  await page.waitForSelector('#livemute', { state: 'hidden' });
+  const history = await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.chat.v1')));
+  assert.deepEqual(history.map((m) => m.content), ['hello atlas', 'FAKE live hi', 'typed question', 'FAKE typed reply']);
+  assert.match(history[1].meta, /real-time/);
+  assert.ok(!/base64|AIza/.test(JSON.stringify(history)), 'no audio, pictures or key in history');
+  assert.equal(await page.inputValue('#livevoice'), 'Kore');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.live.v1')).voice), 'Kore', 'voice remembered');
+  // A bad key: Google's reason is shown.
+  await page.evaluate(() => localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-bad-key')));
+  await go(page, 'about');
+  await go(page, 'live');
+  await page.click('#liveorb');
+  await page.waitForSelector('#livestatus >> text=API key not valid');
+  await page.waitForSelector('#liveorb[data-state=idle]');
+  await shot(page, '11-live-realtime');
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });

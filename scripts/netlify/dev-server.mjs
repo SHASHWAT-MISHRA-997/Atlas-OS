@@ -21,6 +21,9 @@ export function fakeModelFetch(url, init) {
   }), { headers: { 'Content-Type': 'text/event-stream' } });
   const auth = (init.headers && init.headers.Authorization) || '';
   if (auth === 'Bearer wrong-key-123') return Promise.resolve(new Response('{"error":{"message":"Invalid API Key"}}', { status: 401 }));
+  if (String(url).includes('/v1beta/models?')) return Promise.resolve(Response.json({ models: [
+    { name: 'models/fake-flash', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/fake-live-native-audio', supportedGenerationMethods: ['bidiGenerateContent'] }] }));
   if (String(url).endsWith('/models')) return Promise.resolve(Response.json({ data: [{ id: 'fake-small' }, { id: 'fake-large' }, { id: 'fake-free:free' }] }));
   if (auth === 'Bearer busy-key-429') return Promise.resolve(new Response('{"error":{"message":"Rate limit reached for requests"}}', { status: 429 }));
   const body = JSON.parse(init.body);
@@ -58,7 +61,7 @@ createServer(async (req, res) => {
   try {
     const data = await readFile(file);
     res.writeHead(200, { 'Content-Type': TYPES[extname(file)] || 'application/octet-stream',
-      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
+      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://generativelanguage.googleapis.com; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
     res.end(data);
   } catch {
     res.writeHead(404).end('Not found');
