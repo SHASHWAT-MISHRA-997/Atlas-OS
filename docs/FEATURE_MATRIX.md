@@ -4,7 +4,7 @@ States: **Not implemented** · **Partially implemented** · **Implemented** (cod
 
 "Verified (Chromium, FAKE model)" means the browser tests passed in Chromium on Linux with the model provider replaced by a labelled fake. It is **not** evidence that a real provider, Safari or a real phone works.
 
-Last updated: 2026-10-25 (v0.16.0). The PC version (backend, Windows installer, PC actions, local models, document search, local voice, device pairing) was removed in 0.15.0; its rows are in the Git history of this file.
+Last updated: 2026-10-26 (v0.17.0). The PC version (backend, Windows installer, PC actions, local models, document search, local voice, device pairing) was removed in 0.15.0; its rows are in the Git history of this file.
 
 | Feature | Location | Status | Evidence / gap |
 |---|---|---|---|
@@ -14,6 +14,10 @@ Last updated: 2026-10-25 (v0.16.0). The PC version (backend, Windows installer, 
 | Bring-your-own key, free providers first | `cloud.mjs`, key card in `app.js` | Verified (Chromium, FAKE model) | `cloud.test.mjs`; e2e key card, paste cleaning, wrong key rejected |
 | Optional paid OpenAI | `cloud.mjs` | Verified (FAKE provider) | `paid OpenAI (optional) …`; never auto-selected |
 | Streaming chat, Stop, Copy/Edit/Delete, Clear all | `app.js` | Verified (Chromium, FAKE model) | e2e chat test |
+| Thinking level | `cloud.mjs`, `app.js` | Verified (FAKE provider, Chromium) | `cloud.test.mjs` checks each provider's request and the retry without thinking; e2e checks the setting reaches the request. Which real models accept it is up to the provider |
+| Images and PDFs in chat | `cloud.mjs`, `app.js` | Verified (FAKE provider, Chromium) | Request shapes per provider, validation, and e2e attach/scale/send. Not tested with a real vision model or on iPad Safari's photo picker |
+| Steering mid-reply | `app.js`, `cloud.js` | Verified (Chromium, FAKE model) | e2e: a held reply is redirected; Stop now cancels the request |
+| Chat compression | `app.js` | Verified (Chromium, FAKE model) | e2e: a 20-message chat is summarized, only recent turns sent, Clear all removes the summary. Summary quality depends on the real model |
 | Auto-switch between free providers | `cloud.js` | Verified (Chromium, FAKE model) | e2e auto-switch test, including never into paid |
 | Memory (browser), export | `app.js` | Verified (Chromium) | e2e; data stays in that browser |
 | Tasks: plan, summarize | `cloud.js` | Verified (Chromium, FAKE model) | e2e Home plan; tasks run while the page is open |

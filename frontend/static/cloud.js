@@ -48,7 +48,7 @@
   async function providers() {
     const s = await status();
     const list = s.providers.map((p) => ({
-      id: p.id, label: p.label, paid: !!p.paid,
+      id: p.id, label: p.label, paid: !!p.paid, pdf: !!p.pdf,
       billing: (p.paid ? 'PAID. ' : '') + 'Uses your own ' + p.label + ' key and account. ' + p.note + ' Limits and prices are set by the provider and can change.',
       capabilities: { streaming: true }, docs_url: p.key_url, key_url: p.key_url,
     }));
@@ -72,8 +72,8 @@
     return firstModels.get(provider);
   }
 
-  async function chatWithSwitch(body, stream) {
-    const send = (provider, apiKey, model) => cloud('chat', { method: 'POST', body: { provider, api_key: apiKey, model, messages: body.messages, stream } });
+  async function chatWithSwitch(body, stream, signal) {
+    const send = (provider, apiKey, model) => cloud('chat', { method: 'POST', signal, body: { provider, api_key: apiKey, model, messages: body.messages, stream, thinking: body.thinking || undefined, max_tokens: body.max_tokens } });
     const first = await send(body.provider, body.api_key || '', body.model);
     const others = body.allow_fallback && Array.isArray(body.fallback_keys)
       ? body.fallback_keys.filter((f) => f && isText(f.provider) && f.provider !== body.provider && isText(f.api_key)) : [];
@@ -205,7 +205,7 @@
   }
 
   // ------------------------------------------------------------ /api router
-  async function handle(method, url, body) {
+  async function handle(method, url, body, signal) {
     const path = url.pathname;
     let m;
     if (path === '/api/system/status') {
@@ -217,7 +217,8 @@
       return cloud('models', { method: 'POST', body: { provider: body.provider || url.searchParams.get('provider'), api_key: body.api_key || '' } });
     }
     if (path === '/api/llm/chat/stream' || path === '/api/llm/chat') {
-      return chatWithSwitch(body, path.endsWith('stream'));
+      // The page's Stop (and steering) aborts this signal, which cancels the request to the provider.
+      return chatWithSwitch(body, path.endsWith('stream'), signal);
     }
     if (path === '/api/tasks' && method === 'POST') return createTask(body);
     if (path === '/api/tasks') return json({ tasks: tasks.slice(0, Number(url.searchParams.get('limit')) || 50) });
@@ -244,8 +245,9 @@
     let body = {};
     if (init.body && typeof init.body === 'string') { try { body = JSON.parse(init.body); } catch { /* not JSON */ } }
     try {
-      return await handle((init.method || 'GET').toUpperCase(), url, body);
+      return await handle((init.method || 'GET').toUpperCase(), url, body, init.signal);
     } catch (err) {
+      if (err.name === 'AbortError') throw err;
       return fail(err.status || 503, err.message || 'ATLAS cloud is unreachable.', err.code || 'cloud_unreachable');
     }
   };

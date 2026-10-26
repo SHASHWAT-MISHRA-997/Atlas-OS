@@ -200,3 +200,83 @@ test('paid OpenAI (optional) uses its official URL, the visitor\'s key and max_c
   assert.equal(sent.max_completion_tokens, 2048);
   assert.equal('max_tokens' in sent, false);
 });
+
+// ---------------------------------------------------------------- v0.17: thinking and files
+
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const PDF = Buffer.from('%PDF-1.4 fake test pdf').toString('base64');
+const withFiles = (attachments, extra = {}) => chatBody({ messages: [{ role: 'user', content: 'what is this?', attachments }], ...extra });
+
+test('thinking level: Groq and OpenAI get reasoning_effort, OpenRouter its reasoning field, Gemini a thinking budget', async () => {
+  const t = setup();
+  await (await t.call('chat', { method: 'POST', body: chatBody({ thinking: 'high', stream: false }) })).json();
+  let sent = JSON.parse(t.calls[0].init.body);
+  assert.equal(sent.reasoning_effort, 'high');
+  assert.equal(sent.max_tokens, 1024 + 14336, 'room for thinking on top of the answer');
+
+  await (await t.call('chat', { method: 'POST', body: chatBody({ provider: 'openrouter', model: 'x/y:free', thinking: 'low', stream: false }) })).json();
+  sent = JSON.parse(t.calls[1].init.body);
+  assert.deepEqual(sent.reasoning, { effort: 'low', exclude: true });
+  assert.equal(sent.reasoning_effort, undefined);
+
+  const g = setup({ upstream: () => sseResponse([JSON.stringify({ candidates: [{ content: { parts: [{ text: 'hmm', thought: true }, { text: 'Answer' }] }, finishReason: 'STOP' }] })]) });
+  const r = await (await g.call('chat', { method: 'POST', body: chatBody({ provider: 'gemini', model: 'gemini-2.5-flash', thinking: 'medium', stream: false }) })).json();
+  assert.equal(r.answer, 'Answer', 'thoughts are not shown as the answer');
+  assert.equal(r.thinking, 'medium');
+  assert.deepEqual(JSON.parse(g.calls[0].init.body).generationConfig, { maxOutputTokens: 1024 + 6144, thinkingConfig: { thinkingBudget: 6144 } });
+
+  const bad = await setup().call('chat', { method: 'POST', body: chatBody({ thinking: 'max' }) });
+  assert.equal(bad.status, 422);
+});
+
+test('a model that cannot think answers again without the thinking setting, and says so', async () => {
+  let n = 0;
+  const t = setup({ upstream: () => (++n === 1
+    ? new Response('{"error":{"message":"reasoning_effort is not supported with this model"}}', { status: 400 })
+    : sseResponse([JSON.stringify({ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }), '[DONE]'])) });
+  const r = await (await t.call('chat', { method: 'POST', body: chatBody({ thinking: 'low', stream: false }) })).json();
+  assert.equal(r.answer, 'ok');
+  assert.equal(r.thinking, 'not supported by this model');
+  assert.equal(t.calls.length, 2);
+  assert.equal(JSON.parse(t.calls[1].init.body).reasoning_effort, undefined);
+  // Any other 400 is a real error, not retried.
+  const other = setup({ upstream: () => new Response('{"error":{"message":"bad model"}}', { status: 400 }) });
+  assert.equal((await other.call('chat', { method: 'POST', body: chatBody({ thinking: 'low', stream: false }) })).status, 502);
+  assert.equal(other.calls.length, 1);
+});
+
+test('images and PDFs: OpenAI-style parts, Gemini inline data, and PDFs refused for Groq', async () => {
+  const t = setup();
+  await (await t.call('chat', { method: 'POST', body: withFiles([{ mime: 'image/png', data: PNG, name: 'a.png' }], { stream: false }) })).json();
+  const content = JSON.parse(t.calls[0].init.body).messages[0].content;
+  assert.deepEqual(content[0], { type: 'text', text: 'what is this?' });
+  assert.equal(content[1].image_url.url, 'data:image/png;base64,' + PNG);
+
+  await (await t.call('chat', { method: 'POST', body: withFiles([{ mime: 'application/pdf', data: PDF, name: 'n<o>tes.pdf' }], { provider: 'openrouter', model: 'x/y:free', stream: false }) })).json();
+  assert.deepEqual(JSON.parse(t.calls[1].init.body).messages[0].content[1], { type: 'file', file: { filename: 'notes.pdf', file_data: 'data:application/pdf;base64,' + PDF } });
+
+  const g = setup({ upstream: () => sseResponse([JSON.stringify({ candidates: [{ content: { parts: [{ text: 'A PDF' }] } }] })]) });
+  await (await g.call('chat', { method: 'POST', body: withFiles([{ mime: 'application/pdf', data: PDF }], { provider: 'gemini', model: 'gemini-2.5-flash', stream: false }) })).json();
+  assert.deepEqual(JSON.parse(g.calls[0].init.body).contents[0].parts[1], { inlineData: { mimeType: 'application/pdf', data: PDF } });
+
+  const groqPdf = await t.call('chat', { method: 'POST', body: withFiles([{ mime: 'application/pdf', data: PDF }]) });
+  assert.equal(groqPdf.status, 422);
+  assert.match((await groqPdf.json()).detail, /cannot read PDFs/);
+  assert.equal(t.calls.length, 2, 'no provider call for a refused file');
+});
+
+test('attachments are validated: type, base64, count, size, and only on user messages', async () => {
+  const t = setup();
+  const refuse = async (body, re) => {
+    const r = await t.call('chat', { method: 'POST', body });
+    assert.equal(r.status, 422, JSON.stringify(body).slice(0, 80));
+    assert.match((await r.json()).detail, re);
+  };
+  await refuse(withFiles([{ mime: 'text/html', data: PNG }]), /PNG, JPEG/);
+  await refuse(withFiles([{ mime: 'image/svg+xml', data: PNG }]), /PNG, JPEG/);
+  await refuse(withFiles([{ mime: 'image/png', data: 'not base64!' }]), /PNG, JPEG/);
+  await refuse(withFiles(Array(5).fill({ mime: 'image/png', data: PNG })), /up to 4/);
+  await refuse(withFiles([{ mime: 'image/png', data: 'A'.repeat(4_000_004) }]), /too large/);
+  await refuse(chatBody({ messages: [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'x', attachments: [{ mime: 'image/png', data: PNG }] }] }), /own messages/);
+  assert.equal(t.calls.length, 0);
+});

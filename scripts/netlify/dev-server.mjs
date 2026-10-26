@@ -24,7 +24,10 @@ export function fakeModelFetch(url, init) {
   if (String(url).endsWith('/models')) return Promise.resolve(Response.json({ data: [{ id: 'fake-small' }, { id: 'fake-large' }, { id: 'fake-free:free' }] }));
   if (auth === 'Bearer busy-key-429') return Promise.resolve(new Response('{"error":{"message":"Rate limit reached for requests"}}', { status: 429 }));
   const body = JSON.parse(init.body);
-  const last = body.messages.filter((m) => m.role === 'user').pop().content;
+  const lastMsg = body.messages.filter((m) => m.role === 'user').pop();
+  const parts = Array.isArray(lastMsg.content) ? lastMsg.content : [{ type: 'text', text: lastMsg.content }];
+  const files = parts.filter((x) => x.type !== 'text').length;
+  const last = parts.find((x) => x.type === 'text').text + (files ? ' [' + files + ' file' + (files > 1 ? 's' : '') + ']' : '') + (body.reasoning_effort ? ' [thinking: ' + body.reasoning_effort + ']' : '');
   if (body.model === 'fake-broken') return Promise.resolve(new Response('{"error":{"message":"model not found"}}', { status: 404 }));
   const system = body.messages.find((m) => m.role === 'system');
   const text = system && system.content.includes('planner')

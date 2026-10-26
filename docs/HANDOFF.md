@@ -1,4 +1,4 @@
-# Handoff — 2026-10-25 (v0.16.0)
+# Handoff — 2026-10-26 (v0.17.0)
 
 ## State
 
@@ -9,6 +9,8 @@
 
 ## Recent versions
 
+- v0.17.0: thinking level, images and PDFs, steering mid-reply, chat compression; Stop now cancels the request online.
+- v0.16.1: removed the top-bar task box.
 - v0.16.0: neon redesign with dark/light theme, per-screen colours and transitions; System screen; Automations and Devices back as web versions.
 - v0.15.0: web app only; iPhone/iPad install hint; one CI job (`cloud`).
 - v0.14.0: auto-switch between free providers on 429/5xx (never into paid); optional paid OpenAI.
@@ -18,11 +20,11 @@
 
 ## Verified in this session (Linux, Chromium, FAKE model)
 
-25 function/attack/size tests and 8 browser tests pass. iPad sizes were checked in Chromium only. With 4x CPU slowdown on slow 4G (headless, no GPU): first paint about 0.8 s, app ready about 1.4 s, idle animation about 52–58 fps, longest task 133 ms on load.
+29 function/attack/size tests and 9 browser tests pass. iPad sizes were checked in Chromium only. With 4x CPU slowdown on slow 4G (headless, no GPU): first paint about 0.8 s, app ready about 1.4 s, idle animation about 52–58 fps, longest task 133 ms on load.
 
 ## Next tasks, in order
 
 1. The owner checks the redesign on the iPad and phone and says what to change.
-2. The owner sends a real chat with their own key on the live site, on the iPad.
+2. The owner sends a real chat with their own key on the live site, on the iPad, including a photo, a PDF (Gemini) and a thinking level.
 3. Remove `ATLAS_OS_Research_Starter_v4.zip` from `main` once the owner agrees.
-4. Remaining plan items: chat compression, thinking-level switch, image/PDF input, steering mid-reply.
+4. The owner makes the repository private and protects `main` (only the `cloud` check) in GitHub settings; Claude's account cannot change repository settings.
