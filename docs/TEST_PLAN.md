@@ -14,18 +14,19 @@ Fakes live only in tests and in the preview server behind `ATLAS_FAKE_MODEL=1`; 
 
 ## Latest report
 
-Date: 2026-10-26, v0.18.1. Environment: Linux container, Node 22, Chromium 141. **Not Safari, not a real phone.**
+Date: 2026-10-26, v0.19.0. Environment: Linux container, Node 22, Chromium 141. **Not Safari, not a real phone.**
 
 | Command | Passed | Failed |
 |---|---|---|
-| `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 29 | 0 |
-| `node --test netlify/tests/e2e.test.mjs` | 11 | 0 |
+| `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 30 | 0 |
+| `node --test netlify/tests/e2e.test.mjs` | 12 | 0 |
 | `detect-secrets scan` (excluding tests, node_modules, dist) | no findings | — |
 
 ## Manual checks still needed
 
 - Real provider chat with the owner's own key on the live site, including a thinking level, a photo and a PDF.
 - Live on a real phone and iPad: microphone, speech, camera; screen sharing on a computer.
+- Live real-time voice with the owner's real Gemini key: that Google accepts the setup, the voice sounds right, interrupting works, and a session lasting over 10 minutes reconnects. The e2e test uses a FAKE Gemini Live server.
 - Real iPad and iPhone in Safari: layout, Paste button, Add to Home Screen.
 - Real Android phone: install prompt.
 - Reminder notifications on a real phone (iPhone and iPad only allow them for an installed app).

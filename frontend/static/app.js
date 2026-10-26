@@ -1670,11 +1670,31 @@
   }
 
   // ---------------------------------------------------------------- live
-  // A hands-free conversation, like the assistant on a phone: ATLAS listens, answers aloud and
-  // listens again. With the camera or a shared screen on, the current picture goes with each
-  // question so the model can see it. It uses the AI Chat provider, model and key; listening and
-  // speaking use the browser's speech service. Nothing is recorded or stored except the chat text.
+  // A hands-free conversation, like the assistant on a phone. Two ways:
+  // - Real-time voice (with a Gemini key): realtime.js streams the microphone to Google's Gemini
+  //   Live API and plays its spoken answers; talking over it interrupts, like the Gemini app.
+  // - Turn by turn (any provider): the browser's speech service listens, the AI Chat model answers,
+  //   and the browser reads the answer aloud.
+  // With the camera or a shared screen on, the model sees the current picture. Nothing is recorded
+  // or stored except the conversation text, which also appears in AI Chat history.
   let live = null;
+  const LIVE_KEY = 'atlas.os.live.v1'; // real-time or turn by turn, and the Gemini voice
+  const ASSET_VERSION = (/[?&]v=([^&]+)/.exec((document.querySelector('script[src*="/static/app.js"]') || {}).src || '') || [])[1] || '';
+
+  /** Loads a script from this site once (realtime.js is only needed on the Live screen). */
+  function loadScript(path) {
+    loadScript.cache = loadScript.cache || {};
+    if (!loadScript.cache[path]) {
+      loadScript.cache[path] = new Promise((resolve, reject) => {
+        const tag = document.createElement('script');
+        tag.src = path + (ASSET_VERSION ? '?v=' + ASSET_VERSION : '');
+        tag.onload = resolve;
+        tag.onerror = () => { delete loadScript.cache[path]; reject(new Error('could not load ' + path)); };
+        document.head.append(tag);
+      });
+    }
+    return loadScript.cache[path];
+  }
 
   function stopLive() {
     if (live) live.end();
@@ -1687,14 +1707,28 @@
     const providers = systemStatus ? systemStatus.cloud.providers : [];
     const p = providers.find((x) => x.id === saved.provider && cloudKey.get(x.id));
     const model = p ? String(saved.model || '').trim() : '';
-    v.append(screenHead('live', el('span', { class: 'routebadge cloud' }, [icon('cloud'), el('span', { text: p ? 'Sends to ' + p.label : 'Set up AI Chat first' })])));
-    if (!p || !model) {
+    const turnsReady = !!(p && model);
+    const gemKey = cloudKey.get('gemini');
+    let rtLoaded = false;
+    if (gemKey) { try { await loadScript('/static/realtime.js'); rtLoaded = window.AtlasRealtime.supported(); } catch { /* offline: turn by turn only */ } }
+    const routeText = el('span', { text: 'Set up AI Chat first' });
+    v.append(screenHead('live', el('span', { class: 'routebadge cloud' }, [icon('cloud'), routeText])));
+    if (!turnsReady && !rtLoaded) {
       v.append(el('div', { class: 'panel hud livesetup' }, [
-        el('p', { text: 'Live uses the provider, model and key you set in AI Chat. Add a key there and pick a model, then come back.' }),
+        el('p', { text: 'Live needs an AI key. For real-time voice like the Gemini app, add a free Google Gemini key in AI Chat. With any other provider, pick a model in AI Chat and Live works turn by turn.' }),
         el('button', { class: 'btn primary', type: 'button', text: 'Open AI Chat', onclick: () => document.querySelector('.nav [data-section=chat]').click() }),
       ]));
       return;
     }
+    const prefs = { mode: 'realtime', voice: 'Puck', ...storageGet(LIVE_KEY, {}) };
+    if (!rtLoaded) prefs.mode = 'turns';
+    if (!turnsReady) prefs.mode = 'realtime';
+    // Real-time models for this Gemini key, looked up now so a tap on the orb starts at once.
+    let liveModels = null;
+    const liveModelsReady = rtLoaded
+      ? api('/api/llm/models', { method: 'POST', body: { provider: 'gemini', api_key: gemKey, live: true } })
+        .then((d) => { liveModels = d.models || []; }, (err) => { liveModels = []; liveModels.error = err.message; })
+      : null;
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const canSpeak = 'speechSynthesis' in window;
@@ -1715,25 +1749,54 @@
     const typed = el('input', { id: 'livetyped', autocomplete: 'off', placeholder: SR ? 'Or type a question…' : 'Type a question…', 'aria-label': 'Type a question for Live' });
     const typedSend = el('button', { class: 'btn primary', type: 'submit', text: 'Ask' });
     const status = el('p', { class: 'tiny muted', id: 'livestatus', role: 'status' });
-    const notes = [];
-    if (!SR) notes.push('This browser cannot listen, so type your questions. Chrome, Edge and Safari can listen.');
-    if (!canShare) notes.push('Screen sharing works in desktop browsers only; phones and iPads do not allow it. The camera works everywhere.');
-    notes.push('Listening uses your browser\'s speech service (Chrome and Edge send the audio to Google or Microsoft). Camera and screen pictures go to ' + p.label + ' only with a question. For pictures, pick a model that can see images, such as Gemini 2.5 Flash or Llama 4 Scout on Groq.');
+    const modeSel = el('select', { id: 'livemode', 'aria-label': 'How Live talks' }, [
+      el('option', { value: 'realtime', text: 'Real-time (Gemini)', disabled: !rtLoaded }),
+      el('option', { value: 'turns', text: 'Turn by turn' + (p ? ' (' + p.label + ')' : ''), disabled: !turnsReady }),
+    ]);
+    modeSel.value = prefs.mode;
+    const voiceSel = el('select', { id: 'livevoice', 'aria-label': 'Gemini voice' },
+      (rtLoaded ? window.AtlasRealtime.VOICES : []).map((name) => el('option', { value: name, text: name })));
+    if (rtLoaded && window.AtlasRealtime.VOICES.includes(prefs.voice)) voiceSel.value = prefs.voice;
+    const muteBtn = el('button', { class: 'btn chip hidden', type: 'button', id: 'livemute' }, [icon('mic'), 'Mute']);
+    const voiceRow = el('label', { class: 'liveopt field' }, [el('span', { class: 'tiny muted', text: 'Voice' }), voiceSel]);
+    const noteBox = el('div', { class: 'livenotes' });
+    const isRT = () => modeSel.value === 'realtime';
+    function applyMode() {
+      voiceRow.classList.toggle('hidden', !isRT());
+      routeText.textContent = isRT() ? 'Talks to Google Gemini' : 'Sends to ' + p.label;
+      const notes = [];
+      if (isRT()) {
+        notes.push('Real-time voice streams your microphone straight from this browser to Google Gemini with your own Gemini key, and Gemini answers in its own voice. Talk over it to interrupt. With the camera or screen on, Gemini sees about one picture a second. Free Gemini keys have daily limits for this.');
+        if (!turnsReady) notes.push('Turn by turn needs a model picked in AI Chat.');
+      } else {
+        if (!SR) notes.push('This browser cannot listen, so type your questions. Chrome, Edge and Safari can listen.');
+        notes.push('Listening uses your browser\'s speech service (Chrome and Edge send the audio to Google or Microsoft). Camera and screen pictures go to ' + p.label + ' only with a question. For pictures, pick a model that can see images, such as Gemini 2.5 Flash or Llama 4 Scout on Groq.');
+        if (!rtLoaded) notes.push('For real-time voice like the Gemini app, add a free Google Gemini key in AI Chat.');
+      }
+      if (!canShare) notes.push('Screen sharing works in desktop browsers only; phones and iPads do not allow it. The camera works everywhere.');
+      noteBox.replaceChildren(...notes.map((t) => el('p', { class: 'tiny muted', text: t })));
+      if (!state.running) setState('idle', isRT() || SR ? 'Tap to start' : 'Type below');
+    }
+    modeSel.addEventListener('change', () => { prefs.mode = modeSel.value; storageSet(LIVE_KEY, prefs); applyMode(); });
+    voiceSel.addEventListener('change', () => { prefs.voice = voiceSel.value; storageSet(LIVE_KEY, prefs); });
 
     v.append(el('div', { class: 'livegrid' }, [
       el('div', { class: 'panel hud livestage' }, [orb, heard, said, video]),
       el('div', { class: 'panel hud livecontrols' }, [
-        el('div', { class: 'chips-row' }, [camBtn, flipBtn, shareBtn, endBtn]),
-        el('form', { class: 'liverow', onsubmit: (e) => { e.preventDefault(); const t = typed.value.trim(); if (t) { typed.value = ''; ask(t); } } }, [typed, typedSend]),
+        el('div', { class: 'liveopts' }, [el('label', { class: 'liveopt field' }, [el('span', { class: 'tiny muted', text: 'Mode' }), modeSel]), voiceRow]),
+        el('div', { class: 'chips-row' }, [camBtn, flipBtn, shareBtn, muteBtn, endBtn]),
+        el('form', { class: 'liverow field', onsubmit: (e) => { e.preventDefault(); const t = typed.value.trim(); if (t) { typed.value = ''; ask(t); } } }, [typed, typedSend]),
         status,
-        ...notes.map((t) => el('p', { class: 'tiny muted', text: t })),
+        noteBox,
       ]),
     ]));
 
-    const state = { running: false, recognition: null, stream: null, facing: 'environment', turns: [], controller: null };
+    const state = { running: false, recognition: null, stream: null, facing: 'environment', turns: [], controller: null, rt: null };
     const setState = (s, label) => { orb.dataset.state = s; orbLabel.textContent = label; orb.setAttribute('aria-label', label); };
+    applyMode();
 
     function stopMedia() {
+      if (state.rt) state.rt.setVideo(null);
       if (state.stream) state.stream.getTracks().forEach((t) => t.stop());
       state.stream = null;
       video.srcObject = null;
@@ -1757,7 +1820,8 @@
       (which === 'camera' ? camBtn : shareBtn).classList.add('on');
       flipBtn.classList.toggle('hidden', which !== 'camera');
       state.stream.getVideoTracks()[0].addEventListener('ended', stopMedia);
-      status.textContent = (which === 'camera' ? 'Camera on.' : 'Sharing your screen.') + ' ATLAS sees the current picture each time you ask.';
+      if (state.rt) state.rt.setVideo(video);
+      status.textContent = (which === 'camera' ? 'Camera on.' : 'Sharing your screen.') + (isRT() ? ' Gemini can see it while Live is on.' : ' ATLAS sees the current picture each time you ask.');
     }
 
     const startCamera = () => useStream(() => navigator.mediaDevices.getUserMedia({ video: { facingMode: state.facing }, audio: false }), 'camera');
@@ -1819,6 +1883,7 @@
     }
 
     async function ask(text) {
+      if (state.rt) { state.rt.sendText(text); return; }
       if (state.recognition) { const r = state.recognition; state.recognition = null; try { r.abort(); } catch { /* already stopped */ } }
       if (state.controller) state.controller.abort();
       if (canSpeak) window.speechSynthesis.cancel();
@@ -1854,30 +1919,102 @@
       if (state.running) listen(); else setState('idle', SR ? 'Tap to start' : 'Type below');
     }
 
-    function start() {
+    const RT_SYSTEM = 'You are ATLAS OS, a friendly voice assistant made by Shashwat Mishra, talking with the user in real time. Keep answers short and natural for speech, with no markdown or lists. ' +
+      'Reply in the language the user speaks (English, Hindi or Hinglish). When you get camera or screen pictures, describe only what you can actually see, and say so when it is unclear. ' +
+      'You cannot act on the user\'s device, open apps or send messages; never claim you did.';
+
+    async function startRealtime() {
       state.running = true;
       endBtn.disabled = false;
+      modeSel.disabled = true;
+      setState('thinking', 'Connecting…');
+      status.textContent = 'Connecting to Google Gemini…';
+      if (!liveModels) await liveModelsReady;
+      if (!state.running) return;
+      if (!liveModels.length) {
+        end();
+        status.textContent = liveModels.error ? 'Could not reach Google Gemini: ' + liveModels.error : 'Your Gemini key lists no real-time voice models. Use Turn by turn instead.';
+        return;
+      }
+      const liveModel = liveModels[0];
+      try {
+        state.rt = await window.AtlasRealtime.start({
+          key: gemKey, model: liveModel, voice: voiceSel.value, system: RT_SYSTEM,
+          worklet: '/static/live-worklet.js' + (ASSET_VERSION ? '?v=' + ASSET_VERSION : ''),
+          on: {
+            state: (s) => setState(s === 'connecting' ? 'thinking' : s, s === 'speaking' ? 'Speaking… tap to stop' : s === 'listening' ? 'Listening… tap to end' : 'Connecting…'),
+            level: (x) => orb.style.setProperty('--lvl', Math.min(0.5, x * 3).toFixed(3)),
+            heard: (t) => { heard.textContent = t; },
+            said: (t) => { said.textContent = t; },
+            turn: async ({ user, model: answer }) => {
+              // Text only: the audio and pictures are never stored.
+              if (user) await store.appendChat({ role: 'user', content: user });
+              if (answer) await store.appendChat({ role: 'assistant', content: answer, meta: 'Live · real-time · Google Gemini · ' + liveModel });
+            },
+            ended: (reason) => {
+              const wasRunning = state.running;
+              state.rt = null;
+              if (wasRunning) end();
+              if (reason) { status.textContent = reason; log('live real-time ended: ' + reason); } else if (wasRunning) status.textContent = 'Live ended.';
+            },
+          },
+        });
+      } catch (err) {
+        end();
+        status.textContent = err.name === 'NotAllowedError' ? 'Microphone permission is blocked. Allow it in the browser\'s site settings.' : 'Real-time voice could not start: ' + (err.message || err.name);
+        return;
+      }
+      if (!state.running) { state.rt.end(); state.rt = null; return; }
+      if (state.stream) state.rt.setVideo(video);
+      muteBtn.classList.remove('hidden');
+      status.textContent = 'Live with Gemini (' + liveModel + '). Talk any time; speak over it to interrupt.';
+      log('live real-time started with ' + liveModel);
+    }
+
+    function start() {
+      if (isRT()) { startRealtime(); return; }
+      state.running = true;
+      endBtn.disabled = false;
+      modeSel.disabled = true;
       status.textContent = SR ? 'Live is on. Speak now; ATLAS answers aloud and then listens again.' : 'Live is on. Type your questions below.';
       if (SR) listen(); else setState('idle', 'Type below');
     }
 
     function end() {
       state.running = false;
+      if (state.rt) { const rt = state.rt; state.rt = null; rt.end(); }
+      muteBtn.classList.add('hidden');
+      muteBtn.classList.remove('on');
+      modeSel.disabled = false;
+      orb.style.removeProperty('--lvl');
       if (state.recognition) { const r = state.recognition; state.recognition = null; try { r.abort(); } catch { /* already stopped */ } }
       if (state.controller) state.controller.abort();
       if (canSpeak) window.speechSynthesis.cancel();
       stopMedia();
       endBtn.disabled = true;
-      setState('idle', SR ? 'Tap to start' : 'Type below');
+      setState('idle', isRT() || SR ? 'Tap to start' : 'Type below');
     }
+
+    muteBtn.addEventListener('click', () => {
+      if (!state.rt) return;
+      const on = !muteBtn.classList.contains('on');
+      muteBtn.classList.toggle('on', on);
+      muteBtn.lastChild.textContent = on ? 'Unmute' : 'Mute';
+      state.rt.setMuted(on);
+      status.textContent = on ? 'Microphone muted. Gemini still hears what you type.' : 'Microphone on.';
+    });
 
     orb.addEventListener('click', () => {
       if (!state.running) { start(); return; }
+      if (state.rt) {
+        if (orb.dataset.state === 'speaking') state.rt.stopSpeaking();
+        else if (orb.dataset.state === 'listening') { end(); status.textContent = 'Live ended.'; }
+        return;
+      }
       if (orb.dataset.state === 'speaking') { window.speechSynthesis.cancel(); return; } // interrupt; it listens again
       if (orb.dataset.state === 'listening') { end(); status.textContent = 'Live ended.'; }
     });
     endBtn.addEventListener('click', () => { end(); status.textContent = 'Live ended.'; });
-    if (!SR) setState('idle', 'Type below');
     live = { end };
   }
 

@@ -170,6 +170,26 @@ test('model lists are filtered; listing errors fall back to a suggestion, bad ke
   assert.equal((await t.call('models', { method: 'POST', body: { provider: 'groq' } })).status, 422);
 });
 
+test('real-time voice models: Gemini Live models only, native audio first; other providers refused', async () => {
+  const t = setup({ upstream: async () => Response.json({ models: [
+    { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent', 'countTokens'] },
+    { name: 'models/gemini-live-2.5-flash', supportedGenerationMethods: ['bidiGenerateContent'] },
+    { name: 'models/gemini-2.5-flash-native-audio-preview-12-2025', supportedGenerationMethods: ['countTokens', 'bidiGenerateContent'] },
+    { name: 'models/bad model<script>', supportedGenerationMethods: ['bidiGenerateContent'] },
+  ] }) });
+  const r = await t.call('models', { method: 'POST', body: { provider: 'gemini', api_key: KEY, live: true } });
+  assert.deepEqual((await r.json()).models, ['gemini-2.5-flash-native-audio-preview-12-2025', 'gemini-live-2.5-flash']);
+  assert.equal(t.calls[0].init.headers['x-goog-api-key'], KEY);
+  const plain = await t.call('models', { method: 'POST', body: { provider: 'gemini', api_key: KEY } });
+  assert.ok(!(await plain.json()).models.some((m) => /live|native-audio/.test(m)), 'chat models stay chat models');
+  const groq = await t.call('models', { method: 'POST', body: { provider: 'groq', api_key: KEY, live: true } });
+  assert.equal(groq.status, 422);
+  assert.match((await groq.json()).detail, /Gemini key/);
+  const down = setup({ upstream: async () => new Response('{"error":{"message":"unavailable"}}', { status: 503 }) });
+  const fallback = await (await down.call('models', { method: 'POST', body: { provider: 'gemini', api_key: KEY, live: true } })).json();
+  assert.deepEqual(fallback.models, ['gemini-2.5-flash-native-audio-preview-12-2025']);
+});
+
 test('a rejected key is reported when listing models (Groq 401, Gemini 400)', async () => {
   const t = setup({ upstream: async (url) => (url.includes('groq')
     ? new Response('{"error":{"message":"Invalid API Key"}}', { status: 401 })

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.19.0 — 2026-10-26
+
+From the owner's request for a voice experience "exact same" as Gemini and ChatGPT:
+- **Live real-time voice (with a Google Gemini key).** Uses Google's Gemini Live API, the same streaming voice service behind the Gemini app's Live mode: the microphone streams continuously, Gemini answers in its own natural voice (8 voices to pick from, remembered), and you can talk over it to interrupt. The camera or a shared screen sends about one picture a second while Live is on. Typed questions are answered aloud. Mute keeps the session open. Google ends each connection after a few minutes; Live carries on in a new one with the same conversation. What you said and what Gemini said are written on screen and saved to AI Chat history as text (never the audio or pictures).
+- The browser talks straight to Google (`wss://generativelanguage.googleapis.com`) with your own Gemini key; ATLAS's server only looks up which real-time models your key has. The site's CSP now allows that one address.
+- Without a Gemini key, Live works turn by turn as before (any provider). A Mode switch picks between the two.
+- ChatGPT's voice mode (OpenAI Realtime API) is not added: it needs a paid OpenAI key and ATLAS never turns on paid services by itself.
+- Live's text box and menus now use the app's styling.
+- **Not yet tried against Google's real service or on a real phone**; the browser test uses a FAKE Gemini Live server.
+
 ## 0.18.1 — 2026-10-26
 
 From the owner's feedback ("Home page mai duplicates and copy dikh rahe hai"):
