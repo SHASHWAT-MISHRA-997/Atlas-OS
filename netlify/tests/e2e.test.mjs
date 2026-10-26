@@ -706,3 +706,88 @@ test('Live real-time voice: streams the mic to Gemini Live, plays and shows the 
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });
+
+test('Live ChatGPT voice: paid, so it waits for a tick; then streams to OpenAI Realtime with the user\'s key and saves text only', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  // A FAKE OpenAI Realtime server inside the browser: nothing reaches OpenAI.
+  const sockets = [];
+  const got = [];
+  let answered = false;
+  await page.routeWebSocket(/api\.openai\.com/, (ws) => {
+    sockets.push(ws);
+    ws.onMessage((raw) => {
+      const msg = JSON.parse(String(raw));
+      got.push(msg);
+      if (msg.type === 'session.update') ws.send(JSON.stringify({ type: 'session.updated', session: {} }));
+      if (msg.type === 'input_audio_buffer.append' && !answered) {
+        answered = true;
+        const pcm = Buffer.alloc(24000 * 2 * 0.3);
+        ws.send(JSON.stringify({ type: 'input_audio_buffer.speech_started' }));
+        ws.send(JSON.stringify({ type: 'input_audio_buffer.committed' }));
+        ws.send(JSON.stringify({ type: 'response.output_audio_transcript.delta', delta: 'FAKE chatgpt hi' }));
+        ws.send(JSON.stringify({ type: 'response.output_audio.delta', delta: pcm.toString('base64') }));
+        ws.send(JSON.stringify({ type: 'response.done', response: {} }));
+        // What the user said is written down a moment after the answer, as OpenAI does.
+        ws.send(JSON.stringify({ type: 'conversation.item.input_audio_transcription.completed', transcript: 'hello chatgpt' }));
+      }
+      if (msg.type === 'response.create') {
+        ws.send(JSON.stringify({ type: 'response.output_audio_transcript.delta', delta: 'FAKE typed answer' }));
+        ws.send(JSON.stringify({ type: 'response.done', response: {} }));
+      }
+    });
+  });
+  await page.addInitScript(() => {
+    localStorage.setItem('atlas.cloud.key.openai', JSON.stringify('sk-voice-test-key'));
+    const Native = window.WebSocket;
+    window.__protocols = [];
+    window.WebSocket = class extends Native { constructor(url, protocols) { super(url, protocols); window.__protocols.push(protocols); } };
+  });
+  await page.goto(base + '/');
+  await go(page, 'live');
+  await page.waitForSelector('#livemode');
+  assert.equal(await page.inputValue('#livemode'), 'chatgpt');
+  assert.equal(await page.isChecked('#livepaidok'), false, 'paid voice is never pre-approved');
+  await page.click('#liveorb');
+  await page.waitForSelector('#livestatus >> text=ChatGPT voice is paid');
+  assert.equal(sockets.length, 0, 'nothing is sent before the tick');
+  await page.check('#livepaidok');
+  await page.selectOption('#livevoice', 'cedar');
+  await page.click('#liveorb');
+  await page.waitForSelector('#livesaid >> text=FAKE chatgpt hi');
+  await page.waitForSelector('#liveheard >> text=hello chatgpt');
+  const url = new URL(sockets[0].url());
+  assert.equal(url.host, 'api.openai.com');
+  assert.equal(url.searchParams.get('model'), 'gpt-realtime', 'the released full model before mini and preview');
+  assert.ok(!url.search.includes('sk-'), 'the key is not in the URL');
+  assert.deepEqual(await page.evaluate(() => window.__protocols.at(-1)), ['realtime', 'openai-insecure-api-key.sk-voice-test-key']);
+  const session = got.find((m) => m.type === 'session.update').session;
+  assert.equal(session.type, 'realtime');
+  assert.equal(session.audio.output.voice, 'cedar');
+  assert.deepEqual(session.audio.input.format, { type: 'audio/pcm', rate: 24000 });
+  assert.match(session.instructions, /never claim you did/);
+  const audio = got.find((m) => m.type === 'input_audio_buffer.append').audio;
+  assert.equal(Buffer.from(audio, 'base64').length, 4800, '100 ms of 24 kHz 16-bit audio');
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('atlas.os.chat.v1') || '[]').length === 2);
+  // With the camera on, the current picture goes with the next thing the user says.
+  await page.click('#livecam');
+  await page.waitForFunction(() => document.querySelector('#livevideo').videoWidth > 0);
+  sockets[0].send(JSON.stringify({ type: 'input_audio_buffer.speech_started' }));
+  for (let i = 0; i < 40 && !got.some((m) => m.item && m.item.content[0].type === 'input_image'); i += 1) await page.waitForTimeout(100);
+  assert.match(got.find((m) => m.item && m.item.content[0].type === 'input_image').item.content[0].image_url, /^data:image\/jpeg;base64,/);
+  await page.click('#livecam');
+  await page.fill('#livetyped', 'typed to chatgpt');
+  await page.press('#livetyped', 'Enter');
+  await page.waitForSelector('#livesaid >> text=FAKE typed answer');
+  assert.deepEqual(got.find((m) => m.item && m.item.content[0].type === 'input_text').item.content, [{ type: 'input_text', text: 'typed to chatgpt' }]);
+  await page.click('#liveend');
+  await page.waitForSelector('#liveorb[data-state=idle]');
+  const history = await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.chat.v1')));
+  assert.deepEqual(history.map((m) => m.content), ['hello chatgpt', 'FAKE chatgpt hi', 'typed to chatgpt', 'FAKE typed answer']);
+  assert.match(history[1].meta, /OpenAI/);
+  assert.ok(!/base64|sk-voice/.test(JSON.stringify(history)), 'no audio, pictures or key in history');
+  const prefs = await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.live.v1')));
+  assert.equal(prefs.paidOk, true);
+  assert.equal(prefs.openaiVoice, 'cedar');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});

@@ -1708,27 +1708,34 @@
     const p = providers.find((x) => x.id === saved.provider && cloudKey.get(x.id));
     const model = p ? String(saved.model || '').trim() : '';
     const turnsReady = !!(p && model);
-    const gemKey = cloudKey.get('gemini');
+    // Real-time voice keys: Gemini (free tier) and OpenAI (paid, only when the user picks it).
+    const rtKeys = { gemini: cloudKey.get('gemini'), openai: cloudKey.get('openai') };
     let rtLoaded = false;
-    if (gemKey) { try { await loadScript('/static/realtime.js'); rtLoaded = window.AtlasRealtime.supported(); } catch { /* offline: turn by turn only */ } }
+    if (rtKeys.gemini || rtKeys.openai) { try { await loadScript('/static/realtime.js'); rtLoaded = window.AtlasRealtime.supported(); } catch { /* offline: turn by turn only */ } }
+    const rtService = { realtime: 'gemini', chatgpt: 'openai' };
+    const canUse = { realtime: rtLoaded && !!rtKeys.gemini, chatgpt: rtLoaded && !!rtKeys.openai, turns: turnsReady };
     const routeText = el('span', { text: 'Set up AI Chat first' });
     v.append(screenHead('live', el('span', { class: 'routebadge cloud' }, [icon('cloud'), routeText])));
     if (!turnsReady && !rtLoaded) {
       v.append(el('div', { class: 'panel hud livesetup' }, [
-        el('p', { text: 'Live needs an AI key. For real-time voice like the Gemini app, add a free Google Gemini key in AI Chat. With any other provider, pick a model in AI Chat and Live works turn by turn.' }),
+        el('p', { text: 'Live needs an AI key. For real-time voice like the Gemini app, add a free Google Gemini key in AI Chat (a paid OpenAI key gives ChatGPT\'s voice). With any other provider, pick a model in AI Chat and Live works turn by turn.' }),
         el('button', { class: 'btn primary', type: 'button', text: 'Open AI Chat', onclick: () => document.querySelector('.nav [data-section=chat]').click() }),
       ]));
       return;
     }
-    const prefs = { mode: 'realtime', voice: 'Puck', ...storageGet(LIVE_KEY, {}) };
-    if (!rtLoaded) prefs.mode = 'turns';
-    if (!turnsReady) prefs.mode = 'realtime';
-    // Real-time models for this Gemini key, looked up now so a tap on the orb starts at once.
-    let liveModels = null;
-    const liveModelsReady = rtLoaded
-      ? api('/api/llm/models', { method: 'POST', body: { provider: 'gemini', api_key: gemKey, live: true } })
-        .then((d) => { liveModels = d.models || []; }, (err) => { liveModels = []; liveModels.error = err.message; })
-      : null;
+    const prefs = { mode: 'realtime', voice: 'Puck', openaiVoice: 'marin', paidOk: false, ...storageGet(LIVE_KEY, {}) };
+    // ChatGPT voice is paid, so it is never picked for the user; it is used only after they choose it.
+    if (!canUse[prefs.mode]) prefs.mode = ['realtime', 'turns', 'chatgpt'].find((m) => canUse[m]);
+    // Real-time models for each key, looked up early so a tap on the orb starts at once.
+    const liveModels = {};
+    function lookupModels(mode) {
+      const service = rtService[mode];
+      if (!service || !canUse[mode] || liveModels[service]) return;
+      const entry = { list: null };
+      entry.ready = api('/api/llm/models', { method: 'POST', body: { provider: service, api_key: rtKeys[service], live: true } })
+        .then((d) => { entry.list = d.models || []; }, (err) => { entry.list = []; entry.error = err.message; });
+      liveModels[service] = entry;
+    }
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const canSpeak = 'speechSynthesis' in window;
@@ -1750,40 +1757,54 @@
     const typedSend = el('button', { class: 'btn primary', type: 'submit', text: 'Ask' });
     const status = el('p', { class: 'tiny muted', id: 'livestatus', role: 'status' });
     const modeSel = el('select', { id: 'livemode', 'aria-label': 'How Live talks' }, [
-      el('option', { value: 'realtime', text: 'Real-time (Gemini)', disabled: !rtLoaded }),
+      el('option', { value: 'realtime', text: 'Real-time (Gemini)', disabled: !canUse.realtime }),
+      el('option', { value: 'chatgpt', text: 'ChatGPT (paid)', disabled: !canUse.chatgpt }),
       el('option', { value: 'turns', text: 'Turn by turn' + (p ? ' (' + p.label + ')' : ''), disabled: !turnsReady }),
     ]);
     modeSel.value = prefs.mode;
-    const voiceSel = el('select', { id: 'livevoice', 'aria-label': 'Gemini voice' },
-      (rtLoaded ? window.AtlasRealtime.VOICES : []).map((name) => el('option', { value: name, text: name })));
-    if (rtLoaded && window.AtlasRealtime.VOICES.includes(prefs.voice)) voiceSel.value = prefs.voice;
+    const voiceSel = el('select', { id: 'livevoice', 'aria-label': 'Voice' });
     const muteBtn = el('button', { class: 'btn chip hidden', type: 'button', id: 'livemute' }, [icon('mic'), 'Mute']);
     const voiceRow = el('label', { class: 'liveopt field' }, [el('span', { class: 'tiny muted', text: 'Voice' }), voiceSel]);
+    const paidOk = el('input', { type: 'checkbox', id: 'livepaidok', checked: prefs.paidOk === true });
+    const paidRow = el('label', { class: 'check livepaid' }, [paidOk, el('span', { text: 'I understand ChatGPT voice is billed to my OpenAI account for every minute it is on.' })]);
     const noteBox = el('div', { class: 'livenotes' });
-    const isRT = () => modeSel.value === 'realtime';
+    const isRT = () => !!rtService[modeSel.value];
+    const service = () => rtService[modeSel.value];
+    const voiceKey = () => (service() === 'openai' ? 'openaiVoice' : 'voice');
     function applyMode() {
       voiceRow.classList.toggle('hidden', !isRT());
-      routeText.textContent = isRT() ? 'Talks to Google Gemini' : 'Sends to ' + p.label;
-      const notes = [];
+      paidRow.classList.toggle('hidden', service() !== 'openai');
       if (isRT()) {
+        const voices = window.AtlasRealtime.SERVICES[service()].voices;
+        voiceSel.replaceChildren(...voices.map((name) => el('option', { value: name, text: name[0].toUpperCase() + name.slice(1) })));
+        voiceSel.value = voices.includes(prefs[voiceKey()]) ? prefs[voiceKey()] : voices[0];
+        lookupModels(modeSel.value);
+      }
+      routeText.textContent = service() === 'gemini' ? 'Talks to Google Gemini' : service() === 'openai' ? 'Talks to OpenAI (paid)' : 'Sends to ' + p.label;
+      const notes = [];
+      if (service() === 'gemini') {
         notes.push('Real-time voice streams your microphone straight from this browser to Google Gemini with your own Gemini key, and Gemini answers in its own voice. Talk over it to interrupt. With the camera or screen on, Gemini sees about one picture a second. Free Gemini keys have daily limits for this.');
         if (!turnsReady) notes.push('Turn by turn needs a model picked in AI Chat.');
+      } else if (service() === 'openai') {
+        notes.push('ChatGPT voice uses OpenAI\'s Realtime API, the voice technology behind ChatGPT, with your own OpenAI key, straight from this browser. It is paid: every minute of talking is billed to your OpenAI account and costs much more than text chat (see OpenAI\'s pricing page). With the camera or screen on, the current picture goes with each thing you say.');
       } else {
         if (!SR) notes.push('This browser cannot listen, so type your questions. Chrome, Edge and Safari can listen.');
         notes.push('Listening uses your browser\'s speech service (Chrome and Edge send the audio to Google or Microsoft). Camera and screen pictures go to ' + p.label + ' only with a question. For pictures, pick a model that can see images, such as Gemini 2.5 Flash or Llama 4 Scout on Groq.');
-        if (!rtLoaded) notes.push('For real-time voice like the Gemini app, add a free Google Gemini key in AI Chat.');
+        if (!canUse.realtime) notes.push('For real-time voice like the Gemini app, add a free Google Gemini key in AI Chat.');
       }
       if (!canShare) notes.push('Screen sharing works in desktop browsers only; phones and iPads do not allow it. The camera works everywhere.');
       noteBox.replaceChildren(...notes.map((t) => el('p', { class: 'tiny muted', text: t })));
       if (!state.running) setState('idle', isRT() || SR ? 'Tap to start' : 'Type below');
     }
     modeSel.addEventListener('change', () => { prefs.mode = modeSel.value; storageSet(LIVE_KEY, prefs); applyMode(); });
-    voiceSel.addEventListener('change', () => { prefs.voice = voiceSel.value; storageSet(LIVE_KEY, prefs); });
+    voiceSel.addEventListener('change', () => { prefs[voiceKey()] = voiceSel.value; storageSet(LIVE_KEY, prefs); });
+    paidOk.addEventListener('change', () => { prefs.paidOk = paidOk.checked; storageSet(LIVE_KEY, prefs); });
 
     v.append(el('div', { class: 'livegrid' }, [
       el('div', { class: 'panel hud livestage' }, [orb, heard, said, video]),
       el('div', { class: 'panel hud livecontrols' }, [
         el('div', { class: 'liveopts' }, [el('label', { class: 'liveopt field' }, [el('span', { class: 'tiny muted', text: 'Mode' }), modeSel]), voiceRow]),
+        paidRow,
         el('div', { class: 'chips-row' }, [camBtn, flipBtn, shareBtn, muteBtn, endBtn]),
         el('form', { class: 'liverow field', onsubmit: (e) => { e.preventDefault(); const t = typed.value.trim(); if (t) { typed.value = ''; ask(t); } } }, [typed, typedSend]),
         status,
@@ -1821,7 +1842,7 @@
       flipBtn.classList.toggle('hidden', which !== 'camera');
       state.stream.getVideoTracks()[0].addEventListener('ended', stopMedia);
       if (state.rt) state.rt.setVideo(video);
-      status.textContent = (which === 'camera' ? 'Camera on.' : 'Sharing your screen.') + (isRT() ? ' Gemini can see it while Live is on.' : ' ATLAS sees the current picture each time you ask.');
+      status.textContent = (which === 'camera' ? 'Camera on.' : 'Sharing your screen.') + (service() === 'gemini' ? ' Gemini can see it while Live is on.' : service() === 'openai' ? ' ChatGPT sees the current picture each time you speak.' : ' ATLAS sees the current picture each time you ask.');
     }
 
     const startCamera = () => useStream(() => navigator.mediaDevices.getUserMedia({ video: { facingMode: state.facing }, audio: false }), 'camera');
@@ -1924,22 +1945,31 @@
       'You cannot act on the user\'s device, open apps or send messages; never claim you did.';
 
     async function startRealtime() {
+      const svc = service();
+      const label = window.AtlasRealtime.SERVICES[svc].label;
+      if (svc === 'openai' && !paidOk.checked) {
+        status.textContent = 'ChatGPT voice is paid. Tick the box to confirm it may be billed to your OpenAI account, or pick Real-time (Gemini).';
+        paidOk.focus();
+        return;
+      }
       state.running = true;
       endBtn.disabled = false;
       modeSel.disabled = true;
       setState('thinking', 'Connecting…');
-      status.textContent = 'Connecting to Google Gemini…';
-      if (!liveModels) await liveModelsReady;
+      status.textContent = 'Connecting to ' + label + '…';
+      lookupModels(modeSel.value);
+      const models = liveModels[svc];
+      if (!models.list) await models.ready;
       if (!state.running) return;
-      if (!liveModels.length) {
+      if (!models.list.length) {
         end();
-        status.textContent = liveModels.error ? 'Could not reach Google Gemini: ' + liveModels.error : 'Your Gemini key lists no real-time voice models. Use Turn by turn instead.';
+        status.textContent = models.error ? 'Could not reach ' + label + ': ' + models.error : 'Your ' + (svc === 'openai' ? 'OpenAI' : 'Gemini') + ' key lists no real-time voice models. Use Turn by turn instead.';
         return;
       }
-      const liveModel = liveModels[0];
+      const liveModel = models.list[0];
       try {
         state.rt = await window.AtlasRealtime.start({
-          key: gemKey, model: liveModel, voice: voiceSel.value, system: RT_SYSTEM,
+          service: svc, key: rtKeys[svc], model: liveModel, voice: voiceSel.value, system: RT_SYSTEM,
           worklet: '/static/live-worklet.js' + (ASSET_VERSION ? '?v=' + ASSET_VERSION : ''),
           on: {
             state: (s) => setState(s === 'connecting' ? 'thinking' : s, s === 'speaking' ? 'Speaking… tap to stop' : s === 'listening' ? 'Listening… tap to end' : 'Connecting…'),
@@ -1949,7 +1979,7 @@
             turn: async ({ user, model: answer }) => {
               // Text only: the audio and pictures are never stored.
               if (user) await store.appendChat({ role: 'user', content: user });
-              if (answer) await store.appendChat({ role: 'assistant', content: answer, meta: 'Live · real-time · Google Gemini · ' + liveModel });
+              if (answer) await store.appendChat({ role: 'assistant', content: answer, meta: 'Live · real-time · ' + label + ' · ' + liveModel });
             },
             ended: (reason) => {
               const wasRunning = state.running;
@@ -1967,7 +1997,7 @@
       if (!state.running) { state.rt.end(); state.rt = null; return; }
       if (state.stream) state.rt.setVideo(video);
       muteBtn.classList.remove('hidden');
-      status.textContent = 'Live with Gemini (' + liveModel + '). Talk any time; speak over it to interrupt.';
+      status.textContent = 'Live with ' + label + ' (' + liveModel + '). Talk any time; speak over it to interrupt.' + (svc === 'openai' ? ' Billed to your OpenAI account while on.' : '');
       log('live real-time started with ' + liveModel);
     }
 
