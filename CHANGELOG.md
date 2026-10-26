@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.18.1 — 2026-10-26
+
+From the owner's feedback ("Home page mai duplicates and copy dikh rahe hai"):
+- **Fix: Home title showed copies of itself.** A decorative "glitch" effect drew two coloured copies of "What should we get done?" over the title; on phones the copies did not line up and looked like duplicated text. Removed, together with the blurred glow behind "get done?". The same effect is gone from the name on About.
+- Repeated wording removed: the plan's model name was shown twice (badge and note), the badge now just says PLAN READY. The intro line no longer repeats the "never executed" note that the plan card already gives.
+- Overview numbers show 0, 1, 2 instead of 00, 01, 02.
+
 ## 0.18.0 — 2026-10-26
 
 From the owner's feedback on the phone:

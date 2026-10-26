@@ -1,4 +1,4 @@
-# Handoff — 2026-10-26 (v0.18.0)
+# Handoff — 2026-10-26 (v0.18.1)
 
 ## State
 
@@ -10,6 +10,7 @@
 ## Recent versions
 
 - v0.18.0: Live screen (voice, camera, screen share), About the developer, key remembered by default, Auto-switch switch in Integrations.
+- v0.18.1: Home cleaned up: the title no longer shows a copied layer of its own text, repeated wording removed.
 - v0.17.0: thinking level, images and PDFs, steering mid-reply, chat compression; Stop now cancels the request online.
 - v0.16.1: removed the top-bar task box.
 - v0.16.0: neon redesign with dark/light theme, per-screen colours and transitions; System screen; Automations and Devices back as web versions.

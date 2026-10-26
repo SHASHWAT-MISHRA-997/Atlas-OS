@@ -223,7 +223,7 @@
       const withKey = s.cloud.providers.filter((p) => cloudKey.get(p.id)).map((p) => p.label);
       chip.firstElementChild.className = 'dot' + (withKey.length ? '' : ' warn');
       $('statuschiptext').textContent = 'ONLINE · v' + s.api.version;
-      $('keystat').textContent = String(withKey.length).padStart(2, '0');
+      $('keystat').textContent = String(withKey.length);
       showKeyBanner(withKey.length ? null : s.cloud.providers);
       $('topstatus').replaceChildren(el('span', { class: 'dot ' + (withKey.length ? '' : 'off'), 'aria-hidden': 'true' }), el('span', { text: withKey.length ? 'AI ready' : 'Add your key' }));
       $('topstatus').title = withKey.length ? 'Using your own key: ' + withKey.join(', ') : 'Open AI Chat and add your free API key';
@@ -304,8 +304,8 @@
       }
       if (task.state !== 'Succeeded') throw new Error(task.error ? task.error.message : 'The plan is still running; see Tasks.');
       planCount += 1;
-      $('taskcount').textContent = String(planCount).padStart(2, '0');
-      $('taskstate').textContent = 'PLAN READY · ' + saved.model.toUpperCase();
+      $('taskcount').textContent = String(planCount);
+      $('taskstate').textContent = 'PLAN READY';
       message.textContent = 'Written by ' + saved.model + ' ' + saved.where + '. ' + (task.output.notice || 'Nothing was executed.');
       box.replaceChildren(...task.output.steps.map((step, i) => el('div', { class: 'task' }, [
         el('span', { class: 'icon', text: String(i + 1).padStart(2, '0') }),
@@ -1906,7 +1906,7 @@
     v.append(screenHead('about'), el('div', { class: 'aboutgrid' }, [
       el('div', { class: 'panel hud aboutcard' }, [
         el('div', { class: 'avatar', 'aria-hidden': 'true', text: 'SM' }),
-        el('h3', { class: 'glitch', 'data-text': d.name, text: d.name }),
+        el('h3', { text: d.name }),
         el('p', { class: 'mono aboutrole', text: d.role }),
         el('p', { text: d.intro }),
         el('div', { class: 'chips-row' }, d.skills.map((x) => el('span', { class: 'skill', text: x }))),

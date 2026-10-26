@@ -14,7 +14,7 @@ Fakes live only in tests and in the preview server behind `ATLAS_FAKE_MODEL=1`; 
 
 ## Latest report
 
-Date: 2026-10-26, v0.17.0. Environment: Linux container, Node 22, Chromium 141. **Not Safari, not a real phone.**
+Date: 2026-10-26, v0.18.1. Environment: Linux container, Node 22, Chromium 141. **Not Safari, not a real phone.**
 
 | Command | Passed | Failed |
 |---|---|---|
