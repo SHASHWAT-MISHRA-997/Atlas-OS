@@ -19,12 +19,13 @@ Date: 2026-10-26, v0.17.0. Environment: Linux container, Node 22, Chromium 141. 
 | Command | Passed | Failed |
 |---|---|---|
 | `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 29 | 0 |
-| `node --test netlify/tests/e2e.test.mjs` | 9 | 0 |
+| `node --test netlify/tests/e2e.test.mjs` | 11 | 0 |
 | `detect-secrets scan` (excluding tests, node_modules, dist) | no findings | — |
 
 ## Manual checks still needed
 
 - Real provider chat with the owner's own key on the live site, including a thinking level, a photo and a PDF.
+- Live on a real phone and iPad: microphone, speech, camera; screen sharing on a computer.
 - Real iPad and iPhone in Safari: layout, Paste button, Add to Home Screen.
 - Real Android phone: install prompt.
 - Reminder notifications on a real phone (iPhone and iPad only allow them for an installed app).
