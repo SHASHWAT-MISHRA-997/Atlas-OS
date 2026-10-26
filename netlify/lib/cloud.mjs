@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.19.0';
+export const VERSION = '0.20.0';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -193,8 +193,8 @@ async function* generate(fetchImpl, p, model, messages, maxTokens, signal, resul
   }
 }
 
-// Offered when the key cannot list models; Google's documented native-audio Live model.
-const LIVE_SUGGESTED = ['gemini-2.5-flash-native-audio-preview-12-2025'];
+// Offered when the key cannot list models: Google's native-audio Live model, OpenAI's realtime model.
+const LIVE_SUGGESTED = { gemini: ['gemini-2.5-flash-native-audio-preview-12-2025'], openai: ['gpt-realtime'] };
 
 async function listModels(fetchImpl, p, live) {
   let url = p.base + '/models';
@@ -205,6 +205,12 @@ async function listModels(fetchImpl, p, live) {
   if (!response.ok) throw upstreamError(response.status, await response.text().catch(() => ''), p.key);
   const data = await response.json();
   let ids;
+  if (live && p.id === 'openai') {
+    // Real-time voice with a paid OpenAI key: its realtime models, released ones before previews, full before mini.
+    ids = (data.data || []).map((m) => m.id).filter((id) => typeof id === 'string' && MODEL_RE.test(id) && /realtime/.test(id));
+    const rank = (id) => (/preview/.test(id) ? 2 : 0) + (/mini/.test(id) ? 1 : 0);
+    return [...new Set(ids)].sort((a, b) => rank(a) - rank(b) || a.length - b.length || b.localeCompare(a));
+  }
   if (live) {
     // Real-time voice: Gemini models that support the Live API (bidiGenerateContent), native audio first.
     ids = (data.models || []).filter((m) => (m.supportedGenerationMethods || []).includes('bidiGenerateContent'))
@@ -337,13 +343,13 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
       const { p, error } = withKey(providers, body.provider, body.api_key);
       if (error) return fail(422, 'invalid_request', error);
       const live = body.live === true;
-      if (live && p.kind !== 'gemini') return fail(422, 'invalid_request', 'Real-time voice needs a Google Gemini key.');
+      if (live && !LIVE_SUGGESTED[p.id]) return fail(422, 'invalid_request', 'Real-time voice needs a Google Gemini key or an OpenAI key.');
       try {
         return json({ provider: p.id, models: await listModels(fetchImpl, p, live) });
       } catch (err) {
         if (err.badKey) return fail(502, 'provider_error', err.message);
         // Some providers do not list models for every key; offer the documented default so chat still works.
-        return json({ provider: p.id, models: (live ? LIVE_SUGGESTED : p.suggested) || [], suggested_only: true, warning: 'Could not list models: ' + err.message });
+        return json({ provider: p.id, models: (live ? LIVE_SUGGESTED[p.id] : p.suggested) || [], suggested_only: true, warning: 'Could not list models: ' + err.message });
       }
     } catch (err) {
       console.error('atlas cloud error:', err && err.name);

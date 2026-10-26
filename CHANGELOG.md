@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.20.0 — 2026-10-26
+
+The owner asked for ChatGPT's voice too:
+- **ChatGPT voice in Live (paid, optional).** With your own OpenAI key, Live has a third mode, "ChatGPT (paid)", using OpenAI's Realtime API (the voice technology behind ChatGPT): streaming speech both ways, talk over it to interrupt, 10 OpenAI voices, typed questions, and with the camera or screen on the current picture goes with each thing you say. Text of both sides is saved to AI Chat history.
+- It is never chosen for you: it starts only after you tick that every minute is billed to your OpenAI account. The free Gemini real-time mode stays the default when you have a Gemini key.
+- The browser connects straight to `wss://api.openai.com` with your key; the site's CSP allows that one address.
+- **Not yet tried against OpenAI's real service**; the browser test uses a FAKE OpenAI Realtime server.
+
 ## 0.19.0 — 2026-10-26
 
 From the owner's request for a voice experience "exact same" as Gemini and ChatGPT:

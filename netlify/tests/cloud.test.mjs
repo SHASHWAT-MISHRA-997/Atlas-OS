@@ -170,7 +170,7 @@ test('model lists are filtered; listing errors fall back to a suggestion, bad ke
   assert.equal((await t.call('models', { method: 'POST', body: { provider: 'groq' } })).status, 422);
 });
 
-test('real-time voice models: Gemini Live models only, native audio first; other providers refused', async () => {
+test('real-time voice models: Gemini Live and OpenAI Realtime models only; other providers refused', async () => {
   const t = setup({ upstream: async () => Response.json({ models: [
     { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent', 'countTokens'] },
     { name: 'models/gemini-live-2.5-flash', supportedGenerationMethods: ['bidiGenerateContent'] },
@@ -184,7 +184,11 @@ test('real-time voice models: Gemini Live models only, native audio first; other
   assert.ok(!(await plain.json()).models.some((m) => /live|native-audio/.test(m)), 'chat models stay chat models');
   const groq = await t.call('models', { method: 'POST', body: { provider: 'groq', api_key: KEY, live: true } });
   assert.equal(groq.status, 422);
-  assert.match((await groq.json()).detail, /Gemini key/);
+  assert.match((await groq.json()).detail, /Gemini key or an OpenAI key/);
+  const oa = setup({ upstream: async () => Response.json({ data: [{ id: 'gpt-6' }, { id: 'gpt-4o-realtime-preview' }, { id: 'gpt-realtime-mini' }, { id: 'gpt-realtime' }, { id: 'gpt-realtime-2025-08-28' }] }) });
+  const openai = await (await oa.call('models', { method: 'POST', body: { provider: 'openai', api_key: KEY, live: true } })).json();
+  assert.deepEqual(openai.models, ['gpt-realtime', 'gpt-realtime-2025-08-28', 'gpt-realtime-mini', 'gpt-4o-realtime-preview'], 'OpenAI realtime models only, released and full first');
+  assert.equal(oa.calls[0].init.headers.Authorization, 'Bearer ' + KEY);
   const down = setup({ upstream: async () => new Response('{"error":{"message":"unavailable"}}', { status: 503 }) });
   const fallback = await (await down.call('models', { method: 'POST', body: { provider: 'gemini', api_key: KEY, live: true } })).json();
   assert.deepEqual(fallback.models, ['gemini-2.5-flash-native-audio-preview-12-2025']);
