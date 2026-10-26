@@ -64,6 +64,9 @@ test('a visitor gets a free key, chats, plans, and the key stays on their phone'
     ['https://console.groq.com/keys', 'https://aistudio.google.com/apikey', 'https://openrouter.ai/settings/keys'], 'free providers only, no paid OpenAI');
   await noOllama(page);
   await shot(page, '1-home');
+  // The Home title is drawn once: no copied text layered over it.
+  assert.deepEqual(await page.$eval('#home h1', (h) => [getComputedStyle(h, '::before').content, getComputedStyle(h, '::after').content]), ['none', 'none']);
+  assert.equal(await page.textContent('#taskcount'), '0');
   await noSideScroll(page);
 
   // Home plan without a key explains what to do.
