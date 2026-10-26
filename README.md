@@ -7,7 +7,7 @@ screen as an app. It is **not** an operating system and **not** production-ready
 describes only what exists today; see [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the
 status of every feature.
 
-## What it does today (v0.17.0)
+## What it does today (v0.18.0)
 
 - **AI Chat** with your own key. Free providers come first: Groq, Google Gemini and OpenRouter
   (free models only). Paid OpenAI is optional and clearly marked. Replies stream, can be stopped,
@@ -15,6 +15,9 @@ status of every feature.
 - **Chat extras:** a thinking level (Auto, Low, Medium, High); images and PDFs (PDFs with Gemini,
   OpenRouter or OpenAI); steer a reply by sending a new message while it is still coming; long chats
   are compressed into a model-written summary so they keep their context.
+- **Live:** talk hands-free; ATLAS answers aloud and can look through your camera (or a shared
+  screen on a computer).
+- **About:** who builds ATLAS OS.
 - **Auto-switch:** when the free provider you picked hits its limit or is down, the message goes to
   another free provider you added a key for. It never switches into a paid provider.
 - **Memory:** notes you save are sent with chats so answers fit you. Export them as JSON.

@@ -23,7 +23,9 @@ function startServer(port, extraEnv) {
 
 before(async () => {
   server = await startServer(port, { ATLAS_FAKE_MODEL: '1' });
-  browser = await chromium.launch(process.env.ATLAS_E2E_CHROMIUM ? { executablePath: process.env.ATLAS_E2E_CHROMIUM } : {});
+  // A fake camera (a test pattern) so Live can be tested without a real device.
+  const args = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'];
+  browser = await chromium.launch(process.env.ATLAS_E2E_CHROMIUM ? { executablePath: process.env.ATLAS_E2E_CHROMIUM, args } : { args });
 });
 
 after(async () => {
@@ -317,7 +319,7 @@ test('every screen opens on a phone with no console errors or warnings', async (
   page.on('console', (m) => { if (m.type() === 'warning') warnings.push(m.text()); });
   await page.goto(base + '/');
   await page.waitForSelector('#topstatus .dot');
-  for (const s of ['chat', 'tasks', 'automations', 'memory', 'integrations', 'devices', 'system', 'home']) {
+  for (const s of ['chat', 'live', 'tasks', 'automations', 'memory', 'integrations', 'devices', 'system', 'about', 'home']) {
     await go(page, s);
     await page.waitForSelector('#' + (s === 'home' ? 'home' : 'subview') + ':not(.hidden)');
     await noSideScroll(page);
@@ -513,6 +515,94 @@ test('chat extras: thinking level, image and PDF attachments, steering mid-reply
   await page.waitForSelector('.emptychat');
   assert.equal(await page.evaluate(() => localStorage.getItem('atlas.os.chat.summary.v1')), null);
   await shot(page, '9-chat-extras');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+test('a key typed in Model settings is remembered after the app is closed and opened again', async () => {
+  const context = await browser.newContext({ viewport: { width: 360, height: 760 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+  const page = await context.newPage();
+  await page.goto(base + '/');
+  await go(page, 'chat');
+  // First a Groq key from the card, then a Gemini key typed into Model settings.
+  await page.fill('#keycardinput', 'gsk_first_key_123');
+  await page.click('#keycardsave');
+  await page.waitForSelector('#keycard', { state: 'hidden' });
+  await page.click('#chatsettings summary');
+  await page.evaluate(() => { const s = document.querySelector('#atlasprovider'); s.value = 'gemini'; s.dispatchEvent(new Event('change')); });
+  await page.waitForSelector('#keycard:not(.hidden)');
+  await page.evaluate(() => { const s = document.querySelector('#atlasprovider'); s.value = 'groq'; s.dispatchEvent(new Event('change')); });
+  await page.waitForSelector('#keycard', { state: 'hidden' });
+  await page.selectOption('#atlasprovider', 'openrouter');
+  await page.waitForSelector('#keycard:not(.hidden)');
+  // With a key for another provider, the settings key box is the other way in; its tick starts on.
+  await page.evaluate(() => { document.querySelector('#keycard').classList.add('hidden'); document.querySelector('#chatsettings').classList.remove('hidden'); });
+  assert.equal(await page.isChecked('#atlasremember'), true, 'a new key is remembered by default');
+  await page.fill('#atlaskey', 'sk-or-typed-key-456');
+  await page.dispatchEvent('#atlaskey', 'change');
+  await page.close();
+  const again = await context.newPage();
+  await again.goto(base + '/');
+  await again.waitForSelector('#topstatus >> text=AI ready');
+  assert.equal(await again.evaluate(() => JSON.parse(localStorage.getItem('atlas.cloud.key.groq'))), 'gsk_first_key_123');
+  assert.equal(await again.evaluate(() => JSON.parse(localStorage.getItem('atlas.cloud.key.openrouter'))), 'sk-or-typed-key-456');
+  // Auto-switch can be turned off (and on) from Integrations, and AI Chat follows.
+  await go(again, 'integrations');
+  await again.click('#autoswitchtoggle');
+  await again.waitForSelector('#autoswitchtoggle >> text=Turn on');
+  await go(again, 'chat');
+  await again.click('#chatsettings summary');
+  assert.equal(await again.isChecked('#atlasfallback'), false);
+  await go(again, 'integrations');
+  await again.click('#autoswitchtoggle');
+  await again.waitForSelector('#autoswitchtoggle >> text=Turn off');
+  await context.close();
+});
+
+test('Live: camera picture goes with a question, the answer is shown and saved; About shows the developer', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  const sent = [];
+  await page.route('**/cloud/chat', async (route) => { sent.push(JSON.parse(route.request().postData())); await route.continue(); });
+  await page.goto(base + '/');
+  await go(page, 'live');
+  await page.waitForSelector('text=Live uses the provider, model and key you set in AI Chat');
+  await go(page, 'chat');
+  await page.fill('#keycardinput', 'gsk_live_key_123');
+  await page.click('#keycardsave');
+  await page.waitForSelector('#keycard', { state: 'hidden' });
+  await page.waitForFunction(() => /^fake-/.test(document.querySelector('#atlasmodel')?.value || ''));
+  await page.click('#chatsettings summary');
+  await page.selectOption('#atlasmodelpick', 'fake-large');
+  await go(page, 'live');
+  await page.waitForSelector('#liveorb');
+  await page.click('#livecam');
+  await page.waitForSelector('#livecam.on');
+  await page.waitForFunction(() => document.querySelector('#livevideo').videoWidth > 0);
+  await page.fill('#livetyped', 'what do you see');
+  await page.press('#livetyped', 'Enter');
+  await page.waitForSelector('#livesaid >> text=FAKE reply to: what do you see [1 file]');
+  const body = sent.at(-1);
+  assert.equal(body.model, 'fake-large', 'Live uses the AI Chat model');
+  assert.equal(body.messages.at(-1).attachments[0].mime, 'image/jpeg');
+  assert.match(body.messages[0].content, /Live voice mode/);
+  await page.waitForSelector('#livestatus >> text=looking at your camera');
+  await page.click('#livecam');
+  await page.waitForSelector('#livecam:not(.on)');
+  const history = await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.chat.v1')));
+  assert.equal(history.at(-2).content, 'what do you see');
+  assert.ok(!JSON.stringify(history).includes('base64'), 'pictures are not stored');
+  // Leaving the screen turns the camera off.
+  await page.click('#livecam');
+  await page.waitForSelector('#livecam.on');
+  await go(page, 'about');
+  assert.equal(await page.evaluate(() => document.querySelectorAll('video').length), 0);
+  await page.waitForSelector('text=Shashwat Mishra');
+  const links = await page.$$eval('.aboutlinks a', (as) => as.map((a) => [a.textContent, a.href, a.rel]));
+  assert.deepEqual(links.map((l) => l[0]), ['Portfolio', 'LinkedIn', 'GitHub', 'YouTube']);
+  assert.equal(links[0][1], 'https://shashwatmishra-portfolio.netlify.app/');
+  assert.ok(links.every((l) => /noopener/.test(l[2])));
+  await noSideScroll(page);
+  await shot(page, '10-about');
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });

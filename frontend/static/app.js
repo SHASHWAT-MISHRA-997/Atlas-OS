@@ -48,6 +48,11 @@
     shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
     logo: 'M12 3.5 21.5 20h-19z',
     stop: 'M7 7h10v10H7z',
+    mic: 'M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3zM19 10v1a7 7 0 0 1-14 0v-1M12 18v4M8 22h8',
+    camera: 'M3 7h4l2-3h6l2 3h4v13H3zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+    screen: 'M3 4h18v12H3zM8 20h8M12 16v4',
+    user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
+    flip: 'M4 7h13l-3-3M20 17H7l3 3',
     clip: 'M16.5 6.5 8.4 14.6a2 2 0 0 0 2.8 2.8l8.1-8.1a4 4 0 0 0-5.6-5.6L5.6 11.8a6 6 0 0 0 8.5 8.5L20 14.4',
     lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
     cloud: 'M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.7 1.5A4 4 0 0 0 6 19z',
@@ -116,7 +121,11 @@
     remembered(id) { return !!storageGet(CLOUD_KEY_PREFIX + id, ''); },
     set(id, key, remember) {
       sessionKeys[id] = key;
-      if (remember && key) storageSet(CLOUD_KEY_PREFIX + id, key);
+      if (remember && key) {
+        storageSet(CLOUD_KEY_PREFIX + id, key);
+        // Ask the browser not to clear ATLAS's storage when the device is low on space.
+        try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch { /* not offered */ }
+      }
       else try { localStorage.removeItem(CLOUD_KEY_PREFIX + id); } catch { /* storage off */ }
     },
   };
@@ -943,7 +952,8 @@
       updatePill();
       keyInput.placeholder = 'Paste your ' + p.label + ' key';
       keyInput.value = cloudKey.get(p.id);
-      rememberKey.checked = cloudKey.remembered(p.id);
+      // A new key is remembered unless the visitor unticks it; a key kept for this visit only stays so.
+      rememberKey.checked = cloudKey.remembered(p.id) || !cloudKey.get(p.id);
       keyLink.href = p.key_url;
       keyLink.textContent = 'Get a free ' + p.label + ' key';
       updateKeyCard();
@@ -1584,6 +1594,8 @@
     integrations: ['plug', '05', 'Integrations', 'What ATLAS is connected to, and what it cannot do.'],
     devices: ['phone', '06', 'Devices', 'This device, its data, and moving to another device.'],
     system: ['cpu', '07', 'System', 'Status, updates, theme and the activity log.'],
+    live: ['mic', '08', 'Live', 'Talk hands-free. ATLAS can look through your camera or at a shared screen.'],
+    about: ['user', '09', 'About the developer', 'Who builds ATLAS OS.'],
   };
 
   function screenHead(page, extra) {
@@ -1623,11 +1635,290 @@
     v.append(screenHead('integrations'), el('div', { class: 'tilegrid' }, [
       tile('cloud', 'AI providers', keys.length ? 'on' : 'off', keys.length ? 'CONNECTED' : 'NO KEY',
         s ? (keys.length ? 'Your key: ' + keys.map((p) => p.label).join(', ') + '. ' : 'Add a key in AI Chat. ') + 'Available: ' + s.cloud.providers.map((p) => p.label).join(', ') + '.' : 'ATLAS online is unreachable.'),
-      tile('repeat', 'Auto-switch', 'on', 'ON', 'If one free provider hits its limit, another free key you added answers. Never a paid one.'),
+      autoSwitchTile(),
       tile('memory', 'Memory', 'on', 'BROWSER', 'Saved in this browser and sent with chats when memory is on.'),
-      tile('send', 'Voice', 'on', 'BROWSER', 'Dictation and read-aloud use this browser\'s speech service.'),
+      tile('mic', 'Voice and Live', 'on', 'BROWSER', 'Dictation, read-aloud and Live use this browser\'s speech service. Live can also use your camera or a shared screen.'),
       tile('globe', 'Other devices', 'on', 'SAME LINK', 'Open the same link anywhere. Move your data with Devices → Export and Import.'),
-      tile('bell', 'Calendar, email, messaging', 'plan', 'NOT YET', 'Not connected. ATLAS will say so instead of pretending.'),
+      tile('bell', 'Calendar, email, messaging', 'plan', 'NOT YET', 'Not built yet. Reading your Google Calendar or Gmail needs a Google sign-in app that the owner registers first. Until then ATLAS says so instead of pretending.'),
+    ]));
+  }
+
+  /** The auto-switch setting, with a switch that is the same setting as in AI Chat. */
+  function autoSwitchTile() {
+    const isOn = () => storageGet(CHAT_SETTINGS_KEY, {}).fallback !== false;
+    const state = el('span', { class: 'state' });
+    const button = el('button', { class: 'btn chip', type: 'button', id: 'autoswitchtoggle', role: 'switch' });
+    const paint = () => {
+      const on = isOn();
+      state.className = 'state ' + (on ? 'on' : 'off');
+      state.textContent = on ? 'ON' : 'OFF';
+      button.textContent = on ? 'Turn off' : 'Turn on';
+      button.setAttribute('aria-checked', String(on));
+    };
+    button.addEventListener('click', () => {
+      storageSet(CHAT_SETTINGS_KEY, { ...storageGet(CHAT_SETTINGS_KEY, {}), fallback: !isOn() });
+      paint();
+      log('auto-switch ' + (isOn() ? 'on' : 'off'));
+    });
+    paint();
+    return el('div', { class: 'tile' }, [
+      el('div', { class: 'tiletop' }, [icon('repeat'), state]),
+      el('strong', { text: 'Auto-switch' }),
+      el('p', { text: 'If one free provider hits its limit, another free key you added answers. Never a paid one.' }),
+      button,
+    ]);
+  }
+
+  // ---------------------------------------------------------------- live
+  // A hands-free conversation, like the assistant on a phone: ATLAS listens, answers aloud and
+  // listens again. With the camera or a shared screen on, the current picture goes with each
+  // question so the model can see it. It uses the AI Chat provider, model and key; listening and
+  // speaking use the browser's speech service. Nothing is recorded or stored except the chat text.
+  let live = null;
+
+  function stopLive() {
+    if (live) live.end();
+    live = null;
+  }
+
+  async function renderLive(v) {
+    await ensureStatus();
+    const saved = storageGet(CHAT_SETTINGS_KEY, {});
+    const providers = systemStatus ? systemStatus.cloud.providers : [];
+    const p = providers.find((x) => x.id === saved.provider && cloudKey.get(x.id));
+    const model = p ? String(saved.model || '').trim() : '';
+    v.append(screenHead('live', el('span', { class: 'routebadge cloud' }, [icon('cloud'), el('span', { text: p ? 'Sends to ' + p.label : 'Set up AI Chat first' })])));
+    if (!p || !model) {
+      v.append(el('div', { class: 'panel hud livesetup' }, [
+        el('p', { text: 'Live uses the provider, model and key you set in AI Chat. Add a key there and pick a model, then come back.' }),
+        el('button', { class: 'btn primary', type: 'button', text: 'Open AI Chat', onclick: () => document.querySelector('.nav [data-section=chat]').click() }),
+      ]));
+      return;
+    }
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const canSpeak = 'speechSynthesis' in window;
+    const canShare = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+    const voicePrefs = { lang: '', voice: '', ...storageGet(VOICE_KEY, {}) };
+    const lang = voicePrefs.lang || navigator.language || 'en-US';
+
+    const orbLabel = el('span', { class: 'orblabel', text: 'Tap to start' });
+    const orb = el('button', { class: 'liveorb', id: 'liveorb', type: 'button', 'data-state': 'idle', 'aria-label': 'Start Live' }, [el('span', { class: 'orbcore' }), orbLabel]);
+    const heard = el('p', { class: 'liveheard', id: 'liveheard' });
+    const said = el('p', { class: 'livesaid', id: 'livesaid', 'aria-live': 'polite' });
+    const video = el('video', { id: 'livevideo', class: 'livevideo hidden', playsinline: '', muted: '', autoplay: '' });
+    video.muted = true;
+    const camBtn = el('button', { class: 'btn chip', type: 'button', id: 'livecam' }, [icon('camera'), 'Camera']);
+    const flipBtn = el('button', { class: 'btn chip hidden', type: 'button', id: 'liveflip' }, [icon('flip'), 'Switch camera']);
+    const shareBtn = el('button', { class: 'btn chip', type: 'button', id: 'livescreen', disabled: !canShare }, [icon('screen'), 'Share screen']);
+    const endBtn = el('button', { class: 'btn chip', type: 'button', id: 'liveend', disabled: true }, [icon('stop', 'filled'), 'End']);
+    const typed = el('input', { id: 'livetyped', autocomplete: 'off', placeholder: SR ? 'Or type a question…' : 'Type a question…', 'aria-label': 'Type a question for Live' });
+    const typedSend = el('button', { class: 'btn primary', type: 'submit', text: 'Ask' });
+    const status = el('p', { class: 'tiny muted', id: 'livestatus', role: 'status' });
+    const notes = [];
+    if (!SR) notes.push('This browser cannot listen, so type your questions. Chrome, Edge and Safari can listen.');
+    if (!canShare) notes.push('Screen sharing works in desktop browsers only; phones and iPads do not allow it. The camera works everywhere.');
+    notes.push('Listening uses your browser\'s speech service (Chrome and Edge send the audio to Google or Microsoft). Camera and screen pictures go to ' + p.label + ' only with a question. For pictures, pick a model that can see images, such as Gemini 2.5 Flash or Llama 4 Scout on Groq.');
+
+    v.append(el('div', { class: 'livegrid' }, [
+      el('div', { class: 'panel hud livestage' }, [orb, heard, said, video]),
+      el('div', { class: 'panel hud livecontrols' }, [
+        el('div', { class: 'chips-row' }, [camBtn, flipBtn, shareBtn, endBtn]),
+        el('form', { class: 'liverow', onsubmit: (e) => { e.preventDefault(); const t = typed.value.trim(); if (t) { typed.value = ''; ask(t); } } }, [typed, typedSend]),
+        status,
+        ...notes.map((t) => el('p', { class: 'tiny muted', text: t })),
+      ]),
+    ]));
+
+    const state = { running: false, recognition: null, stream: null, facing: 'environment', turns: [], controller: null };
+    const setState = (s, label) => { orb.dataset.state = s; orbLabel.textContent = label; orb.setAttribute('aria-label', label); };
+
+    function stopMedia() {
+      if (state.stream) state.stream.getTracks().forEach((t) => t.stop());
+      state.stream = null;
+      video.srcObject = null;
+      video.classList.add('hidden');
+      flipBtn.classList.add('hidden');
+      camBtn.classList.remove('on');
+      shareBtn.classList.remove('on');
+    }
+
+    async function useStream(getStream, which) {
+      stopMedia();
+      try {
+        state.stream = await getStream();
+      } catch (err) {
+        status.textContent = (which === 'camera' ? 'Camera' : 'Screen sharing') + ' was not allowed: ' + (err.message || err.name) + '. Allow it in the browser\'s site settings.';
+        return;
+      }
+      video.srcObject = state.stream;
+      video.classList.remove('hidden');
+      try { await video.play(); } catch { /* starts when visible */ }
+      (which === 'camera' ? camBtn : shareBtn).classList.add('on');
+      flipBtn.classList.toggle('hidden', which !== 'camera');
+      state.stream.getVideoTracks()[0].addEventListener('ended', stopMedia);
+      status.textContent = (which === 'camera' ? 'Camera on.' : 'Sharing your screen.') + ' ATLAS sees the current picture each time you ask.';
+    }
+
+    const startCamera = () => useStream(() => navigator.mediaDevices.getUserMedia({ video: { facingMode: state.facing }, audio: false }), 'camera');
+    camBtn.addEventListener('click', () => (camBtn.classList.contains('on') ? (stopMedia(), status.textContent = 'Camera off.') : startCamera()));
+    flipBtn.addEventListener('click', () => { state.facing = state.facing === 'user' ? 'environment' : 'user'; startCamera(); });
+    shareBtn.addEventListener('click', () => (shareBtn.classList.contains('on') ? (stopMedia(), status.textContent = 'Screen sharing stopped.')
+      : useStream(() => navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }), 'screen')));
+
+    /** The current camera or screen picture as a JPEG attachment, or null. */
+    async function frame() {
+      if (!state.stream || !video.videoWidth) return null;
+      const scale = Math.min(1, 1024 / Math.max(video.videoWidth, video.videoHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+      return blob ? { mime: 'image/jpeg', name: (shareBtn.classList.contains('on') ? 'screen' : 'camera') + '.jpg', data: await readAsBase64(blob) } : null;
+    }
+
+    function listen() {
+      if (!state.running || !SR) return;
+      const r = new SR();
+      r.lang = lang;
+      r.interimResults = true;
+      r.maxAlternatives = 1;
+      let finalText = '';
+      r.onresult = (e) => {
+        const res = e.results[e.results.length - 1];
+        heard.textContent = res[0].transcript;
+        if (res.isFinal) finalText = res[0].transcript.trim();
+      };
+      r.onerror = (e) => {
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { status.textContent = 'Microphone permission is blocked. Allow it in the browser\'s site settings, or type below.'; end(); }
+      };
+      r.onend = () => {
+        if (state.recognition !== r || !state.running) return;
+        state.recognition = null;
+        if (finalText) ask(finalText); else setTimeout(listen, 250);
+      };
+      state.recognition = r;
+      setState('listening', 'Listening… tap to stop');
+      try { r.start(); } catch { setTimeout(listen, 500); }
+    }
+
+    function speak(text) {
+      return new Promise((resolve) => {
+        if (!canSpeak) { resolve(); return; }
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lang;
+        const chosen = window.speechSynthesis.getVoices().find((x) => x.name === voicePrefs.voice);
+        if (chosen) u.voice = chosen;
+        u.onend = resolve;
+        u.onerror = resolve;
+        setState('speaking', 'Speaking… tap to interrupt');
+        window.speechSynthesis.speak(u);
+      });
+    }
+
+    async function ask(text) {
+      if (state.recognition) { const r = state.recognition; state.recognition = null; try { r.abort(); } catch { /* already stopped */ } }
+      if (state.controller) state.controller.abort();
+      if (canSpeak) window.speechSynthesis.cancel();
+      const controller = new AbortController();
+      state.controller = controller;
+      heard.textContent = text;
+      said.textContent = '';
+      setState('thinking', 'Thinking…');
+      const picture = await frame();
+      const system = 'You are ATLAS OS in Live voice mode. Answer in one to three short spoken sentences, with no markdown or lists, in the language the user speaks (English, Hindi or Hinglish). ' +
+        'When an image is attached it is the current view of the user\'s camera or screen: describe only what you can actually see, and say so when it is unclear. You cannot act on the user\'s device; never claim you did.';
+      const messages = [{ role: 'system', content: system }, ...state.turns.slice(-10), { role: 'user', content: text, ...(picture ? { attachments: [picture] } : {}) }];
+      try {
+        const data = await api('/api/llm/chat', { method: 'POST', signal: controller.signal, body: { provider: p.id, model, api_key: cloudKey.get(p.id), messages, max_tokens: 400 } });
+        if (state.controller !== controller) return;
+        const answer = String(data.answer || '').trim();
+        said.textContent = answer;
+        state.turns.push({ role: 'user', content: text + (picture ? ' [with a ' + picture.name.replace('.jpg', '') + ' picture]' : '') }, { role: 'assistant', content: answer });
+        // Live turns also appear in AI Chat history (text only, never the pictures).
+        await store.appendChat({ role: 'user', content: text, ...(picture ? { files: [picture.name] } : {}) });
+        await store.appendChat({ role: 'assistant', content: answer, meta: 'Live · ' + describeAnswer(data, p.label) });
+        status.textContent = 'Answered by ' + p.label + (picture ? ', looking at your ' + picture.name.replace('.jpg', '') : '') + '.';
+        log('live answer from ' + p.id + '/' + model);
+        await speak(answer);
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        said.textContent = '';
+        status.textContent = 'Live could not answer: ' + err.message + (picture ? ' If this model cannot see images, pick one that can (for example Gemini 2.5 Flash).' : '');
+        log('live failed: ' + err.message);
+      } finally {
+        if (state.controller === controller) state.controller = null;
+      }
+      if (state.running) listen(); else setState('idle', SR ? 'Tap to start' : 'Type below');
+    }
+
+    function start() {
+      state.running = true;
+      endBtn.disabled = false;
+      status.textContent = SR ? 'Live is on. Speak now; ATLAS answers aloud and then listens again.' : 'Live is on. Type your questions below.';
+      if (SR) listen(); else setState('idle', 'Type below');
+    }
+
+    function end() {
+      state.running = false;
+      if (state.recognition) { const r = state.recognition; state.recognition = null; try { r.abort(); } catch { /* already stopped */ } }
+      if (state.controller) state.controller.abort();
+      if (canSpeak) window.speechSynthesis.cancel();
+      stopMedia();
+      endBtn.disabled = true;
+      setState('idle', SR ? 'Tap to start' : 'Type below');
+    }
+
+    orb.addEventListener('click', () => {
+      if (!state.running) { start(); return; }
+      if (orb.dataset.state === 'speaking') { window.speechSynthesis.cancel(); return; } // interrupt; it listens again
+      if (orb.dataset.state === 'listening') { end(); status.textContent = 'Live ended.'; }
+    });
+    endBtn.addEventListener('click', () => { end(); status.textContent = 'Live ended.'; });
+    if (!SR) setState('idle', 'Type below');
+    live = { end };
+  }
+
+  // ---------------------------------------------------------------- about
+  const DEVELOPER = {
+    name: 'Shashwat Mishra',
+    role: 'AI & Robotics Engineer · MTech graduate',
+    intro: 'I build AI assistants around a simple idea: an assistant should work for you and keep what it learns to itself. ATLAS OS is one of them: one web app for every device, where each person uses their own AI key and their data stays in their own browser.',
+    skills: ['Machine Learning', 'Generative AI', 'Robotics', 'Data Science', 'React', 'Power BI'],
+    projects: [
+      ['ATLAS OS', 'This app: an AI assistant in the browser, on any device, with your own key.', 'https://atlas-os-sm.netlify.app'],
+      ['SMARAN.AI', 'An AI assistant that runs on your own machine, built and maintained by Shashwat.', 'https://smaran-ai.netlify.app'],
+      ['SMARAN.AI Codex', 'A VS Code extension.', 'https://marketplace.visualstudio.com/items?itemName=ShashwatMishra.smaran-ai-codex'],
+    ],
+    links: [
+      ['globe', 'Portfolio', 'https://shashwatmishra-portfolio.netlify.app/'],
+      ['link', 'LinkedIn', 'https://www.linkedin.com/in/sm980/'],
+      ['code', 'GitHub', 'https://github.com/SHASHWAT-MISHRA-997'],
+      ['send', 'YouTube', 'https://www.youtube.com/@ShashwatMishra-997'],
+    ],
+  };
+
+  function renderAbout(v) {
+    const d = DEVELOPER;
+    const a = (href, children, cls) => el('a', { href, target: '_blank', rel: 'noopener noreferrer', class: cls || '' }, children);
+    v.append(screenHead('about'), el('div', { class: 'aboutgrid' }, [
+      el('div', { class: 'panel hud aboutcard' }, [
+        el('div', { class: 'avatar', 'aria-hidden': 'true', text: 'SM' }),
+        el('h3', { class: 'glitch', 'data-text': d.name, text: d.name }),
+        el('p', { class: 'mono aboutrole', text: d.role }),
+        el('p', { text: d.intro }),
+        el('div', { class: 'chips-row' }, d.skills.map((x) => el('span', { class: 'skill', text: x }))),
+        el('div', { class: 'aboutlinks' }, d.links.map(([ic, label, href]) => a(href, [icon(ic), el('span', { text: label })], 'btn chip'))),
+      ]),
+      el('div', { class: 'panel hud' }, [
+        el('div', { class: 'sectionhead' }, [el('h2', { text: 'Projects' })]),
+        el('div', { class: 'timeline' }, d.projects.map(([name, text, href]) => el('div', { class: 'task tlitem' }, [
+          a(href, [el('strong', { text: name })]), el('p', { class: 'muted', text: text }),
+        ]))),
+        el('p', { class: 'tiny muted', text: 'ATLAS OS v' + ((systemStatus && systemStatus.api.version) || '') + '. Questions and bug reports are welcome on LinkedIn.' }),
+      ]),
     ]));
   }
 
@@ -2050,6 +2341,7 @@
     window.scrollTo({ top: 0 });
     document.body.dataset.page = page;
     stopTaskPolling();
+    stopLive();
     const v = $('subview');
     if (page === 'home') {
       $('home').classList.remove('hidden');
@@ -2068,6 +2360,8 @@
     if (page === 'integrations') return renderIntegrations(v);
     if (page === 'devices') return renderDevices(v);
     if (page === 'system') return renderSystem(v);
+    if (page === 'live') return renderLive(v);
+    if (page === 'about') return renderAbout(v);
   }
 
   /** Restart the screen-change animation. */

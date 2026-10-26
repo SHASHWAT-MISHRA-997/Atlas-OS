@@ -8,7 +8,7 @@
   --line:rgba(0,240,255,.13);--line-strong:rgba(0,240,255,.3);
   --text:#e8f6ff;--muted:#8094b6;--soft:#bccbe4;
   --neon:#00f0ff;--neon-2:#ff2bd6;--neon-3:#39ff88;--warnc:#ffcc33;--danger:#ff4d6d;--ok:#39ff88;
-  --c-home:#00f0ff;--c-chat:#ff2bd6;--c-tasks:#39ff88;--c-automations:#ff9f1c;--c-memory:#b47bff;--c-integrations:#3d8bff;--c-devices:#2bffcf;--c-system:#ffe14d;
+  --c-home:#00f0ff;--c-chat:#ff2bd6;--c-tasks:#39ff88;--c-automations:#ff9f1c;--c-memory:#b47bff;--c-integrations:#3d8bff;--c-devices:#2bffcf;--c-system:#ffe14d;--c-live:#ff4d6d;--c-about:#7df9ff;
   --accent:var(--c-home);
   --accent-ink:#04060d;--mixc:#fff;
   --gridc:rgba(0,240,255,.16);--glow-a:rgba(255,43,214,.22);--glow-b:rgba(0,240,255,.2);--scanc:rgba(255,255,255,.025);
@@ -24,7 +24,7 @@
   --line:rgba(16,42,96,.12);--line-strong:rgba(0,110,160,.3);
   --text:#0a1430;--muted:#55658a;--soft:#2a3b60;
   --neon:#0089b3;--neon-2:#c0178c;--neon-3:#0a8f4f;--warnc:#a86b00;--danger:#c81e45;--ok:#0a8f4f;
-  --c-home:#0089b3;--c-chat:#c0178c;--c-tasks:#0a8f4f;--c-automations:#c25e00;--c-memory:#7a3fe0;--c-integrations:#1f5fd6;--c-devices:#008f78;--c-system:#8a6d00;
+  --c-home:#0089b3;--c-chat:#c0178c;--c-tasks:#0a8f4f;--c-automations:#c25e00;--c-memory:#7a3fe0;--c-integrations:#1f5fd6;--c-devices:#008f78;--c-system:#8a6d00;--c-live:#c81e45;--c-about:#00809a;
   --accent-ink:#fff;--mixc:#000;
   --gridc:rgba(0,110,170,.13);--glow-a:rgba(192,23,140,.12);--glow-b:rgba(0,137,179,.14);--scanc:rgba(0,30,80,.018);
   --shadow:0 10px 30px rgba(20,40,90,.12);
@@ -36,7 +36,7 @@
   --line:rgba(16,42,96,.12);--line-strong:rgba(0,110,160,.3);
   --text:#0a1430;--muted:#55658a;--soft:#2a3b60;
   --neon:#0089b3;--neon-2:#c0178c;--neon-3:#0a8f4f;--warnc:#a86b00;--danger:#c81e45;--ok:#0a8f4f;
-  --c-home:#0089b3;--c-chat:#c0178c;--c-tasks:#0a8f4f;--c-automations:#c25e00;--c-memory:#7a3fe0;--c-integrations:#1f5fd6;--c-devices:#008f78;--c-system:#8a6d00;
+  --c-home:#0089b3;--c-chat:#c0178c;--c-tasks:#0a8f4f;--c-automations:#c25e00;--c-memory:#7a3fe0;--c-integrations:#1f5fd6;--c-devices:#008f78;--c-system:#8a6d00;--c-live:#c81e45;--c-about:#00809a;
   --accent-ink:#fff;--mixc:#000;
   --gridc:rgba(0,110,170,.13);--glow-a:rgba(192,23,140,.12);--glow-b:rgba(0,137,179,.14);--scanc:rgba(0,30,80,.018);
   --shadow:0 10px 30px rgba(20,40,90,.12);
@@ -49,6 +49,8 @@ body[data-page=memory]{--accent:var(--c-memory)}
 body[data-page=integrations]{--accent:var(--c-integrations)}
 body[data-page=devices]{--accent:var(--c-devices)}
 body[data-page=system]{--accent:var(--c-system)}
+body[data-page=live]{--accent:var(--c-live)}
+body[data-page=about]{--accent:var(--c-about)}
 /* Glow tints follow the accent; set again wherever the accent changes (custom properties inherit computed). */
 body,.nav button,.keybanner{--accent-2:color-mix(in srgb,var(--accent) 72%,var(--mixc));--glowc:color-mix(in srgb,var(--accent) 55%,transparent);--glowsoft:color-mix(in srgb,var(--accent) 18%,transparent);--tint:color-mix(in srgb,var(--accent) 10%,transparent)}
 
@@ -101,7 +103,7 @@ code{font-size:13px}
 .nav button .ic{width:19px;height:19px;color:var(--accent);transition:filter .2s}
 .nav button.active{background:var(--tint);color:var(--text);border-color:var(--glowsoft);box-shadow:inset 3px 0 0 var(--accent),0 0 18px var(--glowsoft)}
 .nav button.active .ic{filter:drop-shadow(0 0 6px var(--accent))}
-.nav [data-section=home]{--navc:var(--c-home)}.nav [data-section=chat]{--navc:var(--c-chat)}.nav [data-section=tasks]{--navc:var(--c-tasks)}.nav [data-section=automations]{--navc:var(--c-automations)}.nav [data-section=memory]{--navc:var(--c-memory)}.nav [data-section=integrations]{--navc:var(--c-integrations)}.nav [data-section=devices]{--navc:var(--c-devices)}.nav [data-section=system]{--navc:var(--c-system)}
+.nav [data-section=home]{--navc:var(--c-home)}.nav [data-section=chat]{--navc:var(--c-chat)}.nav [data-section=tasks]{--navc:var(--c-tasks)}.nav [data-section=automations]{--navc:var(--c-automations)}.nav [data-section=memory]{--navc:var(--c-memory)}.nav [data-section=integrations]{--navc:var(--c-integrations)}.nav [data-section=devices]{--navc:var(--c-devices)}.nav [data-section=system]{--navc:var(--c-system)}.nav [data-section=live]{--navc:var(--c-live)}.nav [data-section=about]{--navc:var(--c-about)}
 .sidefoot{margin-top:auto;display:grid;gap:8px}
 .statuschip{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--field);color:var(--soft);font:12.5px var(--mono);text-align:left;letter-spacing:.3px}
 .statuschip:hover{border-color:var(--line-strong);color:var(--text)}
@@ -276,6 +278,34 @@ progress::-moz-progress-bar{background:linear-gradient(90deg,var(--accent),var(-
 .timeline>.task:before{content:"";position:absolute;left:-21px;top:18px;width:12px;height:12px;border-radius:50%;background:var(--bg);border:2px solid var(--accent);box-shadow:0 0 10px var(--glowc)}
 .timeline>.task.paused:before{border-color:var(--muted);box-shadow:none}
 
+/* live */
+.livegrid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;align-items:start}
+.livestage{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;min-height:320px;justify-content:center}
+.liveorb{position:relative;display:grid;place-items:center;width:168px;height:168px;border-radius:50%;border:1px solid var(--glowc);background:radial-gradient(circle at 50% 40%,color-mix(in srgb,var(--accent) 35%,transparent),transparent 70%),var(--field);color:var(--text);cursor:pointer;box-shadow:0 0 40px var(--glowsoft),inset 0 0 30px var(--glowsoft);transition:transform .2s}
+.liveorb:active{transform:scale(.97)}
+.orbcore{position:absolute;inset:34px;border-radius:50%;background:radial-gradient(circle,var(--accent),transparent 70%);opacity:.55;filter:blur(2px)}
+.orblabel{position:relative;font:600 12px var(--mono);letter-spacing:.6px;max-width:130px}
+.liveorb[data-state=listening] .orbcore{animation:orbpulse 1.1s ease-in-out infinite}
+.liveorb[data-state=thinking] .orbcore{animation:orbspin 1.2s linear infinite;background:conic-gradient(var(--accent),transparent,var(--accent))}
+.liveorb[data-state=speaking] .orbcore{animation:orbtalk .45s ease-in-out infinite alternate}
+@keyframes orbpulse{0%,100%{transform:scale(.8);opacity:.45}50%{transform:scale(1.08);opacity:.9}}
+@keyframes orbspin{to{transform:rotate(360deg)}}
+@keyframes orbtalk{from{transform:scale(.85)}to{transform:scale(1.12)}}
+.liveheard{margin:0;color:var(--muted);font-size:14px;min-height:1.2em}
+.livesaid{margin:0;font-size:18px;line-height:1.5;max-width:52ch}
+.livevideo{width:100%;max-height:300px;border-radius:14px;border:1px solid var(--line);background:#000;object-fit:contain}
+.livecontrols .chip.on{border-color:var(--accent);color:var(--accent);box-shadow:0 0 14px var(--glowsoft)}
+.liverow{display:flex;gap:8px;margin:12px 0 4px}.liverow input{flex:1;min-width:0}
+/* about */
+.aboutgrid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px;align-items:start}
+.aboutcard{text-align:left}
+.avatar{display:grid;place-items:center;width:84px;height:84px;border-radius:22px;font:800 30px var(--mono);letter-spacing:2px;color:var(--accent);border:1px solid var(--glowc);background:var(--field);box-shadow:0 0 30px var(--glowsoft),inset 0 0 18px var(--glowsoft)}
+.aboutcard h3{font-size:26px;margin:14px 0 2px}
+.aboutrole{color:var(--accent);margin:0 0 10px;font-size:13px}
+.skill{padding:4px 10px;border-radius:99px;border:1px solid var(--line-strong);font:12px var(--mono);color:var(--soft)}
+.aboutlinks{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.aboutlinks a{text-decoration:none}
+.tlitem a{color:inherit;text-decoration:none}.tlitem a:hover strong{color:var(--accent)}.tlitem p{margin:4px 0 0}
+@media(max-width:860px){.livegrid,.aboutgrid{grid-template-columns:1fr}}
 /* devices */
 .devicecard{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:center}
 .devicebig{display:grid;place-items:center;width:84px;height:84px;border-radius:20px;border:1px solid var(--glowc);color:var(--accent);background:var(--field);box-shadow:0 0 30px var(--glowsoft),inset 0 0 18px var(--glowsoft)}

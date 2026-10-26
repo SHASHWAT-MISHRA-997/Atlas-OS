@@ -1,4 +1,4 @@
-# Handoff — 2026-10-26 (v0.17.0)
+# Handoff — 2026-10-26 (v0.18.0)
 
 ## State
 
@@ -9,6 +9,7 @@
 
 ## Recent versions
 
+- v0.18.0: Live screen (voice, camera, screen share), About the developer, key remembered by default, Auto-switch switch in Integrations.
 - v0.17.0: thinking level, images and PDFs, steering mid-reply, chat compression; Stop now cancels the request online.
 - v0.16.1: removed the top-bar task box.
 - v0.16.0: neon redesign with dark/light theme, per-screen colours and transitions; System screen; Automations and Devices back as web versions.
@@ -20,7 +21,7 @@
 
 ## Verified in this session (Linux, Chromium, FAKE model)
 
-29 function/attack/size tests and 9 browser tests pass. iPad sizes were checked in Chromium only. With 4x CPU slowdown on slow 4G (headless, no GPU): first paint about 0.8 s, app ready about 1.4 s, idle animation about 52–58 fps, longest task 133 ms on load.
+29 function/attack/size tests and 11 browser tests pass. iPad sizes were checked in Chromium only. With 4x CPU slowdown on slow 4G (headless, no GPU): first paint about 0.8 s, app ready about 1.4 s, idle animation about 52–58 fps, longest task 133 ms on load.
 
 ## Next tasks, in order
 

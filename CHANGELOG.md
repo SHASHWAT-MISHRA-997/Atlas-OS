@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.18.0 — 2026-10-26
+
+From the owner's feedback on the phone:
+- **Live** (new screen): a hands-free conversation like a phone assistant. Tap the orb: ATLAS listens, answers aloud, then listens again; tap while it speaks to interrupt. Turn on the camera (front or back) or, on a computer, share the screen, and the current picture goes with each question so the model can see it. A text box works where the browser cannot listen. It uses the AI Chat provider, model and key; turns also appear in AI Chat history (text only). It is turn by turn through the browser's speech service, not Gemini Live's streaming audio, so there is a short pause before each answer.
+- **About the developer** (new screen): Shashwat Mishra, with portfolio, LinkedIn, GitHub and YouTube links and the SMARAN.AI projects.
+- **Fix: key forgotten after closing the app.** A key typed into Model settings was kept for that visit only, because its "Remember my key" tick started off. New keys are now remembered unless the tick is cleared, and ATLAS asks the browser to keep its storage.
+- **Fix: Auto-switch could not be turned off from Integrations.** The tile now has a Turn off / Turn on switch (the same setting as in AI Chat).
+- Integrations explains why calendar and email are not connected yet.
+- The site now allows the camera and screen capture for its own page only (`Permissions-Policy`).
+
 ## 0.17.0 — 2026-10-26
 
 The last items from the feature plan, for AI Chat:
