@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.22.1 — 2026-10-27
+
+The owner said the Live mode did not work properly:
+- **Fix: Live modes looked broken.** Modes without a key were greyed out and could not be picked, with no reason shown. Now every mode can be picked, and one that is not ready says what it needs ("· add key") and shows a key box right on the Live screen: paste a free Gemini key (or an OpenAI key for ChatGPT voice), press Save key, and the mode is ready. AI Chat keeps its provider (for example Groq).
+- In Turn by turn without a Gemini key, the same box offers (optionally) a Gemini key for the natural voice.
+
 ## 0.22.0 — 2026-10-27
 
 The owner said the spoken answers sounded robotic, not like ChatGPT or Gemini:
