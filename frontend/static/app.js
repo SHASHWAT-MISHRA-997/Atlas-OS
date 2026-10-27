@@ -1861,8 +1861,9 @@
   /**
    * Records one thing said, as a base64 WAV: it waits for speech, then stops after a short pause,
    * after 30 seconds, or when the signal aborts. Null when nothing is said within 8 seconds.
+   * With seconds, it records exactly that long, speech or not (the voice check).
    */
-  async function recordUtterance({ onLevel = () => {}, signal } = {}) {
+  async function recordUtterance({ onLevel = () => {}, signal, seconds } = {}) {
     const ctx = new AudioContext();
     let stream;
     try {
@@ -1883,12 +1884,13 @@
         const started = Date.now();
         let spoke = false;
         let quietSince = 0;
-        const finish = () => { node.port.onmessage = null; resolve(spoke ? kept : null); };
+        const finish = () => { node.port.onmessage = null; resolve(spoke || seconds ? kept : null); };
         if (signal) { if (signal.aborted) { finish(); return; } signal.addEventListener('abort', finish, { once: true }); }
         node.port.onmessage = (e) => {
           const now = Date.now();
           onLevel(e.data.level);
           kept.push(new Int16Array(e.data.pcm));
+          if (seconds) { if (now - started >= seconds * 1000) finish(); return; }
           if (e.data.level > 0.02) { spoke = true; quietSince = 0; } else if (!quietSince) quietSince = now;
           if (!spoke && kept.length > 3) kept.shift(); // keep a little sound from just before speech
           if ((spoke && quietSince && now - quietSince > 1200) || now - started > 30000 || (!spoke && now - started > 8000)) finish();
@@ -2194,6 +2196,14 @@
     const typed = el('input', { id: 'livetyped', autocomplete: 'off', placeholder: SR ? 'Or type a question…' : 'Type a question…', 'aria-label': 'Type a question for Live' });
     const typedSend = el('button', { class: 'btn primary', type: 'submit', text: 'Ask' });
     const status = el('p', { class: 'tiny muted', id: 'livestatus', role: 'status' });
+    /** A Live error says which step failed, the service's own words, and what to do. */
+    const failed = (step, detail, todo) => {
+      const words = String(detail || 'unknown error').trim();
+      status.textContent = step + ' failed: ' + words + (/[.!?]$/.test(words) ? ' ' : '. ') + 'What to do: ' + todo;
+      log('live: ' + step + ' failed: ' + words);
+    };
+    const testBtn = el('button', { class: 'btn chip', type: 'button', id: 'livetest' }, [icon('check'), 'Test my voice setup']);
+    const testBox = el('ol', { class: 'livetest hidden', id: 'livetestresults', 'aria-live': 'polite' });
     const modeSel = el('select', { id: 'livemode', 'aria-label': 'How Live talks' }, [
       el('option', { value: 'realtime', text: 'Real-time (Gemini)' + (canUse.realtime ? '' : ' · add key') }),
       el('option', { value: 'chatgpt', text: 'ChatGPT (paid)' + (canUse.chatgpt ? '' : ' · add key') }),
@@ -2296,6 +2306,8 @@
         el('div', { class: 'chips-row' }, [camBtn, flipBtn, shareBtn, muteBtn, endBtn]),
         el('form', { class: 'liverow field', onsubmit: (e) => { e.preventDefault(); const t = typed.value.trim(); if (t) { typed.value = ''; ask(t); } } }, [typed, typedSend]),
         status,
+        el('div', { class: 'chips-row' }, [testBtn]),
+        testBox,
         noteBox,
       ]),
     ]));
@@ -2320,7 +2332,8 @@
       try {
         state.stream = await getStream();
       } catch (err) {
-        status.textContent = (which === 'camera' ? 'Camera' : 'Screen sharing') + ' was not allowed: ' + (err.message || err.name) + '. Allow it in the browser\'s site settings.';
+        failed(which === 'camera' ? 'Turning on the camera' : 'Sharing the screen', err.message || err.name,
+          err.name === 'NotAllowedError' ? 'allow it in the browser\'s site settings (the icon left of the address), then tap again.' : 'close other apps using it and tap again.');
         return;
       }
       video.srcObject = state.stream;
@@ -2356,6 +2369,7 @@
       const ctrl = new AbortController();
       state.recording = ctrl;
       setState('listening', 'Listening… tap to stop');
+      let step = 'Recording from the microphone';
       try {
         const audio = await recordUtterance({ signal: ctrl.signal, onLevel: (x) => orb.style.setProperty('--lvl', Math.min(0.5, x * 3).toFixed(3)) });
         if (state.recording !== ctrl || !state.running) return;
@@ -2363,13 +2377,15 @@
         orb.style.removeProperty('--lvl');
         if (!audio) { listen(); return; }
         setState('thinking', 'Writing down…');
+        step = 'Writing down what you said (' + (TRANSCRIBER_LABELS[transcriber()] || 'no key') + ')';
         const words = await transcribeSpeech(audio);
         if (!state.running) return;
         if (words) ask(words); else listen();
       } catch (err) {
         if (!state.running) return;
-        status.textContent = err.name === 'NotAllowedError' ? 'Microphone permission is blocked. Allow it in the browser\'s site settings, or type below.' : 'Live could not listen: ' + err.message;
         end();
+        if (err.name === 'NotAllowedError') failed('Microphone', 'permission is blocked', 'allow the microphone in the browser\'s site settings, or type below.');
+        else failed(step, err.message || err.name, step.startsWith('Writing') ? 'check that key in AI Chat → Model settings, or run Test my voice setup.' : 'check that no other app is using the microphone, or type below.');
       }
     }
 
@@ -2390,8 +2406,8 @@
       r.onerror = (e) => {
         // The speech API exists but has no service behind it (Brave): switch to recording.
         if (e.error === 'network' && canRecord() && transcriber()) { browserSpeechBroken = true; return; }
-        if (e.error === 'network') { status.textContent = 'This browser\'s speech service is not working. Add a free Groq or Gemini key in AI Chat, or type below.'; end(); return; }
-        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { status.textContent = 'Microphone permission is blocked. Allow it in the browser\'s site settings, or type below.'; end(); }
+        if (e.error === 'network') { end(); failed('Listening (browser speech service)', 'the service could not be reached', 'add a free Groq or Gemini key in AI Chat so ATLAS writes down what you say itself, or type below.'); return; }
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { end(); failed('Microphone', 'permission is blocked', 'allow the microphone in the browser\'s site settings, or type below.'); }
       };
       r.onend = () => {
         if (state.recognition !== r || !state.running) return;
@@ -2406,7 +2422,7 @@
     async function speak(text) {
       setState('speaking', 'Speaking… tap to interrupt');
       const r = await speakAloud(text, { lang });
-      if (r.error) status.textContent += ' The natural voice did not work (' + r.error + '), so your browser\'s voice spoke instead.';
+      if (r.error) status.textContent += ' Speaking in the natural voice failed: ' + r.error + ' Your browser\'s voice spoke instead. What to do: run Test my voice setup to check the voice key.';
     }
 
     async function ask(text) {
@@ -2441,8 +2457,8 @@
       } catch (err) {
         if (err.name === 'AbortError') return;
         said.textContent = '';
-        status.textContent = 'Live could not answer: ' + err.message + (picture ? ' If this model cannot see images, pick one that can (for example Gemini 2.5 Flash).' : '');
-        log('live failed: ' + err.message);
+        failed('Getting an answer from ' + p.label + ' (' + model + ')', err.message,
+          picture ? 'if this model cannot see images, pick one that can (for example Gemini 2.5 Flash) in AI Chat, or turn the camera off.' : 'check the key and model in AI Chat → Model settings, then ask again.');
       } finally {
         if (state.controller === controller) state.controller = null;
       }
@@ -2470,9 +2486,11 @@
       const models = liveModels[svc];
       if (!models.list) await models.ready;
       if (!state.running) return;
+      const keyName = svc === 'openai' ? 'OpenAI' : 'Gemini';
       if (!models.list.length) {
         end();
-        status.textContent = models.error ? 'Could not reach ' + label + ': ' + models.error : 'Your ' + (svc === 'openai' ? 'OpenAI' : 'Gemini') + ' key lists no real-time voice models. Use Turn by turn instead.';
+        if (models.error) failed('Finding a real-time model for your ' + keyName + ' key', models.error, 'check the key (AI Chat → Model settings) and your internet, then run Test my voice setup.');
+        else failed('Finding a real-time model for your ' + keyName + ' key', 'the key lists no real-time voice models', 'use Turn by turn, or make the key in Google AI Studio where the Live API is available.');
         return;
       }
       const liveModel = models.list[0];
@@ -2490,17 +2508,24 @@
               if (user) await store.appendChat({ role: 'user', content: user });
               if (answer) await store.appendChat({ role: 'assistant', content: answer, meta: 'Live · real-time · ' + label + ' · ' + liveModel });
             },
-            ended: (reason) => {
+            ended: (reason, info) => {
               const wasRunning = state.running;
               state.rt = null;
               if (wasRunning) end();
-              if (reason) { status.textContent = reason; log('live real-time ended: ' + reason); } else if (wasRunning) status.textContent = 'Live ended.';
+              if (!reason) { if (wasRunning) status.textContent = 'Live ended.'; return; }
+              if (info && info.step === 'connect') {
+                failed('Connecting to ' + label + ' (' + liveModel + ')', reason, svc === 'openai'
+                  ? 'check your OpenAI key, that your OpenAI account has credit, and your internet; then tap the orb again.'
+                  : 'check your Gemini key, that today\'s free Live limit is not used up, and your internet; then run Test my voice setup.');
+              } else failed('The ' + label + ' conversation', reason, 'tap the orb to start again; if it keeps stopping, run Test my voice setup.');
             },
           },
         });
       } catch (err) {
         end();
-        status.textContent = err.name === 'NotAllowedError' ? 'Microphone permission is blocked. Allow it in the browser\'s site settings.' : 'Real-time voice could not start: ' + (err.message || err.name);
+        if (err.step === 'microphone') failed('Turning on the microphone', err.name === 'NotAllowedError' ? 'permission is blocked' : err.message || err.name, 'allow the microphone in the browser\'s site settings (the icon left of the address), and close other apps using it.');
+        else if (err.step === 'audio') failed('Starting audio in the browser', err.message || err.name, 'reload the page; if it keeps failing, update the browser or try Chrome or Edge.');
+        else failed('Starting real-time voice', err.message || err.name, 'reload the page and try again.');
         return;
       }
       if (!state.running) { state.rt.end(); state.rt = null; return; }
@@ -2510,7 +2535,112 @@
       log('live real-time started with ' + liveModel);
     }
 
+    // "Test my voice setup": each step on its own, with pass/fail and the provider's exact words, so
+    // the owner can see which part of real-time voice, the natural voice or speech writing fails.
+    async function runVoiceCheck() {
+      if (state.running) { status.textContent = 'End Live first, then test.'; return; }
+      state.testing = true;
+      testBtn.disabled = true;
+      const STEPS = [
+        ['models', '1. Real-time models for your Gemini key'],
+        ['socket', '2. Gemini Live connection (setupComplete)'],
+        ['speak', '3. Natural voice (/cloud/speak)'],
+        ['transcribe', '4. Writing down 1 second of microphone (/cloud/transcribe)'],
+      ];
+      const rows = {};
+      testBox.replaceChildren(...STEPS.map(([id, label]) => {
+        const st = el('span', { class: 'state off', text: 'WAITING' });
+        const detail = el('p', { class: 'tiny muted' });
+        rows[id] = { st, detail };
+        return el('li', { 'data-step': id }, [el('div', { class: 'tiletop' }, [el('strong', { text: label }), st]), detail]);
+      }));
+      testBox.classList.remove('hidden');
+      const counts = { PASS: 0, FAIL: 0, SKIPPED: 0, WARN: 0 };
+      const mark = (id, result, text) => {
+        rows[id].st.className = 'state ' + ({ PASS: 'on', FAIL: 'fail', WARN: 'plan', RUNNING: 'plan', SKIPPED: 'off' })[result];
+        rows[id].st.textContent = result;
+        rows[id].detail.textContent = text;
+        if (result in counts) { counts[result] += 1; log('voice check ' + id + ': ' + result + ' ' + text); }
+      };
+      status.textContent = 'Testing your voice setup, one step at a time…';
+
+      const gem = cloudKey.get('gemini');
+      let liveModel = null;
+      if (!gem) {
+        mark('models', 'SKIPPED', 'No Gemini key. What to do: for real-time voice, pick Real-time (Gemini) and add a free Gemini key.');
+        mark('socket', 'SKIPPED', 'Needs a Gemini key.');
+      } else {
+        mark('models', 'RUNNING', 'Asking Google which real-time models your key can use…');
+        try {
+          const d = await api('/api/llm/models', { method: 'POST', body: { provider: 'gemini', api_key: gem, live: true } });
+          const list = d.models || [];
+          liveModel = list[0] || null;
+          if (!list.length) mark('models', 'FAIL', 'Your key lists no real-time voice models. What to do: use Turn by turn, or make the key in Google AI Studio.');
+          else if (d.suggested_only) mark('models', 'WARN', 'Google did not list models for this key (' + d.warning + '). Trying the usual model, ' + liveModel + '.');
+          else mark('models', 'PASS', list.length + ' found; Live uses ' + liveModel + '.');
+        } catch (err) {
+          mark('models', 'FAIL', err.message + ' What to do: check the Gemini key (AI Chat → Model settings) and your internet.');
+        }
+        if (!liveModel) mark('socket', 'SKIPPED', 'Needs a model from step 1.');
+        else {
+          mark('socket', 'RUNNING', 'Opening the Gemini Live connection…');
+          try {
+            await loadScript('/static/realtime.js');
+            const r = await window.AtlasRealtime.probe({ key: gem, model: liveModel, timeoutMs: 15000 });
+            if (r.ok) mark('socket', 'PASS', 'Google accepted the key and model and finished setup in ' + r.ms + ' ms.');
+            else mark('socket', 'FAIL', 'Google said: ' + r.error.replace(/\.$/, '') + '. What to do: check the key, that today\'s free Live limit is not used up, and that nothing (a VPN, firewall or Brave Shields) blocks generativelanguage.googleapis.com.');
+          } catch (err) {
+            mark('socket', 'FAIL', 'The real-time voice code could not load: ' + err.message + '. What to do: reload the page.');
+          }
+        }
+      }
+
+      const vp = naturalVoiceProvider();
+      if (!vp) mark('speak', 'SKIPPED', 'No Gemini key, so answers use your browser\'s own voice. What to do: add a free Gemini key for a natural voice.');
+      else {
+        mark('speak', 'RUNNING', 'Asking ' + NATURAL_LABELS[vp] + ' to speak a test sentence…');
+        try {
+          const d = await api('/api/llm/speak', { method: 'POST', body: { provider: vp, api_key: cloudKey.get(vp), text: 'Hello, this is ATLAS. Your voice works.', voice: naturalVoiceName(vp) } });
+          const seconds = atob(d.audio).length / 2 / d.rate;
+          mark('speak', 'PASS', NATURAL_LABELS[vp] + ' sent ' + seconds.toFixed(1) + ' s of speech (voice ' + naturalVoiceName(vp) + '); playing it now.');
+          stopSpeaking();
+          const ctx = speech.ctx || (speech.ctx = new AudioContext());
+          if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+          await playPcm(ctx, d.audio, d.rate, speech.gen);
+        } catch (err) {
+          mark('speak', 'FAIL', err.message + ' What to do: check the ' + NATURAL_LABELS[vp] + ' key; a used-up free quota resets the next day. Until then your browser\'s voice speaks.');
+        }
+      }
+
+      const tid = transcriber();
+      if (!canRecord()) mark('transcribe', 'SKIPPED', 'This browser cannot record audio here. What to do: use Chrome, Edge, Brave or Safari, or type.');
+      else if (!tid) mark('transcribe', 'SKIPPED', 'No Groq or Gemini key. ' + (browserSpeech() ? 'This browser uses its own speech service instead.' : 'What to do: add a free Groq or Gemini key so ATLAS can write down what you say.'));
+      else {
+        mark('transcribe', 'RUNNING', 'Recording 1 second: say something…');
+        let audio = null;
+        try {
+          audio = await recordUtterance({ seconds: 1 });
+        } catch (err) {
+          mark('transcribe', 'FAIL', 'The microphone ' + (err.name === 'NotAllowedError' ? 'permission is blocked' : 'could not record: ' + (err.message || err.name)) + '. What to do: allow the microphone in the browser\'s site settings.');
+        }
+        if (audio) {
+          mark('transcribe', 'RUNNING', 'Sending the recording to ' + TRANSCRIBER_LABELS[tid] + '…');
+          try {
+            const words = await transcribeSpeech(audio);
+            mark('transcribe', 'PASS', TRANSCRIBER_LABELS[tid] + ' answered. ' + (words ? 'Heard: "' + words + '"' : 'It heard no words, which is fine if you were quiet.'));
+          } catch (err) {
+            mark('transcribe', 'FAIL', err.message + ' What to do: check the ' + TRANSCRIBER_LABELS[tid] + ' key in AI Chat → Model settings.');
+          }
+        }
+      }
+      status.textContent = 'Voice check done: ' + counts.PASS + ' passed, ' + counts.FAIL + ' failed, ' + counts.WARN + ' with a warning, ' + counts.SKIPPED + ' skipped.';
+      state.testing = false;
+      testBtn.disabled = false;
+    }
+    testBtn.addEventListener('click', runVoiceCheck);
+
     function start() {
+      if (state.testing) { status.textContent = 'Wait for the voice check to finish.'; return; }
       if (!ready()) { applySetup(); status.textContent = setupText.textContent; (setupKeyRow.classList.contains('hidden') ? setupChat : setupKey).focus(); return; }
       if (isRT()) { startRealtime(); return; }
       state.running = true;

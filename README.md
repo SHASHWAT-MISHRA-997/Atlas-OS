@@ -20,7 +20,9 @@ status of every feature.
   other key it goes turn by turn. With a paid OpenAI key, ChatGPT's voice (OpenAI Realtime API)
   is available too, only after you tick that it is billed to your account. It can look through your camera (or a shared screen on a computer).
   Turn by turn and Read aloud speak in Gemini's natural voice when you have a Gemini key, and
-  otherwise in your browser's most natural voice.
+  otherwise in your browser's most natural voice. **Test my voice setup** on Live checks each part
+  (real-time models, the Gemini Live connection, the natural voice, writing down speech) and shows
+  the provider's exact error for any part that fails.
 - **Google Calendar and Gmail (read-only):** sign in with Google on the Integrations screen to see
   today's and tomorrow's events and your 10 latest unread emails (sender and subject). Nothing is
   sent, deleted or changed; the sign-in is kept in the page's memory only. Needs a Google OAuth

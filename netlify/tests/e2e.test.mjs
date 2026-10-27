@@ -702,7 +702,79 @@ test('Live real-time voice: streams the mic to Gemini Live, plays and shows the 
   await page.click('#liveorb');
   await page.waitForSelector('#livestatus >> text=API key not valid');
   await page.waitForSelector('#liveorb[data-state=idle]');
+  // The error names the step that failed and says what to do.
+  assert.match(await page.textContent('#livestatus'), /^Connecting to Google Gemini \(fake-live-native-audio\) failed: API key not valid\. Please pass a valid API key\. What to do: check your Gemini key/);
   await shot(page, '11-live-realtime');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+test('Test my voice setup: each step runs on its own and shows pass or fail with the provider\'s exact words', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  // FAKE services: a FAKE Gemini Live server in the browser, FAKE speech and transcription in the preview server.
+  const setups = [];
+  await page.routeWebSocket(/generativelanguage\.googleapis\.com/, (ws) => {
+    if (new URL(ws.url()).searchParams.get('key') === 'AIza-bad-key') { ws.close({ code: 1008, reason: 'API key not valid. Please pass a valid API key.' }); return; }
+    ws.onMessage((raw) => {
+      const msg = JSON.parse(String(raw));
+      if (msg.setup) { setups.push(msg.setup); ws.send(Buffer.from(JSON.stringify({ setupComplete: {} }))); }
+    });
+  });
+  const sent = { speak: [], transcribe: [] };
+  let failAll = false;
+  for (const path of ['speak', 'transcribe', 'models']) {
+    await page.route('**/cloud/' + path, async (route) => {
+      if (path !== 'models') sent[path].push(JSON.parse(route.request().postData()));
+      if (!failAll) { await route.continue(); return; }
+      const detail = { speak: 'Provider answered HTTP 429: You exceeded your current quota. Rate limit or free-tier quota reached; wait and try again.',
+        transcribe: 'Provider answered HTTP 401: Invalid API Key. Check your API key.', models: 'Provider answered HTTP 400: API key not valid. Please pass a valid API key. Check your API key.' }[path];
+      await route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ code: 'provider_error', detail }) });
+    });
+  }
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('atlas.cloud.key.gemini')) localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-test-check-key'));
+    if (!localStorage.getItem('atlas.cloud.key.groq')) localStorage.setItem('atlas.cloud.key.groq', JSON.stringify('gsk_check_key_123'));
+  });
+  await page.goto(base + '/');
+  await go(page, 'live');
+  await page.click('#livetest');
+  await page.waitForSelector('#livestatus >> text=Voice check done', { timeout: 30000 });
+  const results = () => page.$$eval('#livetestresults li', (lis) => lis.map((li) => [li.dataset.step, li.querySelector('.state').textContent, li.querySelector('p').textContent]));
+  let r = await results();
+  assert.deepEqual(r.map((x) => x[0] + ' ' + x[1]), ['models PASS', 'socket PASS', 'speak PASS', 'transcribe PASS'], JSON.stringify(r));
+  assert.match(r[0][2], /Live uses fake-live-native-audio/);
+  assert.equal(setups.length, 1);
+  assert.equal(setups[0].model, 'models/fake-live-native-audio', 'step 2 uses the model from step 1');
+  assert.match(r[2][2], /0\.3 s of speech/);
+  assert.equal(sent.speak[0].provider, 'gemini');
+  assert.equal(sent.speak[0].api_key, 'AIza-test-check-key');
+  assert.match(r[3][2], /Groq answered\. Heard: "FAKE heard speech"/);
+  assert.equal(sent.transcribe[0].provider, 'groq');
+  const wavBytes = Buffer.from(sent.transcribe[0].audio, 'base64').length;
+  assert.ok(wavBytes >= 44 + 32000 && wavBytes <= 44 + 32000 + 3200 * 2, 'about one second of 16 kHz audio, got ' + wavBytes);
+  assert.equal(await page.inputValue('#livemode'), 'realtime');
+  assert.equal(await page.$eval('#liveorb', (o) => o.dataset.state), 'idle', 'the check does not start Live');
+  // Everything failing: each step says what failed in the provider's own words and what to do.
+  failAll = true;
+  await page.click('#livetest');
+  await page.waitForSelector('#livestatus >> text=Voice check done: 0 passed, 3 failed, 0 with a warning, 1 skipped');
+  r = await results();
+  assert.deepEqual(r.map((x) => x[0] + ' ' + x[1]), ['models FAIL', 'socket SKIPPED', 'speak FAIL', 'transcribe FAIL'], JSON.stringify(r));
+  assert.match(r[0][2], /^Provider answered HTTP 400: API key not valid\. Please pass a valid API key\. Check your API key\. What to do: check the Gemini key/);
+  assert.match(r[1][2], /Needs a model from step 1/);
+  assert.match(r[2][2], /^Provider answered HTTP 429: You exceeded your current quota\..*What to do:/);
+  assert.match(r[3][2], /^Provider answered HTTP 401: Invalid API Key\..*What to do: check the Groq key/);
+  // A key Google refuses on the Live connection itself: Google's reason, word for word.
+  failAll = false;
+  await page.evaluate(() => localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-bad-key')));
+  await go(page, 'about');
+  await go(page, 'live');
+  await page.click('#livetest');
+  await page.waitForSelector('#livestatus >> text=Voice check done', { timeout: 30000 });
+  r = await results();
+  assert.equal(r[1][1], 'FAIL');
+  assert.match(r[1][2], /^Google said: API key not valid\. Please pass a valid API key\. What to do:/);
+  await shot(page, '13-voice-check');
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });

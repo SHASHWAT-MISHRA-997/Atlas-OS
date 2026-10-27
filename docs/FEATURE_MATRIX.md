@@ -4,7 +4,7 @@ States: **Not implemented** · **Partially implemented** · **Implemented** (cod
 
 "Verified (Chromium, FAKE model)" means the browser tests passed in Chromium on Linux with the model provider replaced by a labelled fake. It is **not** evidence that a real provider, Safari or a real phone works.
 
-Last updated: 2026-10-28 (v0.24.0). The PC version (backend, Windows installer, PC actions, local models, document search, local voice, device pairing) was removed in 0.15.0; its rows are in the Git history of this file.
+Last updated: 2026-10-28 (v0.25.0). The PC version (backend, Windows installer, PC actions, local models, document search, local voice, device pairing) was removed in 0.15.0; its rows are in the Git history of this file.
 
 | Feature | Location | Status | Evidence / gap |
 |---|---|---|---|
@@ -23,6 +23,7 @@ Last updated: 2026-10-28 (v0.24.0). The PC version (backend, Windows installer, 
 | Speech to text without a browser speech service (Brave, Firefox): Dictate and Live record a WAV and the user's Groq (Whisper) or Gemini key writes it down | `app.js` (`recordUtterance`, `transcribeSpeech`), `cloud.mjs` (`/transcribe`) | Verified (Chromium posing as Brave, fake microphone, FAKE transcription) and function tests for Groq and Gemini requests | Not yet tried with the owner's real key in Brave. OpenAI is used only when it is the chosen chat provider |
 | Natural voice for spoken answers (Live turn by turn, Read aloud): Gemini speech models with the user's Gemini key, OpenAI only when chosen; otherwise the browser's most natural installed voice | `app.js` (`speakAloud`, `bestBrowserVoice`), `cloud.mjs` (`/speak`) | Verified with FAKE speech audio (e2e) and function tests for the Gemini and OpenAI requests | Not yet tried with the owner's real Gemini key; the browser voice choice depends on which voices the device has |
 | Live, ChatGPT voice (OpenAI Realtime API, paid): same features; picture with each thing said; needs a tick that it is billed | `realtime.js`, `app.js`, `cloud.mjs` | Verified (Chromium, FAKE OpenAI Realtime server in the browser) for the paid tick, session settings, 24 kHz audio, key as WebSocket subprotocol, pictures, typed text, text-only history | **Not yet tested against OpenAI's real service.** Paid: billed per minute to the owner's OpenAI account |
+| Test my voice setup (Live): real-time models, Gemini Live setupComplete, `/cloud/speak`, 1-second `/cloud/transcribe`, each PASS/FAIL/WARN/SKIPPED with the provider's words; Live errors name the failed step and what to do | `app.js` (`runVoiceCheck`, `failed`), `realtime.js` (`probe`, `ended` step) | Verified (Chromium, fake mic, FAKE Gemini Live server, FAKE speech and transcription) | e2e: all pass, all fail with exact provider text, a key Google refuses on the socket; cloud test: 1-second WAV accepted, provider words returned. **Not yet run against Google's or Groq's real services** |
 | About the developer | `app.js` (`renderAbout`) | Verified (Chromium) | e2e checks the links |
 | Key remembered after closing | `app.js` | Verified (Chromium) | e2e: card key and a key typed in Model settings survive closing the page |
 | Auto-switch between free providers | `cloud.js` | Verified (Chromium, FAKE model) | e2e auto-switch test, including never into paid |
