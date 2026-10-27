@@ -616,9 +616,9 @@ test('Live real-time voice: streams the mic to Gemini Live, plays and shows the 
   const sockets = [];
   const got = [];
   let answered = false;
-  await page.routeWebSocket(/generativelanguage\.googleapis\.com/, (ws) => {
+  await page.routeWebSocket(/^wss:\/\/generativelanguage\.googleapis\.com\//, (ws) => {
     sockets.push(ws);
-    if (new URL(ws.url()).searchParams.get('key') === 'AIza-bad-key') { ws.close({ code: 1008, reason: 'API key not valid. Please pass a valid API key.' }); return; }
+    if (new URL(ws.url()).searchParams.get('key') === 'AIza-bad-key') { ws.close({ code: 1007, reason: 'API key not valid. Please pass a valid API key.' }); return; }
     ws.onMessage((raw) => {
       const msg = JSON.parse(String(raw));
       got.push(msg);
@@ -702,7 +702,79 @@ test('Live real-time voice: streams the mic to Gemini Live, plays and shows the 
   await page.click('#liveorb');
   await page.waitForSelector('#livestatus >> text=API key not valid');
   await page.waitForSelector('#liveorb[data-state=idle]');
+  // The error names the step that failed and says what to do.
+  assert.match(await page.textContent('#livestatus'), /^Connecting to Google Gemini \(fake-live-native-audio\) failed: API key not valid\. Please pass a valid API key\. What to do: check your Gemini key/);
   await shot(page, '11-live-realtime');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+test('Test my voice setup: each step runs on its own and shows pass or fail with the provider\'s exact words', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  // FAKE services: a FAKE Gemini Live server in the browser, FAKE speech and transcription in the preview server.
+  const setups = [];
+  await page.routeWebSocket(/^wss:\/\/generativelanguage\.googleapis\.com\//, (ws) => {
+    if (new URL(ws.url()).searchParams.get('key') === 'AIza-bad-key') { ws.close({ code: 1007, reason: 'API key not valid. Please pass a valid API key.' }); return; }
+    ws.onMessage((raw) => {
+      const msg = JSON.parse(String(raw));
+      if (msg.setup) { setups.push(msg.setup); ws.send(Buffer.from(JSON.stringify({ setupComplete: {} }))); }
+    });
+  });
+  const sent = { speak: [], transcribe: [] };
+  let failAll = false;
+  for (const path of ['speak', 'transcribe', 'models']) {
+    await page.route('**/cloud/' + path, async (route) => {
+      if (path !== 'models') sent[path].push(JSON.parse(route.request().postData()));
+      if (!failAll) { await route.continue(); return; }
+      const detail = { speak: 'Provider answered HTTP 429: You exceeded your current quota. Rate limit or free-tier quota reached; wait and try again.',
+        transcribe: 'Provider answered HTTP 401: Invalid API Key. Check your API key.', models: 'Provider answered HTTP 400: API key not valid. Please pass a valid API key. Check your API key.' }[path];
+      await route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ code: 'provider_error', detail }) });
+    });
+  }
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('atlas.cloud.key.gemini')) localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-test-check-key'));
+    if (!localStorage.getItem('atlas.cloud.key.groq')) localStorage.setItem('atlas.cloud.key.groq', JSON.stringify('gsk_check_key_123'));
+  });
+  await page.goto(base + '/');
+  await go(page, 'live');
+  await page.click('#livetest');
+  await page.waitForSelector('#livestatus >> text=Voice check done', { timeout: 30000 });
+  const results = () => page.$$eval('#livetestresults li', (lis) => lis.map((li) => [li.dataset.step, li.querySelector('.state').textContent, li.querySelector('p').textContent]));
+  let r = await results();
+  assert.deepEqual(r.map((x) => x[0] + ' ' + x[1]), ['models PASS', 'socket PASS', 'speak PASS', 'transcribe PASS'], JSON.stringify(r));
+  assert.match(r[0][2], /Live uses fake-live-native-audio/);
+  assert.equal(setups.length, 1);
+  assert.equal(setups[0].model, 'models/fake-live-native-audio', 'step 2 uses the model from step 1');
+  assert.match(r[2][2], /0\.3 s of speech/);
+  assert.equal(sent.speak[0].provider, 'gemini');
+  assert.equal(sent.speak[0].api_key, 'AIza-test-check-key');
+  assert.match(r[3][2], /Groq answered\. Heard: "FAKE heard speech"/);
+  assert.equal(sent.transcribe[0].provider, 'groq');
+  const wavBytes = Buffer.from(sent.transcribe[0].audio, 'base64').length;
+  assert.ok(wavBytes >= 44 + 32000 && wavBytes <= 44 + 32000 + 3200 * 2, 'about one second of 16 kHz audio, got ' + wavBytes);
+  assert.equal(await page.inputValue('#livemode'), 'realtime');
+  assert.equal(await page.$eval('#liveorb', (o) => o.dataset.state), 'idle', 'the check does not start Live');
+  // Everything failing: each step says what failed in the provider's own words and what to do.
+  failAll = true;
+  await page.click('#livetest');
+  await page.waitForSelector('#livestatus >> text=Voice check done: 0 passed, 3 failed, 0 with a warning, 1 skipped');
+  r = await results();
+  assert.deepEqual(r.map((x) => x[0] + ' ' + x[1]), ['models FAIL', 'socket SKIPPED', 'speak FAIL', 'transcribe FAIL'], JSON.stringify(r));
+  assert.match(r[0][2], /^Provider answered HTTP 400: API key not valid\. Please pass a valid API key\. Check your API key\. What to do: check the Gemini key/);
+  assert.match(r[1][2], /Needs a model from step 1/);
+  assert.match(r[2][2], /^Provider answered HTTP 429: You exceeded your current quota\..*What to do:/);
+  assert.match(r[3][2], /^Provider answered HTTP 401: Invalid API Key\..*What to do: check the Groq key/);
+  // A key Google refuses on the Live connection itself: Google's reason, word for word.
+  failAll = false;
+  await page.evaluate(() => localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-bad-key')));
+  await go(page, 'about');
+  await go(page, 'live');
+  await page.click('#livetest');
+  await page.waitForSelector('#livestatus >> text=Voice check done', { timeout: 30000 });
+  r = await results();
+  assert.equal(r[1][1], 'FAIL');
+  assert.match(r[1][2], /^Google said: API key not valid\. Please pass a valid API key\. What to do:/);
+  await shot(page, '13-voice-check');
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });
@@ -713,8 +785,16 @@ test('Live ChatGPT voice: paid, so it waits for a tick; then streams to OpenAI R
   const sockets = [];
   const got = [];
   let answered = false;
-  await page.routeWebSocket(/api\.openai\.com/, (ws) => {
+  let rejectKey = false;
+  await page.routeWebSocket(/^wss:\/\/api\.openai\.com\//, (ws) => {
     sockets.push(ws);
+    if (rejectKey) {
+      // What OpenAI's real server does with a wrong key (checked against the real API on 2026-10-28):
+      // an error event, then close code 3000.
+      ws.send(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', code: 'invalid_api_key', message: 'Incorrect API key provided: sk-bad-****0000.' } }));
+      ws.close({ code: 3000, reason: 'invalid_request_error.invalid_api_key' });
+      return;
+    }
     ws.onMessage((raw) => {
       const msg = JSON.parse(String(raw));
       got.push(msg);
@@ -771,9 +851,14 @@ test('Live ChatGPT voice: paid, so it waits for a tick; then streams to OpenAI R
   // With the camera on, the current picture goes with the next thing the user says.
   await page.click('#livecam');
   await page.waitForFunction(() => document.querySelector('#livevideo').videoWidth > 0);
+  // The camera reaches the voice session only after the video plays; this status line comes right
+  // after, so "speech started" cannot arrive before ChatGPT has the camera.
+  await page.waitForSelector('#livestatus >> text=ChatGPT sees the current picture');
   sockets[0].send(JSON.stringify({ type: 'input_audio_buffer.speech_started' }));
-  for (let i = 0; i < 40 && !got.some((m) => m.item && m.item.content[0].type === 'input_image'); i += 1) await page.waitForTimeout(100);
-  assert.match(got.find((m) => m.item && m.item.content[0].type === 'input_image').item.content[0].image_url, /^data:image\/jpeg;base64,/);
+  const isImage = (m) => m.item && m.item.content[0].type === 'input_image';
+  for (let i = 0; i < 50 && !got.some(isImage); i += 1) await page.waitForTimeout(100);
+  assert.ok(got.some(isImage), 'a camera picture goes with what the user says');
+  assert.match(got.find(isImage).item.content[0].image_url, /^data:image\/jpeg;base64,/);
   await page.click('#livecam');
   await page.fill('#livetyped', 'typed to chatgpt');
   await page.press('#livetyped', 'Enter');
@@ -788,6 +873,12 @@ test('Live ChatGPT voice: paid, so it waits for a tick; then streams to OpenAI R
   const prefs = await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.live.v1')));
   assert.equal(prefs.paidOk, true);
   assert.equal(prefs.openaiVoice, 'cedar');
+  // A wrong OpenAI key: OpenAI's own words, the step that failed, and what to do.
+  rejectKey = true;
+  await page.click('#liveorb');
+  await page.waitForSelector('#livestatus >> text=Incorrect API key provided');
+  assert.match(await page.textContent('#livestatus'), /^Connecting to ChatGPT \(OpenAI\) \(gpt-realtime\) failed: Incorrect API key provided: sk-bad-\*\*\*\*0000\. What to do: check your OpenAI key/);
+  await page.waitForSelector('#liveorb[data-state=idle]');
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });
@@ -923,7 +1014,7 @@ test('PC control: pairs with the ATLAS PC helper, Gemini Live opens an app on th
     page.on('console', (m) => { if (m.type() === 'error' && !/status of (40[0139]|422|502)/.test(m.text())) page.errors.push(m.text()); });
     // A FAKE Gemini Live server that asks to open Notepad when the user types.
     const got = [];
-    await page.routeWebSocket(/generativelanguage\.googleapis\.com/, (ws) => {
+    await page.routeWebSocket(/^wss:\/\/generativelanguage\.googleapis\.com\//, (ws) => {
       ws.onMessage((raw) => {
         const msg = JSON.parse(String(raw));
         got.push(msg);
@@ -1025,4 +1116,113 @@ test('PC control: pairs with the ATLAS PC helper, Gemini Live opens an app on th
   } finally {
     helper.kill();
   }
+});
+
+// A FAKE Google Identity Services script, served in place of https://accounts.google.com/gsi/client.
+const FAKE_GIS = `
+  window.fakeGis = { inits: [], revoked: [], next: 'ok' };
+  window.google = { accounts: { oauth2: {
+    initTokenClient(cfg) {
+      fakeGis.inits.push({ client_id: cfg.client_id, scope: cfg.scope });
+      return { requestAccessToken() { setTimeout(() => {
+        if (fakeGis.next === 'deny') cfg.callback({ error: 'access_denied' });
+        else if (fakeGis.next === 'closed') cfg.error_callback({ type: 'popup_closed' });
+        else cfg.callback({ access_token: 'FAKE-google-token', expires_in: 3599, scope: cfg.scope });
+      }, 10); } };
+    },
+    revoke(token, done) { fakeGis.revoked.push(token); if (done) done({ successful: true }); },
+  } } };`;
+
+test('Google Calendar and Gmail: read-only sign-in, today and tomorrow, 10 unread, token in memory only, Sign out revokes', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  // FAKE Google: the sign-in script and the Calendar and Gmail APIs are answered inside the browser.
+  const calls = [];
+  let expired = false;
+  await page.route('https://accounts.google.com/gsi/client', (route) => route.fulfill({ contentType: 'text/javascript', body: FAKE_GIS }));
+  const at = (days, h, m) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + days); d.setHours(h, m); return d; };
+  const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  await page.route(/^https:\/\/(www|gmail)\.googleapis\.com\//, (route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    calls.push({ method: req.method(), url, auth: req.headers().authorization });
+    if (expired) return route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":{"code":401,"message":"Invalid Credentials"}}' });
+    if (url.pathname === '/calendar/v3/calendars/primary/events') return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [
+      { summary: 'FAKE standup', start: { dateTime: at(0, 9, 30).toISOString() }, end: { dateTime: at(0, 10, 0).toISOString() } },
+      { summary: '<img src=x onerror="window.pwned=1">', start: { dateTime: at(0, 15, 0).toISOString() }, end: { dateTime: at(0, 16, 0).toISOString() } },
+      { summary: 'FAKE cancelled', status: 'cancelled', start: { dateTime: at(0, 11, 0).toISOString() }, end: { dateTime: at(0, 12, 0).toISOString() } },
+      { summary: 'FAKE holiday', start: { date: ymd(at(1, 0, 0)) }, end: { date: ymd(at(2, 0, 0)) } }] }) });
+    if (url.pathname === '/gmail/v1/users/me/messages') return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ messages: Array.from({ length: 12 }, (_, i) => ({ id: 'm' + i, threadId: 't' + i })) }) });
+    const m = /^\/gmail\/v1\/users\/me\/messages\/(m\d+)$/.exec(url.pathname);
+    if (m) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ id: m[1], internalDate: String(Date.now()), payload: { headers: [
+      { name: 'From', value: '"FAKE Sender ' + m[1] + '" <sender' + m[1] + '@example.com>' }, { name: 'Subject', value: 'FAKE subject ' + m[1] }] } }) });
+    return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+  });
+  await page.goto(base + '/');
+  await go(page, 'integrations');
+  await page.waitForSelector('text=Calendar and Gmail');
+  await page.waitForSelector('#googlepanel >> text=Not set up yet');
+  // The client ID is typed by the owner (or comes from the build), never from the code.
+  assert.equal(await page.evaluate(() => fetch('/config.json').then((r) => r.json()).then((c) => c.google_client_id)), null);
+  await page.fill('#googleclientid', 'not-a-client-id');
+  await page.click('#googleclientsave');
+  await page.waitForSelector('#googlestatus >> text=not a Google OAuth client ID');
+  await page.fill('#googleclientid', '123456789012-fakeclientidfortests.apps.googleusercontent.com');
+  await page.click('#googleclientsave');
+  await page.waitForSelector('#googleconnect:not([disabled])');
+  // A refused sign-in says why and what to do.
+  await page.evaluate(() => { window.fakeGis.next = 'deny'; });
+  await page.click('#googleconnect');
+  await page.waitForSelector('#googlestatus >> text=only accounts added as test users');
+  await page.evaluate(() => { window.fakeGis.next = 'ok'; });
+  await page.click('#googleconnect');
+  await page.waitForSelector('#googleevents >> text=FAKE standup');
+  await page.waitForSelector('#googleevents >> text=FAKE holiday');
+  await page.waitForSelector('#googlemail >> text=FAKE subject m0');
+  await page.locator('#googleevents').scrollIntoViewIfNeeded();
+  await shot(page, '12-google-connected');
+  const inits = await page.evaluate(() => window.fakeGis.inits);
+  assert.equal(inits.at(-1).client_id, '123456789012-fakeclientidfortests.apps.googleusercontent.com');
+  assert.deepEqual(inits.at(-1).scope.split(' ').sort(), ['https://www.googleapis.com/auth/calendar.readonly', 'https://www.googleapis.com/auth/gmail.readonly'], 'read-only scopes only');
+  const today = await page.textContent('#googleevents > div:first-child');
+  assert.match(today, /TODAY.*FAKE standup/s);
+  assert.ok(!today.includes('FAKE holiday') && !today.includes('FAKE cancelled'));
+  assert.match(await page.textContent('#googleevents > div:last-child'), /TOMORROW.*All day.*FAKE holiday/s);
+  assert.equal(await page.locator('#googlemail li').count(), 10, 'the 10 latest unread');
+  assert.match(await page.textContent('#googlemail li:first-child'), /FAKE Sender m0.*FAKE subject m0/s);
+  // Text from Google is shown as text, never run.
+  await page.waitForSelector('#googleevents >> text=<img src=x');
+  assert.equal(await page.evaluate(() => window.pwned), undefined);
+  // Only reads: every call is a GET with the token; Gmail headers only, never message bodies.
+  assert.ok(calls.length >= 12);
+  for (const c of calls) {
+    assert.equal(c.method, 'GET');
+    assert.equal(c.auth, 'Bearer FAKE-google-token');
+  }
+  const cal = calls.find((c) => c.url.host === 'www.googleapis.com').url.searchParams;
+  assert.equal(new Date(cal.get('timeMin')).getTime(), at(0, 0, 0).getTime(), 'from the start of today');
+  assert.equal(new Date(cal.get('timeMax')).getTime(), at(2, 0, 0).getTime(), 'to the end of tomorrow');
+  assert.equal(calls.find((c) => c.url.pathname.endsWith('/messages')).url.searchParams.get('q'), 'is:unread');
+  assert.ok(calls.filter((c) => /\/messages\/m/.test(c.url.pathname)).every((c) => c.url.searchParams.get('format') === 'metadata'));
+  // The token is kept in memory only.
+  assert.ok(!(await page.evaluate(() => JSON.stringify(localStorage) + JSON.stringify(sessionStorage) + document.cookie)).includes('FAKE-google-token'));
+  // An expired sign-in asks to connect again.
+  expired = true;
+  await page.click('#googlerefresh');
+  await page.waitForSelector('#googlestatus >> text=Google sign-in expired');
+  await page.waitForSelector('#googleconnect:not([disabled])');
+  expired = false;
+  await page.click('#googleconnect');
+  await page.waitForSelector('#googlemail >> text=FAKE subject m0');
+  // Sign out revokes the token with Google and forgets it.
+  await page.click('#googlesignout');
+  await page.waitForSelector('#googlestatus >> text=Signed out');
+  assert.deepEqual(await page.evaluate(() => window.fakeGis.revoked), ['FAKE-google-token']);
+  assert.equal(await page.evaluate(() => window.AtlasGoogle.connected()), false);
+  // After a reload ATLAS is not connected: nothing was stored.
+  await page.reload();
+  await go(page, 'integrations');
+  await page.waitForSelector('#googleconnect:not([disabled])');
+  assert.equal(await page.locator('#googleevents').count(), 0);
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
 });

@@ -6,6 +6,7 @@
 // ATLAS_FAKE_MODEL=1 swaps every provider for a FAKE model that echoes the last message. It exists
 // for automated tests only; its replies are labelled FAKE and are never real AI output.
 import { createServer } from 'node:http';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +14,8 @@ import { createHandler } from '../../netlify/lib/cloud.mjs';
 
 const dist = fileURLToPath(new URL('../../dist/', import.meta.url));
 const port = Number(process.env.PORT || 8888);
+// The same Content-Security-Policy as the live site, read from netlify.toml.
+const CSP = /Content-Security-Policy = "([^"]+)"/.exec(readFileSync(fileURLToPath(new URL('../../netlify.toml', import.meta.url)), 'utf8'))[1];
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 
 export function fakeModelFetch(url, init) {
@@ -33,6 +36,7 @@ export function fakeModelFetch(url, init) {
     { name: 'models/fake-live-native-audio', supportedGenerationMethods: ['bidiGenerateContent'] }] }));
   if (auth === 'Bearer sk-voice-test-key' && String(url).endsWith('/models')) return Promise.resolve(Response.json({ data: [
     { id: 'gpt-6' }, { id: 'gpt-realtime-mini' }, { id: 'gpt-realtime' }, { id: 'gpt-4o-realtime-preview' }] }));
+  if (String(url).endsWith('/api/v1/key')) return Promise.resolve(Response.json({ data: { label: 'FAKE key' } }));
   if (String(url).endsWith('/models')) return Promise.resolve(Response.json({ data: [{ id: 'fake-small' }, { id: 'fake-large' }, { id: 'fake-free:free' }] }));
   if (auth === 'Bearer busy-key-429') return Promise.resolve(new Response('{"error":{"message":"Rate limit reached for requests"}}', { status: 429 }));
   const body = JSON.parse(init.body);
@@ -70,7 +74,7 @@ createServer(async (req, res) => {
   try {
     const data = await readFile(file);
     res.writeHead(200, { 'Content-Type': TYPES[extname(file)] || 'application/octet-stream',
-      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://generativelanguage.googleapis.com wss://api.openai.com http://127.0.0.1:47823; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
+      'Content-Security-Policy': CSP });
     res.end(data);
   } catch {
     res.writeHead(404).end('Not found');

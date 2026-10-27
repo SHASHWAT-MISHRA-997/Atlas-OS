@@ -39,9 +39,11 @@
   /**
    * Starts a session. opts: service ('gemini' or 'openai'), key, model, voice, system, worklet (URL
    * of live-worklet.js), optional tools ({ gemini, openai }: tool lists in each service's format) and
-   * on: { state(s), level(x), heard(text), said(text), turn({ user, model }), ended(reason),
-   * tool(name, args) -> Promise<result object> }. States: connecting, listening, speaking.
-   * Resolves once the microphone is on.
+   * on: { state(s), level(x), heard(text), said(text), turn({ user, model }), ended(reason, info),
+   * tool(name, args) -> Promise<result object> }, where info.step is 'connect' (the service never
+   * finished setting up) or 'session' (the connection dropped later) and info.code is the WebSocket
+   * close code. States: connecting, listening, speaking. Resolves once the microphone is on; a
+   * microphone error has err.step = 'microphone'.
    */
   async function start(opts) {
     const service = SERVICES[opts.service];
@@ -49,6 +51,8 @@
     const on = opts.on;
     let ws = null;
     let ready = false;
+    // True once the service has accepted the key and settings (Gemini setupComplete, OpenAI session.created).
+    let accepted = false;
     let ended = false;
     let handle = null;
     let reconnects = 0;
@@ -83,9 +87,17 @@
       mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
     } catch (err) {
       ctx.close();
+      err.step = 'microphone';
       throw err;
     }
-    await ctx.audioWorklet.addModule(opts.worklet);
+    try {
+      await ctx.audioWorklet.addModule(opts.worklet);
+    } catch (err) {
+      mic.getTracks().forEach((t) => t.stop());
+      ctx.close();
+      err.step = 'audio';
+      throw err;
+    }
     const node = new AudioWorkletNode(ctx, 'atlas-mic-capture', { processorOptions: { rate: service.micRate } });
     const silent = ctx.createGain();
     silent.gain.value = 0;
@@ -168,6 +180,7 @@
     function onGemini(msg) {
       if (msg.setupComplete) {
         ready = true;
+        accepted = true;
         reconnects = 0;
         on.state(sources.size ? 'speaking' : 'listening');
         return;
@@ -216,6 +229,7 @@
       switch (msg.type) {
         case 'session.created':
         case 'session.updated':
+          accepted = true;
           on.state(sources.size ? 'speaking' : 'listening');
           break;
         case 'input_audio_buffer.speech_started':
@@ -327,13 +341,13 @@
         if (ended || ws !== socket) return;
         // A dropped Gemini connection after the session started carries on with the same conversation.
         if (isGemini && ready && handle && reconnects < 3) { reconnects += 1; connect(); return; }
+        // The service's own words when it gave any (for example Google's "API key not valid").
         const why = lastError || e.reason;
-        stop(why ? service.label + ' closed the connection: ' + why
-          : 'The connection to ' + service.label + ' closed' + (ready && isGemini ? '.' : ' (code ' + e.code + '). Check your key' + (isGemini ? '' : ', that your OpenAI account has credit') + ' and your internet.'));
+        stop(why || (accepted ? 'the connection closed (code ' + e.code + ')' : 'the connection closed before setup finished (code ' + e.code + ')'), { step: accepted ? 'session' : 'connect', code: e.code });
       };
     }
 
-    function stop(reason) {
+    function stop(reason, info) {
       if (ended) return;
       ended = true;
       clearInterval(frameTimer);
@@ -343,7 +357,7 @@
       mic.getTracks().forEach((t) => t.stop());
       ctx.close();
       on.level(0);
-      on.ended(reason || '');
+      on.ended(reason || '', info || null);
     }
 
     connect();
@@ -395,8 +409,44 @@
     };
   }
 
+  /**
+   * The voice check's connection step: opens the Gemini Live WebSocket with the key, sends a minimal
+   * setup and waits for setupComplete. No microphone and no audio. Resolves { ok, error, ms }, where
+   * error is Google's own reason when it gave one.
+   */
+  function probe(opts) {
+    return new Promise((resolve) => {
+      const started = Date.now();
+      let done = false;
+      let socket;
+      const finish = (ok, error) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (socket) { socket.onclose = null; socket.onmessage = null; try { socket.close(1000); } catch { /* closed */ } }
+        resolve({ ok, error: error || '', ms: Date.now() - started });
+      };
+      const timer = setTimeout(() => finish(false, 'no answer from Google within ' + Math.round((opts.timeoutMs || 15000) / 1000) + ' seconds'), opts.timeoutMs || 15000);
+      try {
+        socket = SERVICES.gemini.connect(opts);
+      } catch (err) {
+        finish(false, err.message);
+        return;
+      }
+      socket.binaryType = 'arraybuffer';
+      socket.onopen = () => socket.send(JSON.stringify({ setup: { model: 'models/' + opts.model, generationConfig: { responseModalities: ['AUDIO'] } } }));
+      socket.onmessage = (e) => {
+        let msg;
+        try { msg = JSON.parse(typeof e.data === 'string' ? e.data : new TextDecoder().decode(e.data)); } catch { return; }
+        if (msg.setupComplete) finish(true);
+      };
+      socket.onclose = (e) => finish(false, e.reason || 'the connection closed before setup finished (code ' + e.code + ')');
+    });
+  }
+
   window.AtlasRealtime = {
     start,
+    probe,
     SERVICES,
     supported: () => !!(window.WebSocket && window.AudioContext && window.AudioWorkletNode && navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
   };

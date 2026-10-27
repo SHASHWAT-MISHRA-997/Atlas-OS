@@ -1,15 +1,53 @@
 # Changelog
 
-## 0.23.0 — 2026-10-27
+## 0.25.3 — 2026-10-28
 
-The owner asked for Live to control their whole PC ("jo bolu woh kare") and chose the safe version:
-- **PC control in Live, through the new ATLAS PC helper** (`pc-helper/`, `AtlasHelper.exe`). A web page cannot touch the desktop, so this small Windows program runs on the PC, listens only on 127.0.0.1 and does typed actions for Live: open apps (any Start menu app), websites, web/YouTube searches, files and folders; media keys and volume; find files by name; save notes; type text; press shortcuts; manage windows; lock the PC; read time, battery and disk space.
-- **Pairing:** Live → PC, type the 6-digit code shown in the helper window. Only the ATLAS site, with that token, can use it.
-- **Allow prompts:** typing, most shortcuts and closing a window open a Windows Yes/No box on the PC first. No answer in 60 seconds is No.
-- **Never:** delete files, run commands or shells, open programs as files, install, change settings, shut down.
-- Works in all three Live modes: Real-time (Gemini function calling), ChatGPT voice (OpenAI Realtime tools) and Turn by turn (the model answers with ACTION lines, each result goes back to it).
-- CI builds the .exe on Windows and publishes it as a GitHub release after merge; the Live screen links to it.
-- **Not yet tried on a real Windows PC with real keys**; the browser tests use the real helper in FAKE mode (touches nothing) and FAKE model servers. The .exe is not code-signed, so Windows SmartScreen warns once.
+From running **Test my voice setup on the owner's phone with the owner's real keys** (all four steps passed: 9 real-time models, Gemini Live setup in 2.8 s, 3.8 s of real Gemini speech, Groq answered):
+- **Fix: silence was written down as words.** Groq's Whisper wrote "Gracias." for one second of the microphone. Whisper invents short words like this for silence or noise, so Dictate and Live in Brave and Firefox could type things nobody said. ATLAS now asks Groq for Whisper's own estimate of how likely each piece is to be speech (`verbose_json`, temperature 0) and drops pieces that are more likely silence.
+
+- Daily check of the real providers and the live site (`scripts/netlify/provider-check.mjs`, GitHub Actions "Provider check"), with deliberately invalid keys: it fails if Groq, Gemini, OpenRouter, OpenAI or Google sign-in change how they answer.
+- The browser tests passed in real Brave, Chrome and Edge on the owner's PC.
+
+## 0.25.2 — 2026-10-28
+
+Found by testing the live site against the real services and on the owner's phone (OnePlus, Android 16, Chrome 156):
+- **Fix: phones could stay on an old version.** The owner's phone was still running 0.18.0 and "Update now" stayed on "Updating…". Android Chrome restores tabs and goes back with "use any cached copy", and the service worker passed that on, so an old page came back from the browser's cache. The service worker now always checks with the server (`no-cache`), uses a new cache name so the old copy is deleted, the app re-checks for updates when a page is restored, and "Update now" opens the page anew if the reload does not happen.
+- **Fix: a wrong OpenRouter key was accepted.** OpenRouter's model list is public, so the key check passed with any key and chat failed later. ATLAS now asks OpenRouter's key endpoint (`/api/v1/key`) first.
+- **Fix: a wrong OpenAI key in ChatGPT voice said "tap the orb to start again".** The session counted as started when the socket opened, before OpenAI accepted the key. It now counts only after OpenAI (or Gemini) accepts it, so the message names the connecting step and says to check the key.
+- Test fakes now behave like the real services (checked on the real APIs with invalid keys): Gemini Live closes with code 1007 and Google's reason; OpenAI sends an error event, then closes with code 3000.
+
+Also from the same day:
+
+- README redesigned: live link, badges, real screenshots (FAKE-labelled preview data), Mermaid diagrams.
+- Security scanning: GitHub CodeQL on every push, pull request and weekly; Dependabot for npm and Actions.
+- docs/TEST_PLAN.md records an audit of the live site (screens, console, speed, attack probes). The only console error on the live site comes from Netlify's free-plan badge being blocked by the CSP, on purpose.
+
+## 0.25.1 — 2026-10-28
+
+Task 3 of the owner's list: housekeeping.
+- Removed `ATLAS_OS_Research_Starter_v4.zip` from `main` (a normal commit; it stays in the Git history).
+- docs/HANDOFF.md brought up to date: the date, the owner now sometimes uses a Windows PC with Brave, the test counts (32 function and 15 browser tests at v0.22.1; 34 and 17 now), and how to run the secret scan on Windows.
+- Stale claims fixed: ARCHITECTURE (was v0.15.0; now covers Live, real-time voice, the speech and transcription routes and Google), CLOUD (dictation in Brave/Firefox, Live, which routes carry the key), README (voice), SECURITY (sign-in), THREAT_MODEL (T11, T36), FEATURE_MATRIX (dictation row, size), PROJECT_AUDIT (zip). The Integrations "Voice and Live" tile no longer says everything uses the browser's speech service.
+
+## 0.25.0 — 2026-10-28
+
+Task 2 of the owner's list: Live voice hardening.
+- **Test my voice setup** (Live screen). Runs each part of voice on its own and shows PASS, FAIL, WARN or SKIPPED with the provider's exact words and what to do: (1) list the real-time models your Gemini key can use, (2) open the Gemini Live connection and wait for Google's `setupComplete` (no microphone), (3) speak a test sentence through `/cloud/speak` and play it, (4) record one second from the microphone and write it down through `/cloud/transcribe`. A step without its key is skipped with the reason; one failing step does not stop the others.
+- **Every Live error names the step that failed, the service's own words, and what to do**, for example "Connecting to Google Gemini (model) failed: API key not valid… What to do: check your Gemini key…". Covers finding a real-time model, the microphone, starting audio, connecting, a dropped conversation, listening, writing down speech, getting an answer, speaking, the camera and screen sharing.
+- Fix: provider errors that already ended in a full stop showed two ("details..").
+- **Not yet tried against Google's or Groq's real services**; the tests use a FAKE Gemini Live server and FAKE speech and transcription.
+
+## 0.24.0 — 2026-10-28
+
+Task 1 of the owner's list: Calendar and Gmail.
+- **Google Calendar and Gmail, read-only** (Integrations). Sign in with Google and ATLAS shows today's and tomorrow's events on your main calendar and the sender and subject of your 10 latest unread emails. It asks Google only for `calendar.readonly` and `gmail.readonly`, reads only email headers (never the message text), and never sends, deletes or changes anything.
+- The sign-in uses Google Identity Services' token client, loaded only when Integrations opens (`google.js`). The access token stays in the page's memory: it is never stored, never sent to ATLAS's server or an AI model, and closing the page forgets it. **Sign out** asks Google to revoke it.
+- It needs a Google OAuth client ID that the site owner creates (see docs/CLOUD.md). It is never in the code: the owner sets the Netlify build variable `ATLAS_GOOGLE_CLIENT_ID` (written to `/config.json`) or pastes it on the Integrations screen.
+- Clear messages when sign-in is refused (Testing mode allows only test users), the pop-up is blocked or closed, an API is not turned on, or the sign-in expires.
+- Security headers: the CSP now allows Google's sign-in script and frame, `www.googleapis.com/calendar/v3/`, `gmail.googleapis.com/gmail/v1/` and `oauth2.googleapis.com/revoke`; `Cross-Origin-Opener-Policy` is `same-origin-allow-popups` so Google's sign-in pop-up can report back. The local preview server now reads the CSP from `netlify.toml`.
+- Messaging stays "Not yet".
+- Version 0.23.0 is left for the open PC-control pull request.
+- **Not yet tried against Google's real sign-in or APIs**; the tests use a FAKE Google sign-in script and FAKE Calendar and Gmail answers.
 
 ## 0.22.1 — 2026-10-27
 

@@ -1,6 +1,6 @@
 # Project audit — baseline (2026-10-23)
 
-> Historical: this describes the PC version, which was removed in 0.15.0 (see D-025). The files it names are in the Git history.
+> Historical: this describes the PC version, which was removed in 0.15.0 (see D-025). The files it names are in the Git history. `ATLAS_OS_Research_Starter_v4.zip` was removed from `main` in 0.25.1 and is in the Git history too.
 
 This records what was actually inspected and run. Nothing here was inferred from the UI or README alone.
 

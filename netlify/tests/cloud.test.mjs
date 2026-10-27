@@ -332,7 +332,7 @@ test('natural voice: Gemini speech models (falls back to Pro on 404), OpenAI pcm
   const PCM = Buffer.from([1, 0, 2, 0]).toString('base64');
   let flashMissing = false;
   const t = setup({ upstream: async (url) => {
-    if (url.includes('api.openai.com')) return new Response(Buffer.from([3, 0, 4, 0]));
+    if (new URL(url).host === 'api.openai.com') return new Response(Buffer.from([3, 0, 4, 0]));
     if (flashMissing && url.includes('flash-preview-tts')) return new Response('{"error":{"message":"not found"}}', { status: 404 });
     return Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: PCM } }] } }] });
   } });
@@ -359,4 +359,79 @@ test('natural voice: Gemini speech models (falls back to Pro on 404), OpenAI pcm
   assert.equal((await call({ provider: 'gemini', text: 'x'.repeat(1501) })).status, 422);
   assert.equal((await call({ provider: 'gemini', text: 'hi', voice: '../evil' })).status, 422);
   assert.equal(t.calls.length, before, 'refused requests never reach a provider');
+});
+
+test('Google Calendar and Gmail: the browser may reach only Google sign-in and the two read APIs; the function is no proxy for them', async () => {
+  const { readFileSync } = await import('node:fs');
+  const toml = readFileSync(new URL('../../netlify.toml', import.meta.url), 'utf8');
+  const csp = Object.fromEntries(/Content-Security-Policy = "([^"]+)"/.exec(toml)[1].split(';').map((d) => d.trim().split(/\s+/)).map(([k, ...v]) => [k, v]));
+  assert.deepEqual(csp['script-src'], ["'self'", 'https://accounts.google.com/gsi/client']);
+  assert.deepEqual(csp['frame-src'], ['https://accounts.google.com/gsi/']);
+  assert.deepEqual(csp['connect-src'].filter((h) => /^(https|wss):\/\/([a-z0-9-]+\.)*(google|googleapis)\.com(\/|$)/.test(h)).sort(), [
+    'https://accounts.google.com/gsi/', 'https://gmail.googleapis.com/gmail/v1/', 'https://oauth2.googleapis.com/revoke',
+    'https://www.googleapis.com/calendar/v3/', 'wss://generativelanguage.googleapis.com']);
+  assert.match(toml, /Cross-Origin-Opener-Policy = "same-origin-allow-popups"/, 'the Google sign-in pop-up can report back');
+  for (const f of ['app.js', 'google.js', 'cloud.js']) {
+    assert.ok(!/[0-9]{6,}-[a-z0-9_]{8,}\.apps\.googleusercontent\.com/.test(readFileSync(new URL('../../frontend/static/' + f, import.meta.url), 'utf8')), 'no client ID in ' + f);
+  }
+  const t = setup();
+  for (const path of ['google', 'calendar', 'gmail', 'oauth']) {
+    assert.equal((await t.call(path, { method: 'POST', body: { url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages' } })).status, 404);
+  }
+  assert.equal(t.calls.length, 0);
+});
+
+test('voice check: a real 1-second WAV is accepted, and every failing step returns the provider\'s own words', async () => {
+  // One second of 16 kHz mono 16-bit silence, built the same way as the app's recorder.
+  const n = 16000;
+  const wav = Buffer.alloc(44 + n * 2);
+  wav.write('RIFF', 0); wav.writeUInt32LE(36 + n * 2, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(16000, 24); wav.writeUInt32LE(32000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(n * 2, 40);
+  const ok = setup({ upstream: async () => Response.json({ text: '' }) });
+  const heard = await ok.call('transcribe', { method: 'POST', body: { provider: 'groq', api_key: KEY, audio: wav.toString('base64') } });
+  assert.equal(heard.status, 200);
+  assert.equal((await heard.json()).text, '', 'silence is an answer, not an error');
+  assert.equal(ok.calls[0].init.body.get('file').size, wav.length);
+  const quota = '{"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details.","status":"RESOURCE_EXHAUSTED"}}';
+  const t = setup({ upstream: async () => new Response(quota, { status: 429 }) });
+  for (const [path, body] of [['speak', { provider: 'gemini', api_key: KEY, text: 'Hello, this is ATLAS. Your voice works.', voice: 'Puck' }],
+    ['transcribe', { provider: 'gemini', api_key: KEY, audio: wav.toString('base64') }]]) {
+    const r = await t.call(path, { method: 'POST', body });
+    assert.equal(r.status, 502, path);
+    assert.equal((await r.json()).detail, 'Provider answered HTTP 429: You exceeded your current quota, please check your plan and billing details. Rate limit or free-tier quota reached; wait and try again.', path);
+  }
+  // A real-time model list that fails for a reason other than the key: a usual model, with Google's reason as a warning.
+  const down = setup({ upstream: async () => new Response('{"error":{"message":"The service is currently unavailable."}}', { status: 503 }) });
+  const live = await (await down.call('models', { method: 'POST', body: { provider: 'gemini', api_key: KEY, live: true } })).json();
+  assert.equal(live.suggested_only, true);
+  assert.match(live.warning, /HTTP 503: The service is currently unavailable\./);
+});
+
+test('a wrong OpenRouter key is refused even though OpenRouter lists its models to anyone (seen on the real API)', async () => {
+  const t = setup({ upstream: async (url, init) => (url.endsWith('/api/v1/key')
+    ? (init.headers.Authorization === 'Bearer ' + KEY ? Response.json({ data: { label: 'ok' } }) : new Response('{"error":{"message":"Missing Authentication header","code":401}}', { status: 401 }))
+    : Response.json({ data: [{ id: 'google/gemma-4-31b-it:free' }] })) });
+  const wrong = await t.call('models', { method: 'POST', body: { provider: 'openrouter', api_key: 'sk-or-wrong-key-0000' } });
+  assert.equal(wrong.status, 502);
+  assert.match((await wrong.json()).detail, /HTTP 401.*Check your API key/);
+  assert.equal(t.calls[0].url, 'https://openrouter.ai/api/v1/key');
+  assert.equal(t.calls[0].init.headers.Authorization, 'Bearer sk-or-wrong-key-0000');
+  assert.equal(t.calls.length, 1, 'the model list is not fetched for a wrong key');
+  const right = await (await t.call('models', { method: 'POST', body: { provider: 'openrouter', api_key: KEY } })).json();
+  assert.deepEqual(right.models, ['google/gemma-4-31b-it:free']);
+});
+
+test('Whisper words for silence ("Gracias.", seen on the owner\'s phone) are dropped; real speech is kept', async () => {
+  const WAV = Buffer.from('RIFF$\u0000\u0000\u0000WAVEfmt fake test audio').toString('base64');
+  let reply;
+  const t = setup({ upstream: async () => Response.json(reply) });
+  const call = async () => (await (await t.call('transcribe', { method: 'POST', body: { provider: 'groq', api_key: KEY, audio: WAV } })).json()).text;
+  reply = { text: ' Gracias.', segments: [{ text: ' Gracias.', no_speech_prob: 0.93, avg_logprob: -0.9 }] };
+  assert.equal(await call(), '', 'silence gives no words');
+  assert.equal(t.calls[0].init.body.get('response_format'), 'verbose_json');
+  assert.equal(t.calls[0].init.body.get('temperature'), '0');
+  reply = { text: ' kal ka plan batao Thank you.', segments: [{ text: ' kal ka plan batao', no_speech_prob: 0.02 }, { text: ' Thank you.', no_speech_prob: 0.81 }] };
+  assert.equal(await call(), 'kal ka plan batao');
+  reply = { text: ' namaste atlas ' };
+  assert.equal(await call(), 'namaste atlas', 'a reply without pieces is used as it is');
 });
