@@ -48,7 +48,7 @@ async function fakeServices(page) {
     const n = { a: ['Demo Bank', 'Your monthly statement is ready (demo)'], b: ['Demo Airline', 'Your boarding pass (demo)'], c: ['Demo Team', 'Notes from today\'s review (demo)'] }[url.pathname.split('/').pop()];
     return route.fulfill({ json: { internalDate: String(Date.now()), payload: { headers: [{ name: 'From', value: n[0] + ' <noreply@example.com>' }, { name: 'Subject', value: n[1] }] } } });
   });
-  await page.routeWebSocket(/generativelanguage\.googleapis\.com/, (ws) => ws.onMessage((raw) => { if (JSON.parse(String(raw)).setup) ws.send(JSON.stringify({ setupComplete: {} })); }));
+  await page.routeWebSocket(/^wss:\/\/generativelanguage\.googleapis\.com\//, (ws) => ws.onMessage((raw) => { if (JSON.parse(String(raw)).setup) ws.send(JSON.stringify({ setupComplete: {} })); }));
 }
 
 async function open(theme, size) {

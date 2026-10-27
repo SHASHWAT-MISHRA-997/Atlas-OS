@@ -616,7 +616,7 @@ test('Live real-time voice: streams the mic to Gemini Live, plays and shows the 
   const sockets = [];
   const got = [];
   let answered = false;
-  await page.routeWebSocket(/generativelanguage\.googleapis\.com/, (ws) => {
+  await page.routeWebSocket(/^wss:\/\/generativelanguage\.googleapis\.com\//, (ws) => {
     sockets.push(ws);
     if (new URL(ws.url()).searchParams.get('key') === 'AIza-bad-key') { ws.close({ code: 1008, reason: 'API key not valid. Please pass a valid API key.' }); return; }
     ws.onMessage((raw) => {
@@ -713,7 +713,7 @@ test('Test my voice setup: each step runs on its own and shows pass or fail with
   const page = await phone({ serviceWorkers: 'block' });
   // FAKE services: a FAKE Gemini Live server in the browser, FAKE speech and transcription in the preview server.
   const setups = [];
-  await page.routeWebSocket(/generativelanguage\.googleapis\.com/, (ws) => {
+  await page.routeWebSocket(/^wss:\/\/generativelanguage\.googleapis\.com\//, (ws) => {
     if (new URL(ws.url()).searchParams.get('key') === 'AIza-bad-key') { ws.close({ code: 1008, reason: 'API key not valid. Please pass a valid API key.' }); return; }
     ws.onMessage((raw) => {
       const msg = JSON.parse(String(raw));
@@ -785,7 +785,7 @@ test('Live ChatGPT voice: paid, so it waits for a tick; then streams to OpenAI R
   const sockets = [];
   const got = [];
   let answered = false;
-  await page.routeWebSocket(/api\.openai\.com/, (ws) => {
+  await page.routeWebSocket(/^wss:\/\/api\.openai\.com\//, (ws) => {
     sockets.push(ws);
     ws.onMessage((raw) => {
       const msg = JSON.parse(String(raw));
