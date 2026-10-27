@@ -14,7 +14,7 @@ Fakes live only in tests and in the preview server behind `ATLAS_FAKE_MODEL=1`; 
 
 ## Latest report
 
-Date: 2026-10-28, v0.25.0. Environment: Windows 11, Node 24, Playwright Chromium 141 (headless); CI runs the same on Linux with Node 22. **Not Safari, not Brave, not a real phone.**
+Date: 2026-10-28, v0.25.1. Environment: Windows 11, Node 24, Playwright Chromium 141 (headless); CI runs the same on Linux with Node 22. **Not Safari, not Brave, not a real phone.**
 
 | Command | Passed | Failed |
 |---|---|---|

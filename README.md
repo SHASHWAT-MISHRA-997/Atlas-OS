@@ -7,7 +7,7 @@ screen as an app. It is **not** an operating system and **not** production-ready
 describes only what exists today; see [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the
 status of every feature.
 
-## What it does today (v0.24.0)
+## What it does today (v0.25.1)
 
 - **AI Chat** with your own key. Free providers come first: Groq, Google Gemini and OpenRouter
   (free models only). Paid OpenAI is optional and clearly marked. Replies stream, can be stopped,
@@ -33,7 +33,9 @@ status of every feature.
 - **Memory:** notes you save are sent with chats so answers fit you. Export them as JSON.
 - **Tasks:** plan a goal or summarize long text with the model you choose.
 - **Home:** a quick step-by-step plan for a goal, and a CSV analyzer that works in the browser.
-- **Voice:** dictation and read-aloud with your browser's speech service.
+- **Voice:** Dictate and Read aloud in AI Chat. Chrome, Edge and Safari listen with their own speech
+  service; in Brave and Firefox your Groq or Gemini key writes down what you say. Read aloud uses
+  Gemini's natural voice with a Gemini key, otherwise the browser's voice.
 - **Automations:** plans and reminders on a schedule, while ATLAS is open in the browser.
 - **Devices:** see what is stored on this device, export it, import it on another device, or erase it.
 - **System:** status, updates, install, theme (dark, light or auto) and the activity log.

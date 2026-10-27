@@ -1680,7 +1680,7 @@
         s ? (keys.length ? 'Your key: ' + keys.map((p) => p.label).join(', ') + '. ' : 'Add a key in AI Chat. ') + 'Available: ' + s.cloud.providers.map((p) => p.label).join(', ') + '.' : 'ATLAS online is unreachable.'),
       autoSwitchTile(),
       tile('memory', 'Memory', 'on', 'BROWSER', 'Saved in this browser and sent with chats when memory is on.'),
-      tile('mic', 'Voice and Live', 'on', 'BROWSER', 'Dictation, read-aloud and Live use this browser\'s speech service. Live can also use your camera or a shared screen.'),
+      tile('mic', 'Voice and Live', 'on', 'READY', 'Chrome, Edge and Safari listen with their own speech service; in Brave and Firefox your Groq or Gemini key writes down what you say. A Gemini key gives real-time voice and a natural speaking voice. Live can also use your camera or a shared screen.'),
       tile('globe', 'Other devices', 'on', 'SAME LINK', 'Open the same link anywhere. Move your data with Devices → Export and Import.'),
       tile('bell', 'Calendar and Gmail', 'on', 'READ-ONLY', 'Today\'s and tomorrow\'s events and your latest unread email, after you sign in with Google below. ATLAS never sends, deletes or changes anything.'),
       tile('send', 'Messaging', 'plan', 'NOT YET', 'Sending email or messages is not built. ATLAS says so instead of pretending.'),
