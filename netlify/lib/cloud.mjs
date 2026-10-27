@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.24.0';
+export const VERSION = '0.25.0';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -161,7 +161,7 @@ function upstreamError(status, text, key) {
   const hint = badKey ? ' Check your API key.'
     : status === 404 ? ' The model ID may be wrong or not available to this key.'
       : status === 429 ? ' Rate limit or free-tier quota reached; wait and try again.' : '';
-  const err = new Error('Provider answered HTTP ' + status + (detail ? ': ' + detail : '') + '.' + hint);
+  const err = new Error('Provider answered HTTP ' + status + (detail ? ': ' + detail.replace(/[.\s]+$/, '') : '') + '.' + hint);
   err.status = status;
   err.badKey = badKey;
   return err;

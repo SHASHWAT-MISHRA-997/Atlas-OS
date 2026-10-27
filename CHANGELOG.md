@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.25.0 — 2026-10-28
+
+Task 2 of the owner's list: Live voice hardening.
+- **Test my voice setup** (Live screen). Runs each part of voice on its own and shows PASS, FAIL, WARN or SKIPPED with the provider's exact words and what to do: (1) list the real-time models your Gemini key can use, (2) open the Gemini Live connection and wait for Google's `setupComplete` (no microphone), (3) speak a test sentence through `/cloud/speak` and play it, (4) record one second from the microphone and write it down through `/cloud/transcribe`. A step without its key is skipped with the reason; one failing step does not stop the others.
+- **Every Live error names the step that failed, the service's own words, and what to do**, for example "Connecting to Google Gemini (model) failed: API key not valid… What to do: check your Gemini key…". Covers finding a real-time model, the microphone, starting audio, connecting, a dropped conversation, listening, writing down speech, getting an answer, speaking, the camera and screen sharing.
+- Fix: provider errors that already ended in a full stop showed two ("details..").
+- **Not yet tried against Google's or Groq's real services**; the tests use a FAKE Gemini Live server and FAKE speech and transcription.
+
 ## 0.24.0 — 2026-10-28
 
 Task 1 of the owner's list: Calendar and Gmail.

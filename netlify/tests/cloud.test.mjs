@@ -380,3 +380,29 @@ test('Google Calendar and Gmail: the browser may reach only Google sign-in and t
   }
   assert.equal(t.calls.length, 0);
 });
+
+test('voice check: a real 1-second WAV is accepted, and every failing step returns the provider\'s own words', async () => {
+  // One second of 16 kHz mono 16-bit silence, built the same way as the app's recorder.
+  const n = 16000;
+  const wav = Buffer.alloc(44 + n * 2);
+  wav.write('RIFF', 0); wav.writeUInt32LE(36 + n * 2, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(16000, 24); wav.writeUInt32LE(32000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(n * 2, 40);
+  const ok = setup({ upstream: async () => Response.json({ text: '' }) });
+  const heard = await ok.call('transcribe', { method: 'POST', body: { provider: 'groq', api_key: KEY, audio: wav.toString('base64') } });
+  assert.equal(heard.status, 200);
+  assert.equal((await heard.json()).text, '', 'silence is an answer, not an error');
+  assert.equal(ok.calls[0].init.body.get('file').size, wav.length);
+  const quota = '{"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details.","status":"RESOURCE_EXHAUSTED"}}';
+  const t = setup({ upstream: async () => new Response(quota, { status: 429 }) });
+  for (const [path, body] of [['speak', { provider: 'gemini', api_key: KEY, text: 'Hello, this is ATLAS. Your voice works.', voice: 'Puck' }],
+    ['transcribe', { provider: 'gemini', api_key: KEY, audio: wav.toString('base64') }]]) {
+    const r = await t.call(path, { method: 'POST', body });
+    assert.equal(r.status, 502, path);
+    assert.equal((await r.json()).detail, 'Provider answered HTTP 429: You exceeded your current quota, please check your plan and billing details. Rate limit or free-tier quota reached; wait and try again.', path);
+  }
+  // A real-time model list that fails for a reason other than the key: a usual model, with Google's reason as a warning.
+  const down = setup({ upstream: async () => new Response('{"error":{"message":"The service is currently unavailable."}}', { status: 503 }) });
+  const live = await (await down.call('models', { method: 'POST', body: { provider: 'gemini', api_key: KEY, live: true } })).json();
+  assert.equal(live.suggested_only, true);
+  assert.match(live.warning, /HTTP 503: The service is currently unavailable\./);
+});
