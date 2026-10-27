@@ -897,7 +897,7 @@
     const prompt = el('textarea', { rows: '1', maxlength: '12000', placeholder: 'Ask ATLAS…', 'aria-label': 'Message', class: 'composer-input' });
     const send = el('button', { class: 'btn primary sendbtn', type: 'submit', text: 'Send' });
     const stop = el('button', { class: 'btn chip', type: 'button', disabled: true, 'aria-label': 'Stop generating and speaking' }, [icon('stop', 'filled'), 'Stop']);
-    const mic = el('button', { class: 'btn chip', type: 'button', text: 'Dictate', 'aria-label': 'Dictate a message using browser speech recognition' });
+    const mic = el('button', { class: 'btn chip', type: 'button', text: 'Dictate', 'aria-label': 'Dictate a message with the microphone' });
     const speak = el('button', { class: 'btn chip', type: 'button', text: 'Read aloud', 'aria-pressed': 'false', 'aria-label': 'Read replies aloud' });
     const clear = el('button', { class: 'btn chip', type: 'button', text: 'Clear all', 'aria-label': 'Delete all chat messages' });
     const fileInput = el('input', { type: 'file', id: 'atlasfiles', accept: 'image/*,application/pdf', multiple: true, class: 'hidden', 'aria-label': 'Attach images or PDFs' });
@@ -1013,6 +1013,7 @@
         transcript.replaceChildren(el('p', { class: 'muted', text: 'Could not load chat history: ' + err.message }));
         return;
       }
+      updateCompress(items);
       transcript.replaceChildren();
       if (!items.length) {
         transcript.append(el('div', { class: 'emptychat' }, [
@@ -1213,9 +1214,42 @@
         : 'Voice output off.';
     });
 
+    let dictation = null;
+    /** Dictation where the browser has no speech service: record, then the visitor's key writes it down. */
+    async function recordDictation() {
+      const id = transcriber();
+      if (!id) { status.textContent = 'This browser has no speech service of its own. Add a free Groq or Google Gemini key in AI Chat and Dictate will use it to write down what you say.'; return; }
+      dictation = new AbortController();
+      mic.textContent = 'Listening… tap to stop';
+      status.textContent = 'Microphone on: speak now. When you pause, your ' + TRANSCRIBER_LABELS[id] + ' key writes it down.';
+      try {
+        const audio = await recordUtterance({ signal: dictation.signal });
+        if (!audio) { status.textContent = 'No speech heard. Try again closer to the microphone.'; return; }
+        mic.disabled = true;
+        mic.textContent = 'Writing…';
+        const words = await transcribeSpeech(audio);
+        if (!words) { status.textContent = 'No words were recognised. Try again.'; return; }
+        prompt.value = (prompt.value + ' ' + words).trim();
+        prompt.focus();
+        status.textContent = 'Speech captured. Review your message, then press Send.';
+      } catch (err) {
+        status.textContent = err.name === 'NotAllowedError' ? 'Microphone permission is blocked. Allow it in the browser\'s site settings.' : 'Speech input failed: ' + err.message;
+      } finally {
+        dictation = null;
+        mic.disabled = false;
+        mic.textContent = 'Dictate';
+      }
+    }
+
     mic.addEventListener('click', () => {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) { status.textContent = 'Speech recognition is not supported in this browser. Try Chrome or Edge and allow microphone access.'; return; }
+      if (dictation) { dictation.abort(); return; }
+      const SR = browserSpeech();
+      if (!SR) {
+        if (canRecord()) recordDictation();
+        else status.textContent = 'This browser cannot use the microphone here. Try Chrome or Edge.';
+        return;
+      }
+      let fallback = false;
       const recognition = new SR();
       recognition.lang = speechLang();
       recognition.interimResults = false;
@@ -1229,11 +1263,13 @@
         status.textContent = 'Speech captured. Review your message, then press Send.';
       };
       recognition.onerror = (e) => {
+        // Some browsers (Brave) have the speech API but no service behind it: record instead.
+        if ((e.error === 'network' || e.error === 'service-not-allowed') && canRecord()) { browserSpeechBroken = true; fallback = true; return; }
         const reasons = { 'not-allowed': 'Microphone permission is blocked. Allow it in the browser\'s site settings.', 'no-speech': 'No speech heard. Try again closer to the microphone.',
           network: 'The browser\'s speech service could not be reached (it needs internet).', 'audio-capture': 'No microphone was found.' };
         status.textContent = 'Speech input failed: ' + (reasons[e.error] || e.error || 'unknown error');
       };
-      recognition.onend = () => { mic.disabled = false; mic.textContent = 'Dictate'; };
+      recognition.onend = () => { mic.disabled = false; mic.textContent = 'Dictate'; if (fallback) recordDictation(); };
       try { recognition.start(); } catch { mic.disabled = false; mic.textContent = 'Dictate'; status.textContent = 'Could not start speech recognition. Try again.'; }
     });
 
@@ -1280,6 +1316,15 @@
       const p = current();
       return api('/api/llm/chat', { method: 'POST', body: { provider: p.id, model: modelInput.value.trim(), api_key: keyInput.value.trim(), messages, max_tokens: 700 } });
     };
+    /** Compress is only offered once there are older messages to summarize. */
+    function updateCompress(items) {
+      const covered = new Set((readSummary() || { ids: [] }).ids);
+      const open = items.filter((m) => !covered.has(m.id)).length;
+      const ready = open > KEEP_RECENT;
+      compress.disabled = !ready;
+      compress.textContent = ready ? 'Compress' : 'Compress (' + open + '/' + (KEEP_RECENT + 1) + ')';
+      compress.title = ready ? 'Turn older messages into a short summary' : 'Compress turns older messages into a short summary. It starts once the chat has more than ' + KEEP_RECENT + ' messages.';
+    }
     compress.addEventListener('click', async () => {
       if (activeGeneration) { status.textContent = 'Wait for the reply to finish first.'; return; }
       if (!keyInput.value.trim() || !modelInput.value.trim()) { status.textContent = 'Choose a model and add your key first.'; return; }
@@ -1292,7 +1337,7 @@
       } catch (err) {
         status.textContent = 'Could not compress: ' + err.message;
       } finally {
-        compress.disabled = false;
+        updateCompress(await store.chat().catch(() => []));
       }
     });
 
@@ -1669,6 +1714,88 @@
     ]);
   }
 
+  // ---------------------------------------------------------------- speech to text
+  // Chrome, Edge and Safari have a speech service. Brave and Firefox do not (Brave's fails with a
+  // "network" error), so there ATLAS records what is said and the visitor's own key writes it down:
+  // Whisper on Groq (free), Gemini itself on Google (free), or OpenAI when it is the chosen provider.
+  let browserSpeechBroken = !!navigator.brave;
+  const browserSpeech = () => (browserSpeechBroken ? null : window.SpeechRecognition || window.webkitSpeechRecognition || null);
+  const canRecord = () => !!(window.AudioContext && window.AudioWorkletNode && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  const TRANSCRIBER_LABELS = { groq: 'Groq', gemini: 'Google Gemini', openai: 'OpenAI' };
+
+  /** The provider that writes down speech: a free Groq or Gemini key, or OpenAI only when it is the chosen chat provider. */
+  function transcriber() {
+    const chosen = storageGet(CHAT_SETTINGS_KEY, {}).provider;
+    return ['groq', 'gemini', 'openai'].find((id) => (id !== 'openai' || chosen === 'openai') && cloudKey.get(id)) || null;
+  }
+
+  /** 16 kHz mono 16-bit PCM chunks as a base64 WAV file. */
+  function wavBase64(chunks) {
+    const n = chunks.reduce((sum, c) => sum + c.length, 0);
+    const view = new DataView(new ArrayBuffer(44 + n * 2));
+    const text = (at, t) => { for (let i = 0; i < t.length; i += 1) view.setUint8(at + i, t.charCodeAt(i)); };
+    text(0, 'RIFF'); view.setUint32(4, 36 + n * 2, true); text(8, 'WAVE'); text(12, 'fmt ');
+    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, 16000, true);
+    view.setUint32(28, 32000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); text(36, 'data'); view.setUint32(40, n * 2, true);
+    let at = 44;
+    for (const c of chunks) for (let i = 0; i < c.length; i += 1, at += 2) view.setInt16(at, c[i], true);
+    const bytes = new Uint8Array(view.buffer);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+
+  /**
+   * Records one thing said, as a base64 WAV: it waits for speech, then stops after a short pause,
+   * after 30 seconds, or when the signal aborts. Null when nothing is said within 8 seconds.
+   */
+  async function recordUtterance({ onLevel = () => {}, signal } = {}) {
+    const ctx = new AudioContext();
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+    } catch (err) {
+      ctx.close();
+      throw err;
+    }
+    try {
+      await ctx.audioWorklet.addModule('/static/live-worklet.js' + (ASSET_VERSION ? '?v=' + ASSET_VERSION : ''));
+      const node = new AudioWorkletNode(ctx, 'atlas-mic-capture', { processorOptions: { rate: 16000 } });
+      const silent = ctx.createGain();
+      silent.gain.value = 0;
+      ctx.createMediaStreamSource(stream).connect(node);
+      node.connect(silent).connect(ctx.destination);
+      const chunks = await new Promise((resolve) => {
+        const kept = [];
+        const started = Date.now();
+        let spoke = false;
+        let quietSince = 0;
+        const finish = () => { node.port.onmessage = null; resolve(spoke ? kept : null); };
+        if (signal) { if (signal.aborted) { finish(); return; } signal.addEventListener('abort', finish, { once: true }); }
+        node.port.onmessage = (e) => {
+          const now = Date.now();
+          onLevel(e.data.level);
+          kept.push(new Int16Array(e.data.pcm));
+          if (e.data.level > 0.02) { spoke = true; quietSince = 0; } else if (!quietSince) quietSince = now;
+          if (!spoke && kept.length > 3) kept.shift(); // keep a little sound from just before speech
+          if ((spoke && quietSince && now - quietSince > 1200) || now - started > 30000 || (!spoke && now - started > 8000)) finish();
+        };
+      });
+      return chunks ? wavBase64(chunks) : null;
+    } finally {
+      stream.getTracks().forEach((t) => t.stop());
+      ctx.close();
+    }
+  }
+
+  /** The words in a recording, written down with the visitor's own key. */
+  async function transcribeSpeech(audio) {
+    const id = transcriber();
+    if (!id) throw new Error('To use the microphone in this browser, add a free Groq or Google Gemini key in AI Chat.');
+    const data = await api('/api/llm/transcribe', { method: 'POST', body: { provider: id, api_key: cloudKey.get(id), audio } });
+    return String(data.text || '').trim();
+  }
+
   // ---------------------------------------------------------------- live
   // A hands-free conversation, like the assistant on a phone. Two ways:
   // - Real-time voice (with a Gemini key): realtime.js streams the microphone to Google's Gemini
@@ -1737,7 +1864,8 @@
       liveModels[service] = entry;
     }
 
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    // Listening: the browser's speech service, or a recording written down by a Groq or Gemini key.
+    const SR = canRecord() && transcriber() ? true : !!browserSpeech();
     const canSpeak = 'speechSynthesis' in window;
     const canShare = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
     const voicePrefs = { lang: '', voice: '', ...storageGet(VOICE_KEY, {}) };
@@ -1788,8 +1916,8 @@
       } else if (service() === 'openai') {
         notes.push('ChatGPT voice uses OpenAI\'s Realtime API, the voice technology behind ChatGPT, with your own OpenAI key, straight from this browser. It is paid: every minute of talking is billed to your OpenAI account and costs much more than text chat (see OpenAI\'s pricing page). With the camera or screen on, the current picture goes with each thing you say.');
       } else {
-        if (!SR) notes.push('This browser cannot listen, so type your questions. Chrome, Edge and Safari can listen.');
-        notes.push('Listening uses your browser\'s speech service (Chrome and Edge send the audio to Google or Microsoft). Camera and screen pictures go to ' + p.label + ' only with a question. For pictures, pick a model that can see images, such as Gemini 2.5 Flash or Llama 4 Scout on Groq.');
+        if (!SR) notes.push('This browser cannot listen, so type your questions. Chrome, Edge and Safari can listen, or add a free Groq or Gemini key.');
+        notes.push((browserSpeech() ? 'Listening uses your browser\'s speech service (Chrome and Edge send the audio to Google or Microsoft).' : 'This browser has no speech service of its own, so what you say is recorded and written down by your ' + TRANSCRIBER_LABELS[transcriber()] + ' key.') + ' Camera and screen pictures go to ' + p.label + ' only with a question. For pictures, pick a model that can see images, such as Gemini 2.5 Flash or Llama 4 Scout on Groq.');
         if (!canUse.realtime) notes.push('For real-time voice like the Gemini app, add a free Google Gemini key in AI Chat.');
       }
       if (!canShare) notes.push('Screen sharing works in desktop browsers only; phones and iPads do not allow it. The camera works everywhere.');
@@ -1863,9 +1991,33 @@
       return blob ? { mime: 'image/jpeg', name: (shareBtn.classList.contains('on') ? 'screen' : 'camera') + '.jpg', data: await readAsBase64(blob) } : null;
     }
 
+    /** Listening without a browser speech service: record what is said, then the key writes it down. */
+    async function listenByRecording() {
+      const ctrl = new AbortController();
+      state.recording = ctrl;
+      setState('listening', 'Listening… tap to stop');
+      try {
+        const audio = await recordUtterance({ signal: ctrl.signal, onLevel: (x) => orb.style.setProperty('--lvl', Math.min(0.5, x * 3).toFixed(3)) });
+        if (state.recording !== ctrl || !state.running) return;
+        state.recording = null;
+        orb.style.removeProperty('--lvl');
+        if (!audio) { listen(); return; }
+        setState('thinking', 'Writing down…');
+        const words = await transcribeSpeech(audio);
+        if (!state.running) return;
+        if (words) ask(words); else listen();
+      } catch (err) {
+        if (!state.running) return;
+        status.textContent = err.name === 'NotAllowedError' ? 'Microphone permission is blocked. Allow it in the browser\'s site settings, or type below.' : 'Live could not listen: ' + err.message;
+        end();
+      }
+    }
+
     function listen() {
       if (!state.running || !SR) return;
-      const r = new SR();
+      const BrowserSR = browserSpeech();
+      if (!BrowserSR) { listenByRecording(); return; }
+      const r = new BrowserSR();
       r.lang = lang;
       r.interimResults = true;
       r.maxAlternatives = 1;
@@ -1876,6 +2028,9 @@
         if (res.isFinal) finalText = res[0].transcript.trim();
       };
       r.onerror = (e) => {
+        // The speech API exists but has no service behind it (Brave): switch to recording.
+        if (e.error === 'network' && canRecord() && transcriber()) { browserSpeechBroken = true; return; }
+        if (e.error === 'network') { status.textContent = 'This browser\'s speech service is not working. Add a free Groq or Gemini key in AI Chat, or type below.'; end(); return; }
         if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { status.textContent = 'Microphone permission is blocked. Allow it in the browser\'s site settings, or type below.'; end(); }
       };
       r.onend = () => {
@@ -1905,6 +2060,7 @@
 
     async function ask(text) {
       if (state.rt) { state.rt.sendText(text); return; }
+      if (state.recording) { const rec = state.recording; state.recording = null; rec.abort(); }
       if (state.recognition) { const r = state.recognition; state.recognition = null; try { r.abort(); } catch { /* already stopped */ } }
       if (state.controller) state.controller.abort();
       if (canSpeak) window.speechSynthesis.cancel();
@@ -1915,7 +2071,8 @@
       setState('thinking', 'Thinking…');
       const picture = await frame();
       const system = 'You are ATLAS OS in Live voice mode. Answer in one to three short spoken sentences, with no markdown or lists, in the language the user speaks (English, Hindi or Hinglish). ' +
-        'When an image is attached it is the current view of the user\'s camera or screen: describe only what you can actually see, and say so when it is unclear. You cannot act on the user\'s device; never claim you did.';
+        (picture ? 'The attached image is the current view of the user\'s ' + picture.name.replace('.jpg', '') + ': describe only what you can actually see, and say so when it is unclear. ' : 'Do not mention images or attachments. ') +
+        'You cannot act on the user\'s device; never claim you did.';
       const messages = [{ role: 'system', content: system }, ...state.turns.slice(-10), { role: 'user', content: text, ...(picture ? { attachments: [picture] } : {}) }];
       try {
         const data = await api('/api/llm/chat', { method: 'POST', signal: controller.signal, body: { provider: p.id, model, api_key: cloudKey.get(p.id), messages, max_tokens: 400 } });
@@ -2012,6 +2169,7 @@
 
     function end() {
       state.running = false;
+      if (state.recording) { const rec = state.recording; state.recording = null; rec.abort(); }
       if (state.rt) { const rt = state.rt; state.rt = null; rt.end(); }
       muteBtn.classList.add('hidden');
       muteBtn.classList.remove('on');

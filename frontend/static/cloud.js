@@ -216,6 +216,9 @@
     if (path === '/api/llm/models') {
       return cloud('models', { method: 'POST', body: { provider: body.provider || url.searchParams.get('provider'), api_key: body.api_key || '', ...(body.live === true ? { live: true } : {}) } });
     }
+    if (path === '/api/llm/transcribe') {
+      return cloud('transcribe', { method: 'POST', body: { provider: body.provider, api_key: body.api_key || '', audio: body.audio } });
+    }
     if (path === '/api/llm/chat/stream' || path === '/api/llm/chat') {
       // The page's Stop (and steering) aborts this signal, which cancels the request to the provider.
       return chatWithSwitch(body, path.endsWith('stream'), signal);

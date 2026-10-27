@@ -4,7 +4,7 @@ States: **Not implemented** · **Partially implemented** · **Implemented** (cod
 
 "Verified (Chromium, FAKE model)" means the browser tests passed in Chromium on Linux with the model provider replaced by a labelled fake. It is **not** evidence that a real provider, Safari or a real phone works.
 
-Last updated: 2026-10-26 (v0.20.0). The PC version (backend, Windows installer, PC actions, local models, document search, local voice, device pairing) was removed in 0.15.0; its rows are in the Git history of this file.
+Last updated: 2026-10-26 (v0.21.0). The PC version (backend, Windows installer, PC actions, local models, document search, local voice, device pairing) was removed in 0.15.0; its rows are in the Git history of this file.
 
 | Feature | Location | Status | Evidence / gap |
 |---|---|---|---|
@@ -20,6 +20,7 @@ Last updated: 2026-10-26 (v0.20.0). The PC version (backend, Windows installer, 
 | Chat compression | `app.js` | Verified (Chromium, FAKE model) | e2e: a 20-message chat is summarized, only recent turns sent, Clear all removes the summary. Summary quality depends on the real model |
 | Live, turn by turn: voice loop, camera, screen share | `app.js` (`renderLive`) | Verified (Chromium, fake camera, FAKE model) for camera + typed question | Listening and speaking use browser speech APIs, which cannot run headless; screen sharing only exists in desktop browsers. Not tested on a real phone or iPad |
 | Live, real-time voice (Gemini Live API): mic streaming, spoken answers, interrupt, mute, 8 voices, camera/screen pictures, typed questions, reconnect | `realtime.js`, `live-worklet.js`, `app.js` (`renderLive`), `cloud.mjs` (live model list) | Verified (Chromium, fake mic and camera, FAKE Gemini Live server in the browser) for the message format, audio chunks, playback path, interrupt, mute, reconnect, text-only history and a bad-key message | **Not yet tested against Google's real Live API or on a real phone/iPad.** Needs the owner's Gemini key. Free keys have daily Live limits. On iPhone/iPad the voice may play quietly from the earpiece while the mic is on (a Safari behaviour) |
+| Speech to text without a browser speech service (Brave, Firefox): Dictate and Live record a WAV and the user's Groq (Whisper) or Gemini key writes it down | `app.js` (`recordUtterance`, `transcribeSpeech`), `cloud.mjs` (`/transcribe`) | Verified (Chromium posing as Brave, fake microphone, FAKE transcription) and function tests for Groq and Gemini requests | Not yet tried with the owner's real key in Brave. OpenAI is used only when it is the chosen chat provider |
 | Live, ChatGPT voice (OpenAI Realtime API, paid): same features; picture with each thing said; needs a tick that it is billed | `realtime.js`, `app.js`, `cloud.mjs` | Verified (Chromium, FAKE OpenAI Realtime server in the browser) for the paid tick, session settings, 24 kHz audio, key as WebSocket subprotocol, pictures, typed text, text-only history | **Not yet tested against OpenAI's real service.** Paid: billed per minute to the owner's OpenAI account |
 | About the developer | `app.js` (`renderAbout`) | Verified (Chromium) | e2e checks the links |
 | Key remembered after closing | `app.js` | Verified (Chromium) | e2e: card key and a key typed in Model settings survive closing the page |

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.21.0 — 2026-10-27
+
+From the owner's test on a Windows PC in Brave:
+- **Fix: Dictate failed in Brave** ("speech service could not be reached"). Brave has the speech API but no service behind it, and Firefox has none. ATLAS now records what you say and your own key writes it down: Whisper on Groq (free) or Gemini (free); OpenAI only if it is your chosen chat provider. Chrome, Edge and Safari still use their own speech service, and switch over by themselves if it fails.
+- **Fix: Live turn by turn kept listening without hearing anything in Brave.** It uses the same recording, with the orb following your voice.
+- **Fix: Live talked about "attached images" when there was none.** The image note goes to the model only with a picture.
+- **Compress** is greyed out until the chat is long enough, and shows how far along it is (for example "Compress (3/9)"), instead of looking broken.
+- Calendar, email and messaging are still "Not yet": they need a Google sign-in app that the owner registers first.
+
 ## 0.20.0 — 2026-10-26
 
 The owner asked for ChatGPT's voice too:

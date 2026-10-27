@@ -20,6 +20,7 @@ export function fakeModelFetch(url, init) {
     start(c) { for (const x of chunks) c.enqueue(new TextEncoder().encode('data: ' + x + '\n\n')); c.close(); },
   }), { headers: { 'Content-Type': 'text/event-stream' } });
   const auth = (init.headers && init.headers.Authorization) || '';
+  if (String(url).endsWith('/audio/transcriptions')) return Promise.resolve(Response.json({ text: 'FAKE heard speech' }));
   if (auth === 'Bearer wrong-key-123') return Promise.resolve(new Response('{"error":{"message":"Invalid API Key"}}', { status: 401 }));
   if (String(url).includes('/v1beta/models?')) return Promise.resolve(Response.json({ models: [
     { name: 'models/fake-flash', supportedGenerationMethods: ['generateContent'] },

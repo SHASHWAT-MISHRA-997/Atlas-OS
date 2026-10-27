@@ -791,3 +791,50 @@ test('Live ChatGPT voice: paid, so it waits for a tick; then streams to OpenAI R
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });
+
+test('a browser without a speech service (Brave): Dictate and Live record and the Groq key writes it down; Compress waits for a long chat', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  const sent = [];
+  await page.route('**/cloud/transcribe', async (route) => { sent.push(JSON.parse(route.request().postData())); await route.continue(); });
+  await page.addInitScript(() => {
+    navigator.brave = { isBrave: () => Promise.resolve(true) };
+    // A microphone that says something for a second and then goes quiet.
+    const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async (c) => {
+      if (!c || !c.audio || c.video) return real(c);
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.5, ctx.currentTime);
+      gain.gain.setValueAtTime(0, ctx.currentTime + 1);
+      const out = ctx.createMediaStreamDestination();
+      osc.connect(gain).connect(out);
+      osc.start();
+      return out.stream;
+    };
+  });
+  await page.goto(base + '/');
+  await go(page, 'chat');
+  await page.fill('#keycardinput', 'gsk_brave_key_123');
+  await page.click('#keycardsave');
+  await page.waitForSelector('#keycard', { state: 'hidden' });
+  await page.waitForFunction(() => /^fake-/.test(document.querySelector('#atlasmodel')?.value || ''));
+  await page.waitForSelector('#compressbtn:disabled');
+  assert.match(await page.textContent('#compressbtn'), /Compress \(0\/9\)/);
+  await page.click('button:has-text("Dictate")');
+  await page.waitForFunction(() => document.querySelector('.composer-input')?.value.includes('FAKE heard speech'), null, { timeout: 15000 });
+  assert.equal(sent[0].provider, 'groq');
+  assert.equal(sent[0].api_key, 'gsk_brave_key_123');
+  assert.ok(sent[0].audio.startsWith('UklGR'), 'a WAV recording');
+  await page.click('#chatsettings summary');
+  await page.selectOption('#atlasmodelpick', 'fake-large');
+  await go(page, 'live');
+  await page.waitForSelector('#liveorb');
+  await page.waitForSelector('text=written down by your Groq key');
+  await page.click('#liveorb');
+  await page.waitForSelector('#livesaid >> text=FAKE reply to: FAKE heard speech', { timeout: 15000 });
+  await page.click('#liveend');
+  assert.equal(sent.length, 2);
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
