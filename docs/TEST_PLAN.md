@@ -16,11 +16,11 @@ Fakes live only in tests and in the preview server behind `ATLAS_FAKE_MODEL=1`; 
 
 ## Latest report
 
-Date: 2026-10-28, v0.25.2. Environment: Windows 11, Node 24, Playwright 1.64 Chromium (headless); CI runs the same on Linux with Node 22. **Not Safari.**
+Date: 2026-10-28, v0.25.3. Environment: Windows 11, Node 24, Playwright 1.64 Chromium (headless); CI runs the same on Linux with Node 22. **Not Safari.**
 
 | Command | Passed | Failed |
 |---|---|---|
-| `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 36 | 0 |
+| `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 37 | 0 |
 | `node --test netlify/tests/e2e.test.mjs` | 17 | 0 |
 | `detect-secrets scan` (excluding tests, node_modules, dist) | no findings | — |
 
@@ -41,6 +41,19 @@ Each provider was called through the live function (or directly, for the WebSock
 2026-10-28 run of `provider-check.mjs`: 14 passed, 0 failed. Real browsers on the owner's PC (Windows 11): **Brave 1.98 (Chromium 156, `navigator.brave` true), Chrome 156 and Edge 156 each passed all 17 browser tests.**
 
 Not covered: a successful answer, a real voice, real Calendar/Gmail data and quotas, which need the owner's own keys and Google client ID.
+
+## With the owner's real keys, on the owner's phone (2026-10-28)
+
+**Test my voice setup** on the live site (v0.25.2), with the Gemini and Groq keys saved on the phone, microphone allowed by the owner:
+
+| Step | Result |
+|---|---|
+| 1. Real-time models for the Gemini key | PASS: 9 found; Live uses `gemini-2.5-flash-native-audio-preview-12-2025` |
+| 2. Gemini Live connection | PASS: Google accepted the key and model, setup in 2,753 ms |
+| 3. Natural voice (`/cloud/speak`) | PASS: 3.8 s of Gemini speech (voice Puck), played on the phone |
+| 4. 1 s of microphone (`/cloud/transcribe`, Groq) | PASS, but Whisper wrote "Gracias." for (most likely) silence: fixed in 0.25.3 |
+
+Not yet with real keys: a full Live conversation, ChatGPT voice (paid), Calendar and Gmail.
 
 ## On the owner's phone (OnePlus CPH2573, Android 16, Chrome 156, over USB)
 

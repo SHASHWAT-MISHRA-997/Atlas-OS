@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.25.3 — 2026-10-28
+
+From running **Test my voice setup on the owner's phone with the owner's real keys** (all four steps passed: 9 real-time models, Gemini Live setup in 2.8 s, 3.8 s of real Gemini speech, Groq answered):
+- **Fix: silence was written down as words.** Groq's Whisper wrote "Gracias." for one second of the microphone. Whisper invents short words like this for silence or noise, so Dictate and Live in Brave and Firefox could type things nobody said. ATLAS now asks Groq for Whisper's own estimate of how likely each piece is to be speech (`verbose_json`, temperature 0) and drops pieces that are more likely silence.
 
 - Daily check of the real providers and the live site (`scripts/netlify/provider-check.mjs`, GitHub Actions "Provider check"), with deliberately invalid keys: it fails if Groq, Gemini, OpenRouter, OpenAI or Google sign-in change how they answer.
 - The browser tests passed in real Brave, Chrome and Edge on the owner's PC.

@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.25.2';
+export const VERSION = '0.25.3';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -57,6 +57,8 @@ export const PROVIDER_ORDER = ['groq', 'gemini', 'openrouter', 'openai'];
 const MAX_BODY = 5_000_000; // a chat with up to about 3 MB of images or PDFs
 // Speech to text for browsers without a working speech service (Brave, Firefox): a short WAV
 // recording, written down by the visitor's own provider. OpenRouter has no speech model.
+// A Whisper piece more likely silence than speech is dropped (Whisper's own no-speech estimate).
+const NO_SPEECH = 0.5;
 const TRANSCRIBE_MODELS = { groq: 'whisper-large-v3-turbo', gemini: 'gemini-2.5-flash', openai: 'gpt-4o-mini-transcribe' };
 const MAX_AUDIO = 3_000_000; // base64 characters, about 70 seconds of 16 kHz speech
 // Text to speech in a natural voice for spoken answers (Live turn-by-turn, Read aloud). Gemini's TTS
@@ -109,9 +111,16 @@ async function transcribe(fetchImpl, p, audio, signal) {
   const form = new FormData();
   form.append('file', new Blob([Buffer.from(audio, 'base64')], { type: 'audio/wav' }), 'speech.wav');
   form.append('model', model);
+  // Whisper on Groq: ask how likely each piece is to be speech, so words it invents for silence or
+  // noise ("Gracias.", "Thank you.", seen on the owner's phone) can be dropped.
+  if (p.id === 'groq') { form.append('response_format', 'verbose_json'); form.append('temperature', '0'); }
   const response = await fetchImpl(p.base + '/audio/transcriptions', { method: 'POST', signal, headers: { Authorization: 'Bearer ' + p.key }, body: form });
   if (!response.ok) throw upstreamError(response.status, await response.text().catch(() => ''), p.key);
-  return String((await response.json()).text || '').trim();
+  const data = await response.json();
+  if (Array.isArray(data.segments) && data.segments.length) {
+    return data.segments.filter((x) => !(Number(x.no_speech_prob) > NO_SPEECH)).map((x) => String(x.text || '')).join('').replace(/\s+/g, ' ').trim();
+  }
+  return String(data.text || '').trim();
 }
 
 /** Speaks `text` with the visitor's provider; returns 16-bit mono PCM (base64) and its sample rate. */
