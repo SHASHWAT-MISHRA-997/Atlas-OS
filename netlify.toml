@@ -15,11 +15,12 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://generativelanguage.googleapis.com wss://api.openai.com; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data: blob:; connect-src 'self' wss://generativelanguage.googleapis.com wss://api.openai.com https://accounts.google.com/gsi/ https://www.googleapis.com/calendar/v3/ https://gmail.googleapis.com/gmail/v1/ https://oauth2.googleapis.com/revoke; frame-src https://accounts.google.com/gsi/; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "no-referrer"
     Permissions-Policy = "camera=(self), display-capture=(self), geolocation=(), microphone=(self)"
-    Cross-Origin-Opener-Policy = "same-origin"
+    # Google sign-in opens a pop-up that reports back to this page, so pop-ups keep their opener.
+    Cross-Origin-Opener-Policy = "same-origin-allow-popups"
 
 [[headers]]
   for = "/sw.js"
@@ -28,5 +29,10 @@
 
 [[headers]]
   for = "/version.json"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/config.json"
   [headers.values]
     Cache-Control = "no-cache"

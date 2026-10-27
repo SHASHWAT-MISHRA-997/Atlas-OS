@@ -18,6 +18,7 @@ Gateway credits are never used, so visitors cannot spend the owner's quota.
 | Dictation and read-aloud | Yes | Browser speech service (in Chrome the audio goes to Google) |
 | CSV workbench | Yes | In the browser |
 | Install as an app | Yes | Android and desktop Chrome/Edge: "Install app". iPhone/iPad: Safari → Share → Add to Home Screen |
+| Google Calendar and Gmail, read-only | Yes, once the owner sets a client ID | Today's and tomorrow's events, 10 latest unread emails (sender, subject). Straight from the browser to Google; token in memory only |
 | Acting on a computer (apps, files), local models | **No** | A web page cannot do this safely. The PC version that could was removed in 0.15.0 (D-025) |
 
 ## Getting a free key
@@ -53,11 +54,34 @@ over HTTPS. The function uses it for that one call to the provider's official ad
 code; it cannot be pointed elsewhere) and does not store or log it. If a provider's error message
 repeats the key, ATLAS replaces it with "[your key]" before showing it.
 
+## Google Calendar and Gmail (read-only)
+
+The browser signs in with Google Identity Services' token client (`https://accounts.google.com/gsi/client`,
+loaded only on the Integrations screen) asking for `calendar.readonly` and `gmail.readonly`, then calls
+the Calendar and Gmail APIs itself. The function is not involved. The token is kept in memory; Sign out
+revokes it.
+
+One-time setup by the site owner in Google Cloud Console:
+
+1. Create a project, then **APIs & Services → Library**: turn on **Google Calendar API** and **Gmail API**.
+2. **OAuth consent screen**: External, publishing status **Testing**; add your own Google account under
+   **Test users**; add the scopes `.../auth/calendar.readonly` and `.../auth/gmail.readonly`.
+3. **Credentials → Create credentials → OAuth client ID → Web application**; under **Authorised
+   JavaScript origins** add `https://atlas-os-sm.netlify.app` (and `http://localhost:8888` for the local
+   preview). No redirect URI is needed.
+4. Copy the client ID (it ends in `.apps.googleusercontent.com`; it is public, not a secret) and either
+   set it as the Netlify build variable `ATLAS_GOOGLE_CLIENT_ID` and redeploy, or paste it on the
+   Integrations screen (saved in that browser only).
+
+While the consent screen is in Testing mode only the listed test users can sign in, Google shows an
+"unverified app" warning, and Google may ask to sign in again after 7 days.
+
 ## How it is built and deployed
 
 - `netlify.toml`: build command `node scripts/netlify/build.mjs`, publish `dist/`, function in
   `netlify/functions/atlas.mjs` at `/cloud/*` (Netlify rate limit: 60 requests a minute per visitor).
-- `scripts/netlify/build.mjs` copies `frontend/` into `dist/` and adds version numbers.
+- `scripts/netlify/build.mjs` copies `frontend/` into `dist/`, adds version numbers and writes
+  `config.json` (the Google client ID from `ATLAS_GOOGLE_CLIENT_ID`, or null).
   `frontend/static/cloud.js` loads before `app.js` and answers the app's `/api/*` calls in the browser.
 - `netlify/lib/cloud.mjs` is the whole server side: status, chat streaming and model lists.
 - The GitHub repository is linked to the Netlify project, so every merge to `main` deploys.
@@ -71,4 +95,4 @@ paste your key as on the live site.
 - A reply must finish within Netlify's function time limit (about 60 seconds once streaming starts).
   Output is capped at 2,048 tokens per reply, input at 100,000 characters.
 - A remembered key can be read by anyone using the unlocked device, and by any script running on the
-  page (the strict CSP allows only this site's own scripts).
+  page (the strict CSP allows only this site's own scripts and Google's sign-in script).

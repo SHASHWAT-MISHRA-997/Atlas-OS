@@ -17,7 +17,7 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/cloud/') || url.pathname === '/version.json') return;
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/cloud/') || url.pathname === '/version.json' || url.pathname === '/config.json') return;
   // Network first, so the newest code is always used online; the cache is only a fallback.
   event.respondWith(fetch(request).then((response) => {
     if (response.ok && (request.mode === 'navigate' || SHELL.includes(url.pathname) || url.pathname.startsWith('/static/'))) {

@@ -7,7 +7,7 @@ screen as an app. It is **not** an operating system and **not** production-ready
 describes only what exists today; see [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the
 status of every feature.
 
-## What it does today (v0.22.1)
+## What it does today (v0.24.0)
 
 - **AI Chat** with your own key. Free providers come first: Groq, Google Gemini and OpenRouter
   (free models only). Paid OpenAI is optional and clearly marked. Replies stream, can be stopped,
@@ -21,6 +21,10 @@ status of every feature.
   is available too, only after you tick that it is billed to your account. It can look through your camera (or a shared screen on a computer).
   Turn by turn and Read aloud speak in Gemini's natural voice when you have a Gemini key, and
   otherwise in your browser's most natural voice.
+- **Google Calendar and Gmail (read-only):** sign in with Google on the Integrations screen to see
+  today's and tomorrow's events and your 10 latest unread emails (sender and subject). Nothing is
+  sent, deleted or changed; the sign-in is kept in the page's memory only. Needs a Google OAuth
+  client ID set up by the site owner (docs/CLOUD.md). Not yet tried with real Google accounts.
 - **About:** who builds ATLAS OS.
 - **Auto-switch:** when the free provider you picked hits its limit or is down, the message goes to
   another free provider you added a key for. It never switches into a paid provider.
@@ -34,12 +38,13 @@ status of every feature.
 - **Updates:** a banner tells you when a new version is out; "Check for update" is on the System screen.
 
 Everything you save (key if you tick "Remember", memories, chat history, tasks) stays in that
-browser on that device. Nothing is synced. There is no sign-in.
+browser on that device. Nothing is synced. There is no ATLAS account; the only sign-in is the
+optional Google one for Calendar and Gmail, which is never stored.
 
 ## Not supported
 
-Acting on your computer (opening apps, files), local models, calendar, email and messaging. A web
-page cannot safely do these. ATLAS says so instead of pretending.
+Acting on your computer (opening apps, files), local models, sending email or messages, and
+changing calendar events. ATLAS says so instead of pretending.
 
 ## How it works
 

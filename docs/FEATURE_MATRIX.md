@@ -4,7 +4,7 @@ States: **Not implemented** · **Partially implemented** · **Implemented** (cod
 
 "Verified (Chromium, FAKE model)" means the browser tests passed in Chromium on Linux with the model provider replaced by a labelled fake. It is **not** evidence that a real provider, Safari or a real phone works.
 
-Last updated: 2026-10-26 (v0.21.0). The PC version (backend, Windows installer, PC actions, local models, document search, local voice, device pairing) was removed in 0.15.0; its rows are in the Git history of this file.
+Last updated: 2026-10-28 (v0.24.0). The PC version (backend, Windows installer, PC actions, local models, document search, local voice, device pairing) was removed in 0.15.0; its rows are in the Git history of this file.
 
 | Feature | Location | Status | Evidence / gap |
 |---|---|---|---|
@@ -32,10 +32,11 @@ Last updated: 2026-10-26 (v0.21.0). The PC version (backend, Windows installer, 
 | Dictation and read-aloud | `app.js` | Implemented | Browser speech APIs; not testable headless |
 | Update banner and Check for update (System screen) | `app.js`, `version.json` | Verified (Chromium) | e2e update test |
 | Rate limit, cross-site and content-type checks, key redaction | `netlify.toml`, `cloud.mjs` | Verified (Node) | `attack.test.mjs`, `cloud.test.mjs`; rate limit confirmed in the live deploy config |
-| Size budget (first load under 80 KB gzipped) | `budget.test.mjs` | Verified (Node) | about 50 KB |
+| Size budget (first load under 80 KB gzipped) | `budget.test.mjs` | Verified (Node) | 69.6 KB at v0.24.0; Live (`realtime.js`) and Google (`google.js`) code loads only on their screens |
 | Real provider end to end | — | Not verified | Needs the owner's own key on the live site |
 | Automations (plans and reminders, in the browser) | `app.js` | Verified (Chromium) | e2e: create, Run now, missed run on reopen, delete. Runs only while ATLAS is open; notifications not tested on a real device |
 | Devices: device info, export, import, erase | `app.js` | Verified (Chromium) | e2e: keys left out of export by default, import only takes `atlas.*` text items, erase |
 | Dark and light theme | `theme.js`, `app.css` | Verified (Chromium) | e2e: switch, remembered after reload, Auto follows the device |
 | Neon design, per-screen colours, transitions | `app.css` | Implemented | Checked by screenshots at 390, 1180 and 1440 px in both themes; motion off with "reduce motion" |
-| Calendar, email, messaging, acting on a computer | — | Not implemented | Out of scope for a web page |
+| Google Calendar and Gmail, read-only: today's and tomorrow's events, 10 latest unread (sender, subject), Sign out revokes | `google.js`, `app.js` (`googlePanel`), `build.mjs` (`config.json`), `netlify.toml` (CSP, COOP) | Verified (Chromium, FAKE Google sign-in script and FAKE Calendar/Gmail APIs) | e2e: client ID check, read-only scopes, only GETs with the token, metadata only, refused sign-in, expired token, revoke, nothing stored; cloud test: CSP hosts, no client ID in code, function is no proxy. **Not yet tried with Google's real sign-in or APIs**; needs the owner's OAuth client ID. Main calendar only |
+| Sending email or messages, changing calendar events, acting on a computer | — | Not implemented | ATLAS only reads Google data |
