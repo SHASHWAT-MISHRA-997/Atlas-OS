@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.23.0 — 2026-10-27
+
+The owner asked for Live to control their whole PC ("jo bolu woh kare") and chose the safe version:
+- **PC control in Live, through the new ATLAS PC helper** (`pc-helper/`, `AtlasHelper.exe`). A web page cannot touch the desktop, so this small Windows program runs on the PC, listens only on 127.0.0.1 and does typed actions for Live: open apps (any Start menu app), websites, web/YouTube searches, files and folders; media keys and volume; find files by name; save notes; type text; press shortcuts; manage windows; lock the PC; read time, battery and disk space.
+- **Pairing:** Live → PC, type the 6-digit code shown in the helper window. Only the ATLAS site, with that token, can use it.
+- **Allow prompts:** typing, most shortcuts and closing a window open a Windows Yes/No box on the PC first. No answer in 60 seconds is No.
+- **Never:** delete files, run commands or shells, open programs as files, install, change settings, shut down.
+- Works in all three Live modes: Real-time (Gemini function calling), ChatGPT voice (OpenAI Realtime tools) and Turn by turn (the model answers with ACTION lines, each result goes back to it).
+- CI builds the .exe on Windows and publishes it as a GitHub release after merge; the Live screen links to it.
+- **Not yet tried on a real Windows PC with real keys**; the browser tests use the real helper in FAKE mode (touches nothing) and FAKE model servers. The .exe is not code-signed, so Windows SmartScreen warns once.
+
 ## 0.22.1 — 2026-10-27
 
 The owner said the Live mode did not work properly:

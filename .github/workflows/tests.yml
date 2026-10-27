@@ -37,3 +37,58 @@ jobs:
           python3 -m pip install --quiet detect-secrets
           detect-secrets scan --all-files --exclude-files '(^|/)(\.git|node_modules|dist|tests)/' > secrets.json
           python3 -c "import json,sys; r=json.load(open('secrets.json'))['results']; print(json.dumps({k:[x['type'] for x in v] for k,v in r.items()})); sys.exit(1 if r else 0)"
+
+  # The ATLAS PC helper (pc-helper/): tests on Linux and Windows, then the Windows .exe is built and
+  # started once (--self-test reads the real Start menu app list on the Windows runner).
+  pc-helper:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Helper tests
+        working-directory: pc-helper
+        run: python -m unittest -v test_atlas_helper
+      - name: Build AtlasHelper.exe
+        if: runner.os == 'Windows'
+        working-directory: pc-helper
+        run: |
+          python -m pip install --quiet pyinstaller==6.11.1
+          pyinstaller --onefile --console --name AtlasHelper --clean atlas_helper.py
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          dist\AtlasHelper.exe --self-test
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-FileHash dist\AtlasHelper.exe -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: AtlasHelper
+          path: pc-helper/dist/AtlasHelper.exe
+
+  # After a merge to main, the .exe goes to a GitHub release (once per helper version), so the
+  # Live screen's download link (releases/latest/download/AtlasHelper.exe) always works.
+  pc-helper-release:
+    needs: [pc-helper, cloud]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: AtlasHelper
+      - name: Publish the release if this helper version is new
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(python3 -c "import re;print(re.search(r\"VERSION = '([^']+)'\", open('pc-helper/atlas_helper.py').read()).group(1))")
+          tag="pc-helper-v$v"
+          if gh release view "$tag" >/dev/null 2>&1; then echo "$tag already published"; exit 0; fi
+          sum=$(sha256sum AtlasHelper.exe | cut -d' ' -f1)
+          gh release create "$tag" AtlasHelper.exe --latest --title "ATLAS PC helper $v" --notes "Lets ATLAS Live control your Windows PC. Download AtlasHelper.exe, open it, and type the 6-digit code it shows into ATLAS (Live, PC). See pc-helper/README.md. SHA-256: $sum"

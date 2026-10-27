@@ -7,3 +7,7 @@ dist/
 
 # Netlify CLI state (may contain project identifiers)
 .netlify/
+__pycache__/
+pc-helper/build/
+pc-helper/dist/
+*.spec

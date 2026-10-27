@@ -38,8 +38,10 @@
 
   /**
    * Starts a session. opts: service ('gemini' or 'openai'), key, model, voice, system, worklet (URL
-   * of live-worklet.js) and on: { state(s), level(x), heard(text), said(text), turn({ user, model }),
-   * ended(reason) }. States: connecting, listening, speaking. Resolves once the microphone is on.
+   * of live-worklet.js), optional tools ({ gemini, openai }: tool lists in each service's format) and
+   * on: { state(s), level(x), heard(text), said(text), turn({ user, model }), ended(reason),
+   * tool(name, args) -> Promise<result object> }. States: connecting, listening, speaking.
+   * Resolves once the microphone is on.
    */
   async function start(opts) {
     const service = SERVICES[opts.service];
@@ -61,7 +63,16 @@
     let lastError = '';
     let awaitingTranscript = false;
     let finishTimer = null;
+    let toolCalls = [];
     const sources = new Set();
+    const tools = opts.tools || {};
+
+    /** Runs a tool the model asked for; a failure is reported back to the model, never thrown. */
+    function runTool(name, args) {
+      return Promise.resolve()
+        .then(() => (on.tool ? on.tool(name, args || {}) : { ok: false, message: 'No tools here.' }))
+        .catch((err) => ({ ok: false, message: String((err && err.message) || err) }));
+    }
 
     // One audio context for the microphone and the voice, created inside the tap that started Live
     // so phones allow sound.
@@ -170,6 +181,12 @@
         if (handle) connect();
         return;
       }
+      if (msg.toolCall) {
+        const calls = msg.toolCall.functionCalls || [];
+        Promise.all(calls.map((c) => runTool(c.name, c.args).then((response) => ({ id: c.id, name: c.name, response }))))
+          .then((functionResponses) => { if (!ended && functionResponses.length) send({ toolResponse: { functionResponses } }); });
+        return;
+      }
       const sc = msg.serverContent;
       if (!sc) return;
       if (sc.interrupted) {
@@ -238,7 +255,24 @@
           modelText += msg.delta || '';
           on.said(modelText.trim());
           break;
+        case 'response.output_item.done':
+          if (msg.item && msg.item.type === 'function_call') {
+            let args = {};
+            try { args = JSON.parse(msg.item.arguments || '{}'); } catch { /* bad JSON: the tool refuses it */ }
+            toolCalls.push(runTool(msg.item.name, args).then((result) => ({ call_id: msg.item.call_id, result })));
+          }
+          break;
         case 'response.done':
+          if (toolCalls.length) {
+            // Give the model the results, then let it say what happened.
+            const pending = toolCalls;
+            toolCalls = [];
+            Promise.all(pending).then((done) => {
+              if (ended) return;
+              done.forEach((d) => send({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: d.call_id, output: JSON.stringify(d.result) } }));
+              send({ type: 'response.create' });
+            });
+          }
           // What the user said is written down separately and can arrive a moment later.
           if (awaitingTranscript) finishTimer = setTimeout(finishTurn, 2500); else finishTurn();
           dropAudio = false;
@@ -264,6 +298,7 @@
             model: 'models/' + opts.model,
             generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: opts.voice } } } },
             systemInstruction: { parts: [{ text: opts.system }] },
+            ...(tools.gemini ? { tools: tools.gemini } : {}),
             inputAudioTranscription: {},
             outputAudioTranscription: {},
             contextWindowCompression: { slidingWindow: {} },
@@ -276,6 +311,7 @@
           type: 'realtime',
           instructions: opts.system,
           output_modalities: ['audio'],
+          ...(tools.openai ? { tools: tools.openai, tool_choice: 'auto' } : {}),
           audio: {
             input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { model: 'gpt-4o-mini-transcribe' }, turn_detection: { type: 'semantic_vad' } },
             output: { format: { type: 'audio/pcm', rate: 24000 }, voice: opts.voice },

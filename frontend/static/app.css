@@ -478,3 +478,4 @@ html.themeswap *{transition:background-color .35s,border-color .35s,color .35s!i
 }
 @media(max-width:340px){.composer .chip{font-size:12px}.tabbar button{font-size:10.5px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+.livepcsteps{margin:8px 0 0;padding-left:20px}.livepcsteps li{margin:2px 0}#livepcbox .liverow{flex-wrap:nowrap}#livepcbox .liverow input{flex-basis:auto}

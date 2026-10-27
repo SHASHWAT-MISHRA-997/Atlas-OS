@@ -1637,7 +1637,7 @@
     integrations: ['plug', '05', 'Integrations', 'What ATLAS is connected to, and what it cannot do.'],
     devices: ['phone', '06', 'Devices', 'This device, its data, and moving to another device.'],
     system: ['cpu', '07', 'System', 'Status, updates, theme and the activity log.'],
-    live: ['mic', '08', 'Live', 'Talk hands-free. ATLAS can look through your camera or at a shared screen.'],
+    live: ['mic', '08', 'Live', 'Talk hands-free. ATLAS can look through your camera or a shared screen, and control your Windows PC with the ATLAS helper.'],
     about: ['user', '09', 'About the developer', 'Who builds ATLAS OS.'],
   };
 
@@ -2063,6 +2063,9 @@
     // Listening: the browser's speech service, or a recording written down by a Groq or Gemini key.
     const SR = canRecord() && transcriber() ? true : !!browserSpeech();
     const canShare = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+    // PC control: only on a computer, where the ATLAS PC helper can run next to the browser.
+    let pcLoaded = false;
+    if (canShare) { try { await loadScript('/static/pc.js'); pcLoaded = true; } catch { /* offline: no PC control */ } }
     const voicePrefs = { lang: '', voice: '', ...storageGet(VOICE_KEY, {}) };
     const lang = voicePrefs.lang || navigator.language || 'en-US';
 
@@ -2091,6 +2094,20 @@
     const paidOk = el('input', { type: 'checkbox', id: 'livepaidok', checked: prefs.paidOk === true });
     const paidRow = el('label', { class: 'check livepaid' }, [paidOk, el('span', { text: 'I understand ChatGPT voice is billed to my OpenAI account for every minute it is on.' })]);
     const noteBox = el('div', { class: 'livenotes' });
+    const pcBtn = el('button', { class: 'btn chip' + (pcLoaded ? '' : ' hidden'), type: 'button', id: 'livepc', 'aria-expanded': 'false', 'aria-controls': 'livepcbox' }, [icon('laptop'), 'PC']);
+    const pcText = el('p', { class: 'tiny', id: 'livepctext' });
+    const pcSteps = el('ol', { class: 'tiny livepcsteps' }, [
+      el('li', {}, ['Download ', el('a', { href: pcLoaded ? window.AtlasPC.DOWNLOAD : '#', rel: 'noopener', text: 'AtlasHelper.exe' }), ' (free, from this project\'s GitHub).']),
+      el('li', { text: 'Open it. If Windows says "Windows protected your PC", click More info, then Run anyway.' }),
+      el('li', { text: 'It shows a 6-digit code. Type it here and press Connect. If the browser asks to allow access to devices on your network, click Allow.' }),
+    ]);
+    const pcCode = el('input', { id: 'livepccode', type: 'text', inputmode: 'numeric', autocomplete: 'off', maxlength: '7', placeholder: '6-digit code', 'aria-label': 'Pairing code from the ATLAS helper' });
+    const pcPair = el('button', { class: 'btn primary', type: 'button', id: 'livepcpair', text: 'Connect' });
+    const pcCodeRow = el('div', { class: 'liverow field' }, [pcCode, pcPair]);
+    const pcToggle = el('button', { class: 'btn', type: 'button', id: 'livepctoggle' });
+    const pcForget = el('button', { class: 'btn', type: 'button', id: 'livepcforget', text: 'Disconnect' });
+    const pcActions = el('div', { class: 'chips-row' }, [pcToggle, pcForget]);
+    const pcBox = el('div', { class: 'panel livesetupbox hidden', id: 'livepcbox' }, [pcText, pcSteps, pcCodeRow, pcActions]);
     // Every mode can be picked; one that is not ready yet shows what it needs right here, so a
     // Gemini (or OpenAI) key can be added without leaving Live or changing the AI Chat provider.
     const keyFor = { realtime: 'gemini', chatgpt: 'openai' };
@@ -2178,7 +2195,8 @@
         el('div', { class: 'liveopts' }, [el('label', { class: 'liveopt field' }, [el('span', { class: 'tiny muted', text: 'Mode' }), modeSel]), voiceRow]),
         setupBox,
         paidRow,
-        el('div', { class: 'chips-row' }, [camBtn, flipBtn, shareBtn, muteBtn, endBtn]),
+        el('div', { class: 'chips-row' }, [camBtn, flipBtn, shareBtn, pcBtn, muteBtn, endBtn]),
+        pcBox,
         el('form', { class: 'liverow field', onsubmit: (e) => { e.preventDefault(); const t = typed.value.trim(); if (t) { typed.value = ''; ask(t); } } }, [typed, typedSend]),
         status,
         noteBox,
@@ -2188,6 +2206,93 @@
     const state = { running: false, recognition: null, stream: null, facing: 'environment', turns: [], controller: null, rt: null };
     const setState = (s, label) => { orb.dataset.state = s; orbLabel.textContent = label; orb.setAttribute('aria-label', label); };
     applyMode();
+
+    // ---- PC control through the ATLAS PC helper (pc.js). The browser only contacts the helper
+    // after the user opens this panel or has paired, so other visitors never see a network prompt.
+    const PC = pcLoaded ? window.AtlasPC : null;
+    async function refreshPC(check) {
+      if (!PC) return;
+      const s = PC.saved();
+      pcBtn.classList.toggle('on', PC.enabled());
+      pcSteps.classList.toggle('hidden', !!s);
+      pcCodeRow.classList.toggle('hidden', !!s);
+      pcActions.classList.toggle('hidden', !s);
+      if (!s) {
+        pcText.textContent = 'Live can control this Windows PC: open apps, websites and files, search, play music, change the volume, type and use shortcuts. It needs the small ATLAS helper app running on this PC. Typing, shortcuts and closing windows always ask "Allow?" on the PC first. It cannot delete files, run commands or shut down.';
+        return;
+      }
+      pcToggle.textContent = s.on === false ? 'Turn on PC control' : 'Turn off PC control';
+      const base = 'Paired with ' + (s.computer || 'this PC') + '. ' + (s.on === false ? 'PC control is off.' : 'Ask Live to open apps, play music, search, type and more.');
+      pcText.textContent = base;
+      if (!check) return;
+      try {
+        const h = await PC.hello();
+        if (!h.paired) { await PC.unpair(); pcText.textContent = 'This browser is no longer paired (it was unpaired on the PC). Pair again with a new code.'; refreshPC(); return; }
+        pcText.textContent = base + ' The ATLAS helper is running.';
+      } catch (err) {
+        pcText.textContent = base + ' ' + err.message + ' Open AtlasHelper on this PC.';
+      }
+    }
+    /** Paired, switched on, and the helper answers: then Live gets the PC tools. */
+    async function pcReady() {
+      if (!PC || !PC.enabled()) return false;
+      try {
+        const h = await PC.hello();
+        if (h.paired) return true;
+        await PC.unpair();
+        refreshPC();
+        status.textContent = 'PC control is off: this browser was unpaired on the PC. Pair again under PC.';
+      } catch (err) {
+        status.textContent = 'PC control is off for now: ' + err.message + ' Open AtlasHelper on this PC.';
+      }
+      return false;
+    }
+    const ASKS = { type_text: 1, press_keys: 1 };
+    /** One action on the PC; the result goes back to the model. */
+    async function pcTool(name, args) {
+      const askFirst = ASKS[name] || (name === 'window' && args && args.action === 'close');
+      status.textContent = 'On your PC: ' + name.replace(/_/g, ' ') + '…' + (askFirst ? ' Click Yes in the Allow box on the PC if you want this.' : '');
+      const r = await PC.run(name, args);
+      status.textContent = 'PC: ' + (r.message || (r.ok ? 'done.' : 'not done.'));
+      log('pc ' + name + ': ' + (r.ok ? 'done' : 'not done'));
+      if (/no longer paired/.test(r.message || '')) refreshPC();
+      return r;
+    }
+    if (PC) {
+      refreshPC(PC.enabled());
+      pcBtn.addEventListener('click', () => {
+        const open = pcBox.classList.toggle('hidden') === false;
+        pcBtn.setAttribute('aria-expanded', String(open));
+        if (open) refreshPC(true);
+      });
+      pcPair.addEventListener('click', async () => {
+        const code = pcCode.value.replace(/\D/g, '');
+        if (code.length !== 6) { pcText.textContent = 'Type the 6-digit code shown in the ATLAS helper window.'; pcCode.focus(); return; }
+        pcPair.disabled = true;
+        pcText.textContent = 'Connecting…';
+        try {
+          const d = await PC.pair(code);
+          pcCode.value = '';
+          log('pc: paired with ' + d.computer);
+          await refreshPC(true);
+          status.textContent = 'PC control is on.' + (state.running ? ' It starts the next time you start Live.' : '');
+        } catch (err) {
+          pcText.textContent = err.message + (err.offline ? ' Open AtlasHelper on this PC first.' : '');
+        } finally {
+          pcPair.disabled = false;
+        }
+      });
+      pcToggle.addEventListener('click', () => {
+        PC.setOn(!PC.enabled());
+        refreshPC();
+        if (state.rt) status.textContent = 'This applies the next time you start Live.';
+      });
+      pcForget.addEventListener('click', async () => {
+        await PC.unpair();
+        log('pc: disconnected');
+        refreshPC();
+      });
+    }
 
     function stopMedia() {
       if (state.rt) state.rt.setVideo(null);
@@ -2307,20 +2412,33 @@
       said.textContent = '';
       setState('thinking', 'Thinking…');
       const picture = await frame();
+      const pcOn = await pcReady();
       const system = 'You are ATLAS OS in Live voice mode. Answer in one to three short spoken sentences, with no markdown or lists, in the language the user speaks (English, Hindi or Hinglish). ' +
         (picture ? 'The attached image is the current view of the user\'s ' + picture.name.replace('.jpg', '') + ': describe only what you can actually see, and say so when it is unclear. ' : 'Do not mention images or attachments. ') +
-        'You cannot act on the user\'s device; never claim you did.';
+        (pcOn ? PC.textPrompt() : 'You cannot act on the user\'s device; never claim you did.');
       const messages = [{ role: 'system', content: system }, ...state.turns.slice(-10), { role: 'user', content: text, ...(picture ? { attachments: [picture] } : {}) }];
       try {
-        const data = await api('/api/llm/chat', { method: 'POST', signal: controller.signal, body: { provider: p.id, model, api_key: cloudKey.get(p.id), messages, max_tokens: 400 } });
-        if (state.controller !== controller) return;
-        const answer = String(data.answer || '').trim();
+        let data;
+        let answer = '';
+        // With PC control the model may answer with ACTION lines: run each, give it the result, ask again.
+        for (let step = 0; ; step += 1) {
+          data = await api('/api/llm/chat', { method: 'POST', signal: controller.signal, body: { provider: p.id, model, api_key: cloudKey.get(p.id), messages, max_tokens: 400 } });
+          if (state.controller !== controller) return;
+          answer = String(data.answer || '').trim();
+          const action = pcOn && PC.parseAction(answer);
+          if (!action) break;
+          if (step >= 4) { answer = 'I stopped after several steps on your PC. Tell me what to do next.'; break; }
+          said.textContent = 'Working on your PC…';
+          const result = await pcTool(action.name, action.args);
+          if (state.controller !== controller) return;
+          messages.push({ role: 'assistant', content: answer }, { role: 'user', content: 'ACTION RESULT: ' + JSON.stringify(result) + '\nNow tell the user in one short spoken sentence what happened, or reply with another ACTION line if one more step is needed.' });
+        }
         said.textContent = answer;
         state.turns.push({ role: 'user', content: text + (picture ? ' [with a ' + picture.name.replace('.jpg', '') + ' picture]' : '') }, { role: 'assistant', content: answer });
         // Live turns also appear in AI Chat history (text only, never the pictures).
         await store.appendChat({ role: 'user', content: text, ...(picture ? { files: [picture.name] } : {}) });
         await store.appendChat({ role: 'assistant', content: answer, meta: 'Live · ' + describeAnswer(data, p.label) });
-        status.textContent = 'Answered by ' + p.label + (picture ? ', looking at your ' + picture.name.replace('.jpg', '') : '') + '.';
+        if (!/^PC: /.test(status.textContent)) status.textContent = 'Answered by ' + p.label + (picture ? ', looking at your ' + picture.name.replace('.jpg', '') : '') + '.';
         log('live answer from ' + p.id + '/' + model);
         await speak(answer);
       } catch (err) {
@@ -2337,6 +2455,8 @@
     const RT_SYSTEM = 'You are ATLAS OS, a friendly voice assistant made by Shashwat Mishra, talking with the user in real time. Keep answers short and natural for speech, with no markdown or lists. ' +
       'Reply in the language the user speaks (English, Hindi or Hinglish). When you get camera or screen pictures, describe only what you can actually see, and say so when it is unclear. ' +
       'You cannot act on the user\'s device, open apps or send messages; never claim you did.';
+    // With PC control, the "cannot act" rule is swapped for what the PC tools can and cannot do.
+    const rtSystem = (pcOn) => (pcOn ? RT_SYSTEM.replace(/You cannot act on the user's device[^]*$/, '') + PC.PROMPT : RT_SYSTEM);
 
     async function startRealtime() {
       const svc = service();
@@ -2361,15 +2481,19 @@
         return;
       }
       const liveModel = models.list[0];
+      const pcOn = await pcReady();
+      if (!state.running) return;
       try {
         state.rt = await window.AtlasRealtime.start({
-          service: svc, key: rtKeys[svc], model: liveModel, voice: voiceSel.value, system: RT_SYSTEM,
+          service: svc, key: rtKeys[svc], model: liveModel, voice: voiceSel.value, system: rtSystem(pcOn),
+          tools: pcOn ? { gemini: PC.geminiTools(), openai: PC.openaiTools() } : null,
           worklet: '/static/live-worklet.js' + (ASSET_VERSION ? '?v=' + ASSET_VERSION : ''),
           on: {
             state: (s) => setState(s === 'connecting' ? 'thinking' : s, s === 'speaking' ? 'Speaking… tap to stop' : s === 'listening' ? 'Listening… tap to end' : 'Connecting…'),
             level: (x) => orb.style.setProperty('--lvl', Math.min(0.5, x * 3).toFixed(3)),
             heard: (t) => { heard.textContent = t; },
             said: (t) => { said.textContent = t; },
+            tool: pcTool,
             turn: async ({ user, model: answer }) => {
               // Text only: the audio and pictures are never stored.
               if (user) await store.appendChat({ role: 'user', content: user });
@@ -2391,7 +2515,7 @@
       if (!state.running) { state.rt.end(); state.rt = null; return; }
       if (state.stream) state.rt.setVideo(video);
       muteBtn.classList.remove('hidden');
-      status.textContent = 'Live with ' + label + ' (' + liveModel + '). Talk any time; speak over it to interrupt.' + (svc === 'openai' ? ' Billed to your OpenAI account while on.' : '');
+      status.textContent = 'Live with ' + label + ' (' + liveModel + '). Talk any time; speak over it to interrupt.' + (pcOn ? ' PC control is on.' : '') + (svc === 'openai' ? ' Billed to your OpenAI account while on.' : '');
       log('live real-time started with ' + liveModel);
     }
 

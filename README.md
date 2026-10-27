@@ -7,7 +7,7 @@ screen as an app. It is **not** an operating system and **not** production-ready
 describes only what exists today; see [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the
 status of every feature.
 
-## What it does today (v0.22.1)
+## What it does today (v0.23.0)
 
 - **AI Chat** with your own key. Free providers come first: Groq, Google Gemini and OpenRouter
   (free models only). Paid OpenAI is optional and clearly marked. Replies stream, can be stopped,
@@ -21,6 +21,11 @@ status of every feature.
   is available too, only after you tick that it is billed to your account. It can look through your camera (or a shared screen on a computer).
   Turn by turn and Read aloud speak in Gemini's natural voice when you have a Gemini key, and
   otherwise in your browser's most natural voice.
+- **PC control in Live (Windows):** with the free ATLAS PC helper (`pc-helper/`, one .exe) running on
+  your PC and paired with a 6-digit code, Live can open apps, websites and files, search YouTube, play
+  music, change the volume, type, press shortcuts and manage windows. Typing, shortcuts and closing
+  windows ask "Allow?" on the PC first; it never deletes files, runs commands or shuts down.
+  See [pc-helper/README.md](pc-helper/README.md).
 - **About:** who builds ATLAS OS.
 - **Auto-switch:** when the free provider you picked hits its limit or is down, the message goes to
   another free provider you added a key for. It never switches into a paid provider.
@@ -38,8 +43,8 @@ browser on that device. Nothing is synced. There is no sign-in.
 
 ## Not supported
 
-Acting on your computer (opening apps, files), local models, calendar, email and messaging. A web
-page cannot safely do these. ATLAS says so instead of pretending.
+Acting on your computer without the ATLAS PC helper, any phone or iPad control, local models,
+calendar, email and messaging. A web page cannot safely do these. ATLAS says so instead of pretending.
 
 ## How it works
 

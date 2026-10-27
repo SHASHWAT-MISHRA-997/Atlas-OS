@@ -47,7 +47,7 @@ const noSideScroll = async (page) => assert.ok(await page.evaluate(() => documen
 const go = async (page, section) => {
   const tab = page.locator('.tabbar [data-section="' + section + '"]');
   if (await tab.count()) { await tab.click(); return; }
-  await page.click('#morebtn');
+  if (await page.isVisible('#morebtn')) await page.click('#morebtn'); // phones; a computer shows the side menu
   await page.click('.nav [data-section="' + section + '"]');
 };
 
@@ -901,4 +901,128 @@ test('natural voice: with a Gemini key, Live turn by turn and Read aloud speak i
   assert.equal(spoken.at(-1).text, 'FAKE reply to: hello.');
   assert.deepEqual(page.errors, []);
   await page.context().close();
+});
+
+test('PC control: pairs with the ATLAS PC helper, Gemini Live opens an app on the PC, turn by turn runs ACTION lines', async () => {
+  // The real helper, in FAKE mode: it checks and answers like on Windows but touches nothing.
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const cfg = mkdtempSync(tmpdir() + '/atlas-helper-');
+  const helper = spawn(process.env.PYTHON || 'python3', ['pc-helper/atlas_helper.py', '--fake', '--no-input', '--allow-origin', base, '--config', cfg + '/helper.json'], { cwd: root, stdio: ['ignore', 'pipe', 'inherit'] });
+  let out = '';
+  helper.stdout.on('data', (d) => { out += d; });
+  try {
+    for (let i = 0; i < 100 && !/Pairing code: \d{3} \d{3}/.test(out); i += 1) await new Promise((r) => setTimeout(r, 100));
+    const code = /Pairing code: (\d{3}) (\d{3})/.exec(out).slice(1).join('');
+
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    const page = await context.newPage();
+    page.errors = [];
+    page.on('pageerror', (e) => page.errors.push(String(e)));
+    // 400 is the helper refusing the wrong pairing code on purpose.
+    page.on('console', (m) => { if (m.type() === 'error' && !/status of (40[0139]|422|502)/.test(m.text())) page.errors.push(m.text()); });
+    // A FAKE Gemini Live server that asks to open Notepad when the user types.
+    const got = [];
+    await page.routeWebSocket(/generativelanguage\.googleapis\.com/, (ws) => {
+      ws.onMessage((raw) => {
+        const msg = JSON.parse(String(raw));
+        got.push(msg);
+        if (msg.setup) ws.send(JSON.stringify({ setupComplete: {} }));
+        if (msg.clientContent) ws.send(JSON.stringify({ toolCall: { functionCalls: [{ id: 'call-1', name: 'open_app', args: { name: 'notepad' } }] } }));
+        if (msg.toolResponse) {
+          ws.send(JSON.stringify({ serverContent: { outputTranscription: { text: 'FAKE Notepad is open' } } }));
+          ws.send(JSON.stringify({ serverContent: { turnComplete: true } }));
+        }
+      });
+    });
+    await page.addInitScript(() => { if (!localStorage.getItem('atlas.cloud.key.gemini')) localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-test-pc-key')); });
+    await page.goto(base + '/');
+    await go(page, 'live');
+    await page.waitForSelector('#livepc');
+    await page.waitForSelector('#livepcbox', { state: 'hidden' });
+    await page.click('#livepc');
+    await page.waitForSelector('#livepcbox >> text=AtlasHelper.exe');
+    assert.match(await page.getAttribute('#livepcbox a', 'href'), /^https:\/\/github\.com\/SHASHWAT-MISHRA-997\/Atlas-OS\/releases\/latest\/download\/AtlasHelper\.exe$/);
+    // A wrong code is refused by the helper; the right one pairs.
+    await page.fill('#livepccode', '12345');
+    await page.click('#livepcpair');
+    await page.waitForSelector('#livepctext >> text=6-digit code');
+    await page.fill('#livepccode', code === '000000' ? '111111' : '000000');
+    await page.click('#livepcpair');
+    await page.waitForSelector('#livepctext >> text=not right');
+    await page.fill('#livepccode', code.slice(0, 3) + ' ' + code.slice(3));
+    await page.click('#livepcpair');
+    await page.waitForSelector('#livepctext >> text=The ATLAS helper is running');
+    await page.waitForSelector('#livepc.on');
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.pc.v1')));
+    assert.equal(saved.on, true);
+    assert.ok(saved.token.length > 30);
+    assert.ok(!out.includes(saved.token), 'the helper never prints the token');
+
+    // Real-time voice gets the PC tools and a prompt that allows acting on the PC.
+    await page.click('#liveorb');
+    await page.waitForSelector('#livestatus >> text=PC control is on');
+    const setup = got.find((m) => m.setup).setup;
+    const decls = setup.tools[0].functionDeclarations;
+    assert.ok(decls.some((d) => d.name === 'open_app' && d.parameters.type === 'OBJECT'));
+    assert.ok(decls.some((d) => d.name === 'lock_pc' && !d.parameters), 'no empty OBJECT for Gemini');
+    assert.match(setup.systemInstruction.parts[0].text, /ATLAS PC helper/);
+    assert.doesNotMatch(setup.systemInstruction.parts[0].text, /You cannot act on the user's device/);
+    await page.fill('#livetyped', 'notepad kholo');
+    await page.press('#livetyped', 'Enter');
+    await page.waitForSelector('#livesaid >> text=FAKE Notepad is open');
+    const reply = got.find((m) => m.toolResponse).toolResponse.functionResponses[0];
+    assert.equal(reply.id, 'call-1');
+    assert.equal(reply.response.ok, true);
+    assert.equal(reply.response.message, 'Opened Notepad.');
+    assert.match(out, /FAKE launch \["notepad\.exe"\]/);
+    await page.waitForSelector('#livestatus >> text=PC: Opened Notepad.');
+    await page.click('#liveend');
+
+    // Turn by turn: the model answers with ACTION lines; each runs on the PC and the result goes back.
+    const sent = [];
+    await page.route('**/cloud/chat', async (route) => {
+      const body = JSON.parse(route.request().postData());
+      sent.push(body);
+      const last = body.messages.at(-1).content;
+      const answer = /^ACTION RESULT/.test(last) ? (sent.length === 2 ? 'ACTION {"name": "media", "args": {"key": "volume_up", "steps": 5}}' : 'FAKE YouTube khul gaya aur volume badh gaya.')
+        : '```\nACTION {"name": "web_search", "args": {"query": "arijit singh songs", "site": "youtube"}}\n```';
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ answer, provider: 'groq', model: 'fake-large', local: false, latency_ms: 5 }) });
+    });
+    await page.evaluate(() => {
+      localStorage.setItem('atlas.cloud.key.groq', JSON.stringify('gsk_pc_test_key'));
+      localStorage.setItem('atlas.os.chat.settings.v1', JSON.stringify({ provider: 'groq', model: 'fake-large' }));
+    });
+    await go(page, 'about');
+    await go(page, 'live');
+    await page.selectOption('#livemode', 'turns');
+    await page.fill('#livetyped', 'youtube pe arijit ke gaane chalao aur awaaz badhao');
+    await page.press('#livetyped', 'Enter');
+    await page.waitForSelector('#livesaid >> text=FAKE YouTube khul gaya');
+    assert.equal(sent.length, 3);
+    assert.match(sent[0].messages[0].content, /ACTION \{"name"/);
+    assert.match(sent[1].messages.at(-1).content, /"ok":true/);
+    assert.match(out, /FAKE open_url \["https:\/\/www\.youtube\.com\/results\?search_query=arijit\+singh\+songs"\]/);
+    assert.match(out, /FAKE media \["volume_up", 5\]/);
+    const history = await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.chat.v1')));
+    assert.equal(history.at(-1).content, 'FAKE YouTube khul gaya aur volume badh gaya.', 'only the spoken answer is saved, not ACTION lines');
+
+    // Turned off, Live is told it cannot act; Disconnect forgets the token on both sides.
+    await page.click('#livepc');
+    await page.click('#livepctoggle');
+    await page.waitForSelector('#livepc:not(.on)');
+    await page.fill('#livetyped', 'lock my pc');
+    await page.press('#livetyped', 'Enter');
+    for (let i = 0; i < 50 && sent.length < 4; i += 1) await page.waitForTimeout(100);
+    assert.match(sent[3].messages[0].content, /You cannot act on the user's device/);
+    await page.click('#livepcforget');
+    await page.waitForSelector('#livepccode');
+    assert.equal(await page.evaluate(() => localStorage.getItem('atlas.pc.v1')), null);
+    assert.match(out, /A browser disconnected/);
+    await shot(page, '12-live-pc');
+    assert.deepEqual(page.errors, []);
+    await context.close();
+  } finally {
+    helper.kill();
+  }
 });

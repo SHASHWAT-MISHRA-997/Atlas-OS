@@ -14,12 +14,13 @@ Fakes live only in tests and in the preview server behind `ATLAS_FAKE_MODEL=1`; 
 
 ## Latest report
 
-Date: 2026-10-27, v0.22.1. Environment: Linux container, Node 22, Chromium 141. **Not Safari, not a real phone.**
+Date: 2026-10-27, v0.23.0. Environment: Linux container, Node 22, Chromium 141. **Not Safari, not a real phone.**
 
 | Command | Passed | Failed |
 |---|---|---|
 | `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 32 | 0 |
-| `node --test netlify/tests/e2e.test.mjs` | 15 | 0 |
+| `node --test netlify/tests/e2e.test.mjs` | 16 | 0 |
+| `python -m unittest test_atlas_helper` (in `pc-helper/`, Linux) | 16 | 0 |
 | `detect-secrets scan` (excluding tests, node_modules, dist) | no findings | — |
 
 ## Manual checks still needed
