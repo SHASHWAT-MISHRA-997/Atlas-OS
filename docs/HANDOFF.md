@@ -1,4 +1,4 @@
-# Handoff — 2026-10-26 (v0.20.0)
+# Handoff — 2026-10-26 (v0.21.0)
 
 ## State
 
@@ -13,6 +13,7 @@
 - v0.18.1: Home cleaned up: the title no longer shows a copied layer of its own text, repeated wording removed.
 - v0.19.0: Live real-time voice through the Gemini Live API (`frontend/static/realtime.js`, `live-worklet.js`), straight from the browser to Google with the user's Gemini key. Untested against the real API; the owner must try it with their key.
 - v0.20.0: ChatGPT voice in Live (OpenAI Realtime API over WebSocket, paid, behind a billing tick). Untested against the real API.
+- v0.21.0: Dictate and Live work in Brave/Firefox (record + Groq Whisper or Gemini writes it down), Compress shows when it can be used, Live no longer talks about images without one.
 - v0.17.0: thinking level, images and PDFs, steering mid-reply, chat compression; Stop now cancels the request online.
 - v0.16.1: removed the top-bar task box.
 - v0.16.0: neon redesign with dark/light theme, per-screen colours and transitions; System screen; Automations and Devices back as web versions.

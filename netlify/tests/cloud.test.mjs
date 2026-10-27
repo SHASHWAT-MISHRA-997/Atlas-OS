@@ -304,3 +304,26 @@ test('attachments are validated: type, base64, count, size, and only on user mes
   await refuse(chatBody({ messages: [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'x', attachments: [{ mime: 'image/png', data: PNG }] }] }), /own messages/);
   assert.equal(t.calls.length, 0);
 });
+
+test('speech to text: Whisper on Groq, Gemini on Google, WAV only, no OpenRouter', async () => {
+  const WAV = Buffer.from('RIFF$\u0000\u0000\u0000WAVEfmt fake test audio').toString('base64');
+  const t = setup({ upstream: async (url) => (url.includes('groq')
+    ? Response.json({ text: ' namaste atlas ' })
+    : Response.json({ candidates: [{ content: { parts: [{ text: 'kal ka plan batao' }] } }] })) });
+  const call = (provider, audio = WAV) => t.call('transcribe', { method: 'POST', body: { provider, api_key: KEY, audio } });
+  const groq = await call('groq');
+  assert.equal(groq.status, 200);
+  assert.deepEqual(await groq.json(), { provider: 'groq', model: 'whisper-large-v3-turbo', text: 'namaste atlas' });
+  assert.equal(t.calls[0].url, 'https://api.groq.com/openai/v1/audio/transcriptions');
+  assert.equal(t.calls[0].init.headers.Authorization, 'Bearer ' + KEY);
+  assert.equal(t.calls[0].init.body.get('model'), 'whisper-large-v3-turbo');
+  assert.equal(t.calls[0].init.body.get('file').type, 'audio/wav');
+  const gemini = await (await call('gemini')).json();
+  assert.equal(gemini.text, 'kal ka plan batao');
+  assert.match(t.calls[1].url, /gemini-2\.5-flash:generateContent$/);
+  assert.equal(JSON.parse(t.calls[1].init.body).contents[0].parts[0].inlineData.mimeType, 'audio/wav');
+  assert.equal((await call('openrouter')).status, 422);
+  assert.equal((await call('groq', Buffer.from('not a wav file').toString('base64'))).status, 422);
+  assert.equal((await call('groq', 'UklGR' + 'A'.repeat(3_000_000))).status, 422);
+  assert.equal(t.calls.length, 2, 'refused requests never reach a provider');
+});

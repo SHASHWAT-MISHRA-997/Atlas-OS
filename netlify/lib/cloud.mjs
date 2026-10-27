@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.20.0';
+export const VERSION = '0.21.0';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -54,6 +54,10 @@ export const PROVIDERS = {
 export const PROVIDER_ORDER = ['groq', 'gemini', 'openrouter', 'openai'];
 
 const MAX_BODY = 5_000_000; // a chat with up to about 3 MB of images or PDFs
+// Speech to text for browsers without a working speech service (Brave, Firefox): a short WAV
+// recording, written down by the visitor's own provider. OpenRouter has no speech model.
+const TRANSCRIBE_MODELS = { groq: 'whisper-large-v3-turbo', gemini: 'gemini-2.5-flash', openai: 'gpt-4o-mini-transcribe' };
+const MAX_AUDIO = 3_000_000; // base64 characters, about 70 seconds of 16 kHz speech
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
 });
@@ -80,6 +84,28 @@ function withKey(providers, id, key) {
 }
 
 // ---------------------------------------------------------------- model calls
+
+/** Writes down a WAV recording with the visitor's provider: Whisper on Groq and OpenAI, Gemini itself on Google. */
+async function transcribe(fetchImpl, p, audio, signal) {
+  const model = TRANSCRIBE_MODELS[p.id];
+  if (p.kind === 'gemini') {
+    const response = await fetchImpl(p.base + '/v1beta/models/' + model + ':generateContent', {
+      method: 'POST', signal, headers: { 'Content-Type': 'application/json', 'x-goog-api-key': p.key },
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: audio } },
+        { text: 'Write down exactly what is said in this recording, in the words and language used (Hindi in Devanagari, Hinglish in Latin letters, as spoken). Reply with only those words. If nobody speaks, reply with nothing.' }] }],
+      generationConfig: { temperature: 0 } }),
+    });
+    if (!response.ok) throw upstreamError(response.status, await response.text().catch(() => ''), p.key);
+    const data = await response.json();
+    return ((data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || []).map((x) => x.text || '').join('').trim();
+  }
+  const form = new FormData();
+  form.append('file', new Blob([Buffer.from(audio, 'base64')], { type: 'audio/wav' }), 'speech.wav');
+  form.append('model', model);
+  const response = await fetchImpl(p.base + '/audio/transcriptions', { method: 'POST', signal, headers: { Authorization: 'Bearer ' + p.key }, body: form });
+  if (!response.ok) throw upstreamError(response.status, await response.text().catch(() => ''), p.key);
+  return String((await response.json()).text || '').trim();
+}
 
 function upstreamError(status, text, key) {
   let detail = '';
@@ -324,12 +350,12 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
         })),
       });
     }
-    if (method !== 'POST' || !['/chat', '/models'].includes(path)) return fail(404, 'not_found', 'Unknown ATLAS cloud endpoint.');
+    if (method !== 'POST' || !['/chat', '/models', '/transcribe'].includes(path)) return fail(404, 'not_found', 'Unknown ATLAS cloud endpoint.');
     if (fromOtherSite(req, url)) return fail(403, 'cross_site', 'ATLAS online only answers its own page.');
     // JSON only: a plain HTML form on another site cannot send this content type.
     if (!/^application\/json\s*(;|$)/i.test(req.headers.get('content-type') || '')) return fail(415, 'json_only', 'Send JSON (Content-Type: application/json).');
-    // Only chat carries files; listing models needs a few hundred bytes.
-    const limit = path === '/chat' ? MAX_BODY : 20_000;
+    // Only chat and speech carry files; listing models needs a few hundred bytes.
+    const limit = path === '/chat' || path === '/transcribe' ? MAX_BODY : 20_000;
     if (Number(req.headers.get('content-length')) > limit) return fail(413, 'too_large', 'Request too large.');
 
     const text = await req.text();
@@ -342,6 +368,17 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
       if (path === '/chat') return await chat(req, body);
       const { p, error } = withKey(providers, body.provider, body.api_key);
       if (error) return fail(422, 'invalid_request', error);
+      if (path === '/transcribe') {
+        if (!TRANSCRIBE_MODELS[p.id]) return fail(422, 'invalid_request', p.label + ' cannot write down speech. Add a free Groq or Google Gemini key.');
+        const audio = body.audio;
+        // A WAV file starts with "RIFF" ("UklGR" in base64).
+        if (typeof audio !== 'string' || audio.length > MAX_AUDIO || !BASE64_RE.test(audio) || !audio.startsWith('UklGR')) return fail(422, 'invalid_request', 'Send a WAV recording of at most about a minute.');
+        try {
+          return json({ provider: p.id, model: TRANSCRIBE_MODELS[p.id], text: (await transcribe(fetchImpl, p, audio, req.signal)).slice(0, 4000) });
+        } catch (err) {
+          return fail(502, 'provider_error', err.message);
+        }
+      }
       const live = body.live === true;
       if (live && !LIVE_SUGGESTED[p.id]) return fail(422, 'invalid_request', 'Real-time voice needs a Google Gemini key or an OpenAI key.');
       try {
