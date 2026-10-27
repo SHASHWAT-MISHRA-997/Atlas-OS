@@ -1691,11 +1691,11 @@
   // Read-only, straight from the browser to Google with a token kept in memory (google.js, loaded
   // only here). The Google OAuth client ID is public, not a secret: it comes from the site build
   // (ATLAS_GOOGLE_CLIENT_ID, in /config.json) or is typed here by the owner, never from the code.
-  const GOOGLE_CLIENT_KEY = 'atlas.google.clientid.v1';
+  const GOOGLE_CLIENT_STORE = 'atlas.google.clientid.v1';
   let siteConfig = null;
 
   async function googleClientId() {
-    const typed = storageGet(GOOGLE_CLIENT_KEY, '');
+    const typed = storageGet(GOOGLE_CLIENT_STORE, '');
     if (typed) return { id: typed, typed: true };
     if (!siteConfig) siteConfig = fetch('/config.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
     const id = (await siteConfig).google_client_id;
@@ -1732,7 +1732,7 @@
       save.addEventListener('click', () => {
         const id = cleanKey(input.value);
         if (!G.validClientId(id)) { status.textContent = 'That is not a Google OAuth client ID. It ends in .apps.googleusercontent.com.'; return; }
-        storageSet(GOOGLE_CLIENT_KEY, id);
+        storageSet(GOOGLE_CLIENT_STORE, id);
         log('google: client ID saved');
         fillGooglePanel(panel);
       });
@@ -1744,7 +1744,7 @@
 
     const connectBtn = el('button', { class: 'btn primary', type: 'button', id: 'googleconnect', text: 'Loading Google sign-in…', disabled: true });
     const forget = client.typed ? el('button', { class: 'btn chip', type: 'button', id: 'googleforget', text: 'Change client ID' }) : null;
-    if (forget) forget.addEventListener('click', async () => { await G.signOut(); localStorage.removeItem(GOOGLE_CLIENT_KEY); log('google: client ID removed'); fillGooglePanel(panel); });
+    if (forget) forget.addEventListener('click', async () => { await G.signOut(); localStorage.removeItem(GOOGLE_CLIENT_STORE); log('google: client ID removed'); fillGooglePanel(panel); });
 
     if (G.connected()) { showGoogleData(panel, G, show, status); return; }
     show(about, el('div', { class: 'chips-row' }, [connectBtn, forget]));
