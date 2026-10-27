@@ -22,6 +22,13 @@ Date: 2026-10-28, v0.25.1. Environment: Windows 11, Node 24, Playwright Chromium
 | `node --test netlify/tests/e2e.test.mjs` | 17 | 0 |
 | `detect-secrets scan` (excluding tests, node_modules, dist) | no findings | — |
 
+## Live-site audit (2026-10-28, v0.25.1, from the owner's Windows PC)
+
+- Every screen opened on https://atlas-os-sm.netlify.app with no sideways scrolling. The only console message is **one CSP error caused by Netlify's free-plan badge** (`/.netlify/scripts/hud`, injected by Netlify into every page): it builds an iframe with inline script, which the site's CSP blocks. Allowing it would need `'unsafe-inline'` or a hash Netlify can change at any time, which weakens XSS protection, so it stays blocked. Only a paid Netlify plan removes the badge. The local e2e tests do not see it because the badge is injected only on Netlify.
+- Load time from this PC: about 2.4 s to DOMContentLoaded on a first visit, almost all of it network (TLS setup 0.3–0.8 s per connection to Netlify); the app is about 67 KB compressed and the function answers in under 1 s.
+- Attack probes against the live function, with no real key: a cross-site `Origin` or `Sec-Fetch-Site` got 403, a form post 415, an SQL-style provider name 422, CR/LF in the key 422, `__proto__` as provider 422, a smuggled `tool` role 422, bad JSON 400, a 6 MB body 413. Headers present: CSP, HSTS (preload), `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, COOP. The rate limit (60 a minute per visitor) was not flooded on purpose.
+- `npm audit`: 0 vulnerabilities. No `innerHTML`, `eval`, `new Function` or string timers in the app. CodeQL code scanning and Dependabot were added so future problems are reported automatically.
+
 ## Manual checks still needed
 
 - Real provider chat with the owner's own key on the live site, including a thinking level, a photo and a PDF.

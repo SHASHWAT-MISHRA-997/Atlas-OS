@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — 2026-10-28
+
+- README redesigned: live link, badges, real screenshots (FAKE-labelled preview data), Mermaid diagrams.
+- Security scanning: GitHub CodeQL on every push, pull request and weekly; Dependabot for npm and Actions.
+- docs/TEST_PLAN.md records an audit of the live site (screens, console, speed, attack probes). The only console error on the live site comes from Netlify's free-plan badge being blocked by the CSP, on purpose.
+
 ## 0.25.1 — 2026-10-28
 
 Task 3 of the owner's list: housekeeping.
