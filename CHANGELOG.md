@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Daily check of the real providers and the live site (`scripts/netlify/provider-check.mjs`, GitHub Actions "Provider check"), with deliberately invalid keys: it fails if Groq, Gemini, OpenRouter, OpenAI or Google sign-in change how they answer.
+- The browser tests passed in real Brave, Chrome and Edge on the owner's PC.
+
 ## 0.25.2 — 2026-10-28
 
 Found by testing the live site against the real services and on the owner's phone (OnePlus, Android 16, Chrome 156):

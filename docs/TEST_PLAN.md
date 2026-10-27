@@ -9,6 +9,8 @@
 | Size budget | `netlify/tests/budget.test.mjs` | Built `dist/`, gzip sizes, deferred scripts | `npm run build && npm test` |
 | Browser e2e | `netlify/tests/e2e.test.mjs` | Local preview server with `ATLAS_FAKE_MODEL=1`, real Chromium via Playwright | `npm run test:e2e` |
 | CI extras | `.github/workflows/tests.yml` | JS syntax check, `npm audit --omit=dev`, `detect-secrets` | GitHub Actions job `cloud` |
+| Real providers, daily | `scripts/netlify/provider-check.mjs`, `.github/workflows/provider-check.yml` | The **live** site and the **real** Groq, Gemini (incl. Live WebSocket), OpenRouter, OpenAI (incl. Realtime WebSocket) and Google sign-in, with deliberately invalid keys (nothing billed, no secret) | `node scripts/netlify/provider-check.mjs` (runs daily on GitHub; a failure emails the owner) |
+| Other browsers | same e2e suite | Real Brave, Chrome and Edge on the owner's PC | `ATLAS_E2E_CHROMIUM=<path to brave.exe / chrome.exe / msedge.exe> node --test netlify/tests/e2e.test.mjs` |
 
 Fakes live only in tests and in the preview server behind `ATLAS_FAKE_MODEL=1`; replies say FAKE.
 
@@ -35,6 +37,8 @@ Each provider was called through the live function (or directly, for the WebSock
 | Gemini Live WebSocket | closes with code 1007, reason "API key not valid. Please pass a valid API key." | "Connecting to Google Gemini (…) failed: API key not valid…" |
 | OpenAI Realtime WebSocket | `error` event "Incorrect API key provided…", then close 3000 | fixed in 0.25.2 to name the connecting step |
 | Google sign-in script (`accounts.google.com/gsi/client`) | loads under the CSP with no errors; a blocked pop-up reports `popup_failed_to_open` | "The browser blocked the Google sign-in window. Allow pop-ups…" |
+
+2026-10-28 run of `provider-check.mjs`: 14 passed, 0 failed. Real browsers on the owner's PC (Windows 11): **Brave 1.98 (Chromium 156, `navigator.brave` true), Chrome 156 and Edge 156 each passed all 17 browser tests.**
 
 Not covered: a successful answer, a real voice, real Calendar/Gmail data and quotas, which need the owner's own keys and Google client ID.
 

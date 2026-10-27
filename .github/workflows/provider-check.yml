@@ -1,0 +1,24 @@
+# Once a day, checks that the live site and the real AI providers (Groq, Google Gemini, OpenRouter,
+# OpenAI, Google sign-in) still behave as ATLAS expects, using deliberately invalid keys: nothing is
+# billed and no secret is needed. A failure means a provider changed something; GitHub emails the
+# repository owner when a scheduled run fails.
+name: Provider check
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Real providers and the live site
+        run: node scripts/netlify/provider-check.mjs https://atlas-os-sm.netlify.app
