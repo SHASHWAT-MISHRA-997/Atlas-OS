@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.25.1';
+export const VERSION = '0.25.2';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -42,6 +42,7 @@ export const PROVIDERS = {
   openrouter: {
     label: 'OpenRouter', kind: 'openai', pdf: true, thinking: 'openrouter', base: 'https://openrouter.ai/api/v1', keyUrl: 'https://openrouter.ai/settings/keys',
     note: 'Only its free models (IDs ending in ":free") are offered.', prefer: [/llama|deepseek|qwen|gemma/], skip: /^$/, only: /:free$/,
+    checkKey: '/key',
   },
   // Optional and paid (the owner chose to offer it): never a default, never an auto-switch target.
   openai: {
@@ -269,6 +270,11 @@ async function listModels(fetchImpl, p, live) {
   const headers = {};
   if (p.kind === 'openai') headers.Authorization = 'Bearer ' + p.key;
   if (p.kind === 'gemini') { url = p.base + '/v1beta/models?pageSize=200'; headers['x-goog-api-key'] = p.key; }
+  if (p.checkKey) {
+    // OpenRouter lists its models to anyone, so a wrong key would pass; ask its key endpoint first.
+    const check = await fetchImpl(p.base + p.checkKey, { headers });
+    if (!check.ok) throw upstreamError(check.status, await check.text().catch(() => ''), p.key);
+  }
   const response = await fetchImpl(url, { headers });
   if (!response.ok) throw upstreamError(response.status, await response.text().catch(() => ''), p.key);
   const data = await response.json();

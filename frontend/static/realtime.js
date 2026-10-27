@@ -50,6 +50,8 @@
     const on = opts.on;
     let ws = null;
     let ready = false;
+    // True once the service has accepted the key and settings (Gemini setupComplete, OpenAI session.created).
+    let accepted = false;
     let ended = false;
     let handle = null;
     let reconnects = 0;
@@ -168,6 +170,7 @@
     function onGemini(msg) {
       if (msg.setupComplete) {
         ready = true;
+        accepted = true;
         reconnects = 0;
         on.state(sources.size ? 'speaking' : 'listening');
         return;
@@ -210,6 +213,7 @@
       switch (msg.type) {
         case 'session.created':
         case 'session.updated':
+          accepted = true;
           on.state(sources.size ? 'speaking' : 'listening');
           break;
         case 'input_audio_buffer.speech_started':
@@ -304,7 +308,7 @@
         if (isGemini && ready && handle && reconnects < 3) { reconnects += 1; connect(); return; }
         // The service's own words when it gave any (for example Google's "API key not valid").
         const why = lastError || e.reason;
-        stop(why || (ready ? 'the connection closed (code ' + e.code + ')' : 'the connection closed before setup finished (code ' + e.code + ')'), { step: ready ? 'session' : 'connect', code: e.code });
+        stop(why || (accepted ? 'the connection closed (code ' + e.code + ')' : 'the connection closed before setup finished (code ' + e.code + ')'), { step: accepted ? 'session' : 'connect', code: e.code });
       };
     }
 

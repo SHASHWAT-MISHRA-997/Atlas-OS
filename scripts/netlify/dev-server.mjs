@@ -36,6 +36,7 @@ export function fakeModelFetch(url, init) {
     { name: 'models/fake-live-native-audio', supportedGenerationMethods: ['bidiGenerateContent'] }] }));
   if (auth === 'Bearer sk-voice-test-key' && String(url).endsWith('/models')) return Promise.resolve(Response.json({ data: [
     { id: 'gpt-6' }, { id: 'gpt-realtime-mini' }, { id: 'gpt-realtime' }, { id: 'gpt-4o-realtime-preview' }] }));
+  if (String(url).endsWith('/api/v1/key')) return Promise.resolve(Response.json({ data: { label: 'FAKE key' } }));
   if (String(url).endsWith('/models')) return Promise.resolve(Response.json({ data: [{ id: 'fake-small' }, { id: 'fake-large' }, { id: 'fake-free:free' }] }));
   if (auth === 'Bearer busy-key-429') return Promise.resolve(new Response('{"error":{"message":"Rate limit reached for requests"}}', { status: 429 }));
   const body = JSON.parse(init.body);

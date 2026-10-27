@@ -406,3 +406,17 @@ test('voice check: a real 1-second WAV is accepted, and every failing step retur
   assert.equal(live.suggested_only, true);
   assert.match(live.warning, /HTTP 503: The service is currently unavailable\./);
 });
+
+test('a wrong OpenRouter key is refused even though OpenRouter lists its models to anyone (seen on the real API)', async () => {
+  const t = setup({ upstream: async (url, init) => (url.endsWith('/api/v1/key')
+    ? (init.headers.Authorization === 'Bearer ' + KEY ? Response.json({ data: { label: 'ok' } }) : new Response('{"error":{"message":"Missing Authentication header","code":401}}', { status: 401 }))
+    : Response.json({ data: [{ id: 'google/gemma-4-31b-it:free' }] })) });
+  const wrong = await t.call('models', { method: 'POST', body: { provider: 'openrouter', api_key: 'sk-or-wrong-key-0000' } });
+  assert.equal(wrong.status, 502);
+  assert.match((await wrong.json()).detail, /HTTP 401.*Check your API key/);
+  assert.equal(t.calls[0].url, 'https://openrouter.ai/api/v1/key');
+  assert.equal(t.calls[0].init.headers.Authorization, 'Bearer sk-or-wrong-key-0000');
+  assert.equal(t.calls.length, 1, 'the model list is not fetched for a wrong key');
+  const right = await (await t.call('models', { method: 'POST', body: { provider: 'openrouter', api_key: KEY } })).json();
+  assert.deepEqual(right.models, ['google/gemma-4-31b-it:free']);
+});

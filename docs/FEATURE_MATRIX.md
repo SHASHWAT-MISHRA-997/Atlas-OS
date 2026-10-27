@@ -4,7 +4,7 @@ States: **Not implemented** · **Partially implemented** · **Implemented** (cod
 
 "Verified (Chromium, FAKE model)" means the browser tests passed in Chromium on Linux with the model provider replaced by a labelled fake. It is **not** evidence that a real provider, Safari or a real phone works.
 
-Last updated: 2026-10-28 (v0.25.1). The PC version (backend, Windows installer, PC actions, local models, document search, local voice, device pairing) was removed in 0.15.0; its rows are in the Git history of this file.
+Last updated: 2026-10-28 (v0.25.2). The PC version (backend, Windows installer, PC actions, local models, document search, local voice, device pairing) was removed in 0.15.0; its rows are in the Git history of this file.
 
 | Feature | Location | Status | Evidence / gap |
 |---|---|---|---|
@@ -31,7 +31,7 @@ Last updated: 2026-10-28 (v0.25.1). The PC version (backend, Windows installer, 
 | Tasks: plan, summarize | `cloud.js` | Verified (Chromium, FAKE model) | e2e Home plan; tasks run while the page is open |
 | CSV analyzer | `app.js` | Implemented | In-browser parsing; no automated test |
 | Dictation and read-aloud with the browser's own speech service (Chrome, Edge, Safari) | `app.js` | Implemented | Browser speech APIs cannot run headless; the Brave/Firefox recording path and the natural voice are covered by the rows above |
-| Update banner and Check for update (System screen) | `app.js`, `version.json` | Verified (Chromium) | e2e update test |
+| Update banner and Check for update (System screen); service worker always revalidates | `app.js`, `version.json`, `sw.js` | Verified (Chromium; service worker in Node) | e2e update test; `budget.test.mjs` runs `sw.js` with "use a cached copy" requests. The stale-version bug was found on a real Android phone; the fix still has to be confirmed there after deploy |
 | Rate limit, cross-site and content-type checks, key redaction | `netlify.toml`, `cloud.mjs` | Verified (Node) | `attack.test.mjs`, `cloud.test.mjs`; rate limit confirmed in the live deploy config |
 | Size budget (first load under 80 KB gzipped) | `budget.test.mjs` | Verified (Node) | 72.4 KB at v0.25.1; Live (`realtime.js`) and Google (`google.js`) code loads only on their screens |
 | Real provider end to end | — | Not verified | Needs the owner's own key on the live site |

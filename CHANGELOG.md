@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased — 2026-10-28
+## 0.25.2 — 2026-10-28
+
+Found by testing the live site against the real services and on the owner's phone (OnePlus, Android 16, Chrome 156):
+- **Fix: phones could stay on an old version.** The owner's phone was still running 0.18.0 and "Update now" stayed on "Updating…". Android Chrome restores tabs and goes back with "use any cached copy", and the service worker passed that on, so an old page came back from the browser's cache. The service worker now always checks with the server (`no-cache`), uses a new cache name so the old copy is deleted, the app re-checks for updates when a page is restored, and "Update now" opens the page anew if the reload does not happen.
+- **Fix: a wrong OpenRouter key was accepted.** OpenRouter's model list is public, so the key check passed with any key and chat failed later. ATLAS now asks OpenRouter's key endpoint (`/api/v1/key`) first.
+- **Fix: a wrong OpenAI key in ChatGPT voice said "tap the orb to start again".** The session counted as started when the socket opened, before OpenAI accepted the key. It now counts only after OpenAI (or Gemini) accepts it, so the message names the connecting step and says to check the key.
+- Test fakes now behave like the real services (checked on the real APIs with invalid keys): Gemini Live closes with code 1007 and Google's reason; OpenAI sends an error event, then closes with code 3000.
+
+Also from the same day:
 
 - README redesigned: live link, badges, real screenshots (FAKE-labelled preview data), Mermaid diagrams.
 - Security scanning: GitHub CodeQL on every push, pull request and weekly; Dependabot for npm and Actions.
