@@ -14,13 +14,33 @@ Fakes live only in tests and in the preview server behind `ATLAS_FAKE_MODEL=1`; 
 
 ## Latest report
 
-Date: 2026-10-28, v0.25.1. Environment: Windows 11, Node 24, Playwright Chromium 141 (headless); CI runs the same on Linux with Node 22. **Not Safari, not Brave, not a real phone.**
+Date: 2026-10-28, v0.25.2. Environment: Windows 11, Node 24, Playwright 1.64 Chromium (headless); CI runs the same on Linux with Node 22. **Not Safari.**
 
 | Command | Passed | Failed |
 |---|---|---|
-| `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 34 | 0 |
+| `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 36 | 0 |
 | `node --test netlify/tests/e2e.test.mjs` | 17 | 0 |
 | `detect-secrets scan` (excluding tests, node_modules, dist) | no findings | — |
+
+## Against the real services, without a key (2026-10-28, live site)
+
+Each provider was called through the live function (or directly, for the WebSockets) with a deliberately invalid key, so the real service answers and nothing is billed:
+
+| Real service | Answer | ATLAS shows |
+|---|---|---|
+| Groq models, chat, Whisper (1 s WAV) | HTTP 401 "Invalid API Key" | "Provider answered HTTP 401: Invalid API Key. Check your API key." |
+| Gemini models, Live models, speech, transcription | HTTP 400 "API key not valid…" | the same words + "Check your API key." |
+| OpenAI models | HTTP 401 "Incorrect API key provided…" (key masked by OpenAI) | the same words |
+| OpenRouter models | **HTTP 200 with any key** (public list) → bug, fixed in 0.25.2 via `/api/v1/key` (401) | "HTTP 401 … Check your API key." |
+| Gemini Live WebSocket | closes with code 1007, reason "API key not valid. Please pass a valid API key." | "Connecting to Google Gemini (…) failed: API key not valid…" |
+| OpenAI Realtime WebSocket | `error` event "Incorrect API key provided…", then close 3000 | fixed in 0.25.2 to name the connecting step |
+| Google sign-in script (`accounts.google.com/gsi/client`) | loads under the CSP with no errors; a blocked pop-up reports `popup_failed_to_open` | "The browser blocked the Google sign-in window. Allow pop-ups…" |
+
+Not covered: a successful answer, a real voice, real Calendar/Gmail data and quotas, which need the owner's own keys and Google client ID.
+
+## On the owner's phone (OnePlus CPH2573, Android 16, Chrome 156, over USB)
+
+All 10 screens open with no sideways scrolling and no controls off screen; no small tap targets; no long tasks; the phone has AudioWorklet, microphone, speech recognition, speech synthesis and WebSocket (no screen sharing, as expected on Android). Only console message: Netlify's blocked badge script. **The phone was running 0.18.0** from the browser's cache after a tab restore; fixed in 0.25.2 (service worker).
 
 ## Live-site audit (2026-10-28, v0.25.1, from the owner's Windows PC)
 

@@ -618,7 +618,7 @@ test('Live real-time voice: streams the mic to Gemini Live, plays and shows the 
   let answered = false;
   await page.routeWebSocket(/^wss:\/\/generativelanguage\.googleapis\.com\//, (ws) => {
     sockets.push(ws);
-    if (new URL(ws.url()).searchParams.get('key') === 'AIza-bad-key') { ws.close({ code: 1008, reason: 'API key not valid. Please pass a valid API key.' }); return; }
+    if (new URL(ws.url()).searchParams.get('key') === 'AIza-bad-key') { ws.close({ code: 1007, reason: 'API key not valid. Please pass a valid API key.' }); return; }
     ws.onMessage((raw) => {
       const msg = JSON.parse(String(raw));
       got.push(msg);
@@ -714,7 +714,7 @@ test('Test my voice setup: each step runs on its own and shows pass or fail with
   // FAKE services: a FAKE Gemini Live server in the browser, FAKE speech and transcription in the preview server.
   const setups = [];
   await page.routeWebSocket(/^wss:\/\/generativelanguage\.googleapis\.com\//, (ws) => {
-    if (new URL(ws.url()).searchParams.get('key') === 'AIza-bad-key') { ws.close({ code: 1008, reason: 'API key not valid. Please pass a valid API key.' }); return; }
+    if (new URL(ws.url()).searchParams.get('key') === 'AIza-bad-key') { ws.close({ code: 1007, reason: 'API key not valid. Please pass a valid API key.' }); return; }
     ws.onMessage((raw) => {
       const msg = JSON.parse(String(raw));
       if (msg.setup) { setups.push(msg.setup); ws.send(Buffer.from(JSON.stringify({ setupComplete: {} }))); }
@@ -785,8 +785,16 @@ test('Live ChatGPT voice: paid, so it waits for a tick; then streams to OpenAI R
   const sockets = [];
   const got = [];
   let answered = false;
+  let rejectKey = false;
   await page.routeWebSocket(/^wss:\/\/api\.openai\.com\//, (ws) => {
     sockets.push(ws);
+    if (rejectKey) {
+      // What OpenAI's real server does with a wrong key (checked against the real API on 2026-10-28):
+      // an error event, then close code 3000.
+      ws.send(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', code: 'invalid_api_key', message: 'Incorrect API key provided: sk-bad-****0000.' } }));
+      ws.close({ code: 3000, reason: 'invalid_request_error.invalid_api_key' });
+      return;
+    }
     ws.onMessage((raw) => {
       const msg = JSON.parse(String(raw));
       got.push(msg);
@@ -865,6 +873,12 @@ test('Live ChatGPT voice: paid, so it waits for a tick; then streams to OpenAI R
   const prefs = await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.live.v1')));
   assert.equal(prefs.paidOk, true);
   assert.equal(prefs.openaiVoice, 'cedar');
+  // A wrong OpenAI key: OpenAI's own words, the step that failed, and what to do.
+  rejectKey = true;
+  await page.click('#liveorb');
+  await page.waitForSelector('#livestatus >> text=Incorrect API key provided');
+  assert.match(await page.textContent('#livestatus'), /^Connecting to ChatGPT \(OpenAI\) \(gpt-realtime\) failed: Incorrect API key provided: sk-bad-\*\*\*\*0000\. What to do: check your OpenAI key/);
+  await page.waitForSelector('#liveorb[data-state=idle]');
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });

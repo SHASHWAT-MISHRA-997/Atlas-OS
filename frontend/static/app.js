@@ -198,6 +198,8 @@
       now.textContent = 'Updating…';
       try { const reg = await navigator.serviceWorker?.getRegistration(); if (reg) await reg.update(); } catch { /* reload still fetches the new files */ }
       location.reload();
+      // If the browser keeps this page instead of reloading it (seen on Android Chrome), open it anew.
+      setTimeout(() => location.replace(location.pathname + '?update=' + encodeURIComponent(latest)), 4000);
     });
     later.addEventListener('click', () => banner.remove());
     document.querySelector('header.top').after(banner);
@@ -3191,6 +3193,8 @@
   setTimeout(autoCheckForUpdate, 4000);
   setInterval(autoCheckForUpdate, 30 * 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') autoCheckForUpdate(); });
+  // A page the browser restores from memory (back button, reopened tab) may be an old version: check at once.
+  window.addEventListener('pageshow', (e) => { if (e.persisted) { lastUpdateCheck = 0; autoCheckForUpdate(); } });
   $('morebtn').addEventListener('click', () => setSheet(!$('sidebar').classList.contains('open')));
   $('sheetbackdrop').addEventListener('click', () => setSheet(false));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setSheet(false); });
