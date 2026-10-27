@@ -843,9 +843,14 @@ test('Live ChatGPT voice: paid, so it waits for a tick; then streams to OpenAI R
   // With the camera on, the current picture goes with the next thing the user says.
   await page.click('#livecam');
   await page.waitForFunction(() => document.querySelector('#livevideo').videoWidth > 0);
+  // The camera reaches the voice session only after the video plays; this status line comes right
+  // after, so "speech started" cannot arrive before ChatGPT has the camera.
+  await page.waitForSelector('#livestatus >> text=ChatGPT sees the current picture');
   sockets[0].send(JSON.stringify({ type: 'input_audio_buffer.speech_started' }));
-  for (let i = 0; i < 40 && !got.some((m) => m.item && m.item.content[0].type === 'input_image'); i += 1) await page.waitForTimeout(100);
-  assert.match(got.find((m) => m.item && m.item.content[0].type === 'input_image').item.content[0].image_url, /^data:image\/jpeg;base64,/);
+  const isImage = (m) => m.item && m.item.content[0].type === 'input_image';
+  for (let i = 0; i < 50 && !got.some(isImage); i += 1) await page.waitForTimeout(100);
+  assert.ok(got.some(isImage), 'a camera picture goes with what the user says');
+  assert.match(got.find(isImage).item.content[0].image_url, /^data:image\/jpeg;base64,/);
   await page.click('#livecam');
   await page.fill('#livetyped', 'typed to chatgpt');
   await page.press('#livetyped', 'Enter');
