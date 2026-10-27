@@ -25,7 +25,7 @@
 ## Verified in this session (Windows 11, Node 24, Playwright Chromium 141 headless, FAKE services)
 
 - At v0.22.1 (start of the session): 32 function/attack/size tests and 15 browser tests passed.
-- At v0.25.1: 34 function/attack/size tests and 17 browser tests pass; the secret scan reports nothing; first load is about 70 KB gzipped (budget 80 KB).
+- At v0.25.1: 34 function/attack/size tests and 17 browser tests pass; the secret scan reports nothing; first load is 72.4 KB gzipped (budget 80 KB).
 - Nothing was run against real Google, Groq, OpenAI or Gemini services, in Brave, in Safari or on a phone.
 
 ## Next tasks, in order

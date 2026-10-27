@@ -33,7 +33,7 @@ Last updated: 2026-10-28 (v0.25.1). The PC version (backend, Windows installer, 
 | Dictation and read-aloud with the browser's own speech service (Chrome, Edge, Safari) | `app.js` | Implemented | Browser speech APIs cannot run headless; the Brave/Firefox recording path and the natural voice are covered by the rows above |
 | Update banner and Check for update (System screen) | `app.js`, `version.json` | Verified (Chromium) | e2e update test |
 | Rate limit, cross-site and content-type checks, key redaction | `netlify.toml`, `cloud.mjs` | Verified (Node) | `attack.test.mjs`, `cloud.test.mjs`; rate limit confirmed in the live deploy config |
-| Size budget (first load under 80 KB gzipped) | `budget.test.mjs` | Verified (Node) | about 70 KB at v0.25.1; Live (`realtime.js`) and Google (`google.js`) code loads only on their screens |
+| Size budget (first load under 80 KB gzipped) | `budget.test.mjs` | Verified (Node) | 72.4 KB at v0.25.1; Live (`realtime.js`) and Google (`google.js`) code loads only on their screens |
 | Real provider end to end | — | Not verified | Needs the owner's own key on the live site |
 | Automations (plans and reminders, in the browser) | `app.js` | Verified (Chromium) | e2e: create, Run now, missed run on reopen, delete. Runs only while ATLAS is open; notifications not tested on a real device |
 | Devices: device info, export, import, erase | `app.js` | Verified (Chromium) | e2e: keys left out of export by default, import only takes `atlas.*` text items, erase |
