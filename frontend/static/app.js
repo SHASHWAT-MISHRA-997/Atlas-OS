@@ -857,7 +857,7 @@
     const langSelect = el('select', { id: 'voicelang' }, LANGS.map(([value, text]) => el('option', { value, text })));
     langSelect.value = voicePrefs.lang;
     const voiceSelect = el('select', { id: 'voicename' });
-    const voiceNote = el('p', { class: 'tiny muted', text: 'Dictation and read-aloud use your browser\'s speech service. In Chrome and Edge dictation audio goes to the browser vendor; voices marked "online" also send the text out.' });
+    const voiceNote = el('p', { class: 'tiny muted', text: 'With a Google Gemini key, replies are read aloud in Gemini\'s natural voice (picked on the Live screen) and this voice is only the fallback. Otherwise read-aloud uses your browser\'s voices. In Chrome and Edge dictation audio goes to the browser vendor; voices marked "online" also send the text out.' });
     const voiceBox = el('div', { class: 'voicebox' }, [
       el('div', { class: 'grid-fields' }, [el('label', { class: 'field' }, ['VOICE LANGUAGE', langSelect]), el('label', { class: 'field' }, ['READ-ALOUD VOICE', voiceSelect])]),
       voiceNote,
@@ -867,7 +867,7 @@
       const all = 'speechSynthesis' in window ? window.speechSynthesis.getVoices() : [];
       const base = speechLang().toLowerCase().split('-')[0];
       const matching = all.filter((v) => v.lang.toLowerCase().startsWith(base));
-      voiceSelect.replaceChildren(el('option', { value: '', text: all.length ? 'Default voice' : 'No voices in this browser' }),
+      voiceSelect.replaceChildren(el('option', { value: '', text: all.length ? 'Most natural voice (automatic)' : 'No voices in this browser' }),
         ...matching.map((v) => el('option', { value: v.name, text: v.name + (v.localService ? ' · on this device' : ' · online') })));
       voiceSelect.value = matching.some((v) => v.name === voicePrefs.voice) ? voicePrefs.voice : '';
     }
@@ -1092,15 +1092,11 @@
 
     function speakText(text) {
       if (speak.getAttribute('aria-pressed') !== 'true') return;
-      if (!('speechSynthesis' in window)) return;
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = speechLang();
-      const chosen = window.speechSynthesis.getVoices().find((x) => x.name === voicePrefs.voice);
-      if (chosen) utterance.voice = chosen;
-      utterance.onend = () => { if (!activeGeneration) stop.disabled = true; };
       stop.disabled = false;
-      window.speechSynthesis.speak(utterance);
+      speakAloud(text, { lang: speechLang() }).then((r) => {
+        if (!activeGeneration && !isSpeaking()) stop.disabled = true;
+        if (r.error) status.textContent = 'The natural voice did not work (' + r.error + '), so your browser\'s voice read the reply.';
+      });
     }
 
     function updateKeyCard() {
@@ -1200,7 +1196,7 @@
 
     stop.addEventListener('click', () => {
       if (activeGeneration) activeGeneration.controller.abort();
-      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      stopSpeaking();
       stop.disabled = !activeGeneration;
     });
 
@@ -1208,10 +1204,12 @@
       const enabled = speak.getAttribute('aria-pressed') !== 'true';
       speak.setAttribute('aria-pressed', String(enabled));
       speak.textContent = enabled ? 'Reading aloud' : 'Read aloud';
-      if (!enabled && 'speechSynthesis' in window) window.speechSynthesis.cancel();
-      status.textContent = enabled
-        ? ('speechSynthesis' in window ? 'New replies will be read aloud with your browser\'s voices. Press Stop to interrupt.' : 'This browser has no speech synthesis.')
-        : 'Voice output off.';
+      if (!enabled) stopSpeaking();
+      const natural = naturalVoiceProvider();
+      status.textContent = !enabled ? 'Voice output off.'
+        : natural ? 'New replies will be read aloud in a natural ' + NATURAL_LABELS[natural] + ' voice (' + naturalVoiceName(natural) + ', change it on the Live screen). The reply text goes to ' + NATURAL_LABELS[natural] + ' with your key to be spoken' + (natural === 'openai' ? ', billed to your OpenAI account' : '') + '. Press Stop to interrupt.'
+          : 'speechSynthesis' in window ? 'New replies will be read aloud with your browser\'s most natural voice. For a human-sounding voice, add a free Google Gemini key. Press Stop to interrupt.'
+            : 'This browser cannot speak, and there is no Gemini key for a natural voice.';
     });
 
     let dictation = null;
@@ -1477,7 +1475,7 @@
         send.textContent = 'Send';
         send.title = '';
         finish();
-        stop.disabled = !('speechSynthesis' in window && window.speechSynthesis.speaking);
+        stop.disabled = !isSpeaking();
       }
     });
 
@@ -1796,6 +1794,204 @@
     return String(data.text || '').trim();
   }
 
+  // ---------------------------------------------------------------- speaking aloud
+  // Spoken answers (Live turn by turn, Read aloud) use a natural, human-sounding voice when there is a
+  // key for one: Gemini's speech models (free tier) or OpenAI's (paid, only when OpenAI is the chosen
+  // chat provider). Otherwise the browser's own voice, picking the most natural one it has.
+  const NATURAL_VOICES = {
+    gemini: ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr'],
+    openai: ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'],
+  };
+  const NATURAL_LABELS = { gemini: 'Google Gemini', openai: 'OpenAI' };
+  const speech = { ctx: null, sources: [], gen: 0, speaking: false, done: null, abort: null, offUntil: 0 };
+
+  function naturalVoiceProvider() {
+    if (cloudKey.get('gemini')) return 'gemini';
+    return storageGet(CHAT_SETTINGS_KEY, {}).provider === 'openai' && cloudKey.get('openai') ? 'openai' : null;
+  }
+
+  /** The voice picked on the Live screen for this provider (one choice for Live and Read aloud). */
+  function naturalVoiceName(id) {
+    const prefs = storageGet(LIVE_KEY, {});
+    const name = id === 'openai' ? prefs.openaiVoice : prefs.voice;
+    return NATURAL_VOICES[id].includes(name) ? name : NATURAL_VOICES[id][0];
+  }
+
+  // Browsers let a page play sound only after a tap or key press, so the player starts on one.
+  function unlockAudio() {
+    if (!window.AudioContext || !naturalVoiceProvider()) return;
+    if (!speech.ctx) speech.ctx = new AudioContext();
+    if (speech.ctx.state === 'suspended') speech.ctx.resume().catch(() => {});
+  }
+  document.addEventListener('pointerdown', unlockAudio, true);
+  document.addEventListener('keydown', unlockAudio, true);
+
+  const isSpeaking = () => speech.speaking || ('speechSynthesis' in window && window.speechSynthesis.speaking);
+
+  function stopSpeaking() {
+    speech.gen += 1;
+    speech.speaking = false;
+    if (speech.abort) { speech.abort.abort(); speech.abort = null; }
+    for (const s of speech.sources) { s.onended = null; try { s.stop(); } catch { /* not started */ } }
+    speech.sources = [];
+    if (speech.done) { const done = speech.done; speech.done = null; done(); }
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+  }
+
+  /** Answer text as it should be spoken: no markdown, code blocks or links, each line a sentence. */
+  function speechText(text) {
+    return String(text || '')
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/`([^`]*)`/g, '$1')
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/https?:\/\/\S+/g, ' ')
+      .split(/\n+/)
+      .map((line) => line.replace(/^\s*(#{1,6}|>|[-*+•]|\d+[.)])\s+/, '').replace(/[*_~#|]+/g, '').trim())
+      .filter(Boolean)
+      .map((line) => (/[.!?।:;,]$/.test(line) ? line : line + '.'))
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /** Whole sentences in pieces: a short first one so speech starts quickly, then longer ones. */
+  function speechPieces(text, first, rest) {
+    const pieces = [];
+    let cur = '';
+    for (const sentence of text.match(/[^.!?।]+[.!?।]*\s*/g) || [text]) {
+      if (cur && (cur + sentence).length > (pieces.length ? rest : first)) { pieces.push(cur.trim()); cur = ''; }
+      cur += sentence;
+      while (cur.length > rest * 2) { pieces.push(cur.slice(0, rest * 2).trim()); cur = cur.slice(rest * 2); }
+    }
+    if (cur.trim()) pieces.push(cur.trim());
+    return pieces;
+  }
+
+  /** The most natural-sounding installed voice for the text: Hindi for Devanagari, Indian English next. */
+  function bestBrowserVoice(voices, words, lang) {
+    const hindi = /[ऀ-ॿ]/.test(words);
+    const want = hindi ? 'hi' : String(lang || 'en').slice(0, 2).toLowerCase();
+    let best = null;
+    let bestScore = -Infinity;
+    for (const v of voices) {
+      const vl = String(v.lang || '').replace('_', '-');
+      if (vl.slice(0, 2).toLowerCase() !== want) continue;
+      let score = 0;
+      if (vl.toLowerCase() === String(hindi ? 'hi-IN' : lang).toLowerCase()) score += 3;
+      else if (/-IN$/i.test(vl)) score += 2;
+      if (/natural|neural/i.test(v.name)) score += 8;
+      if (/online|google|premium|enhanced|siri/i.test(v.name)) score += 5;
+      if (!v.localService) score += 1;
+      if (/compact|espeak|novelty|zarvox|whisper|bells|trinoids|albert|bubbles|cellos|jester|organ|superstar|wobble|boing|bahh|bad news|good news/i.test(v.name)) score -= 20;
+      if (score > bestScore) { best = v; bestScore = score; }
+    }
+    return best;
+  }
+
+  function browserSpeak(words, lang, gen) {
+    return new Promise((resolve) => {
+      if (!('speechSynthesis' in window) || gen !== speech.gen) { resolve(); return; }
+      const prefs = storageGet(VOICE_KEY, {});
+      const voices = window.speechSynthesis.getVoices();
+      const voice = voices.find((x) => x.name === prefs.voice) || bestBrowserVoice(voices, words, lang);
+      // Short utterances: Chrome stops long ones partway.
+      const pieces = speechPieces(words, 220, 220);
+      pieces.forEach((piece, i) => {
+        const u = new SpeechSynthesisUtterance(piece);
+        u.lang = voice ? voice.lang : lang;
+        if (voice) u.voice = voice;
+        u.rate = 1;
+        if (i === pieces.length - 1) { u.onend = resolve; u.onerror = resolve; }
+        window.speechSynthesis.speak(u);
+      });
+      if (!pieces.length) resolve();
+    });
+  }
+
+  /** Plays 16-bit mono PCM (base64); resolves when it ends or speaking is stopped. */
+  function playPcm(ctx, b64, rate, gen) {
+    return new Promise((resolve) => {
+      if (gen !== speech.gen) { resolve(); return; }
+      const bin = atob(b64);
+      const n = bin.length >> 1;
+      const buffer = ctx.createBuffer(1, Math.max(1, n), rate);
+      const out = buffer.getChannelData(0);
+      for (let i = 0; i < n; i += 1) {
+        const v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8);
+        out[i] = (v >= 0x8000 ? v - 0x10000 : v) / 32768;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+      speech.sources.push(src);
+      speech.done = resolve;
+      src.onended = () => {
+        speech.sources = speech.sources.filter((s) => s !== src);
+        if (speech.done === resolve) speech.done = null;
+        resolve();
+      };
+      src.start();
+    });
+  }
+
+  /** Speaks the pieces in the natural voice, fetching the next piece while one plays. */
+  async function speakNatural(pieces, id, gen) {
+    const ctx = speech.ctx || (speech.ctx = new AudioContext());
+    if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+    const controller = new AbortController();
+    speech.abort = controller;
+    const voice = naturalVoiceName(id);
+    const fetchPiece = (text) => {
+      const pending = api('/api/llm/speak', { method: 'POST', signal: controller.signal, body: { provider: id, api_key: cloudKey.get(id), text, voice } });
+      pending.catch(() => {}); // the error is handled where the piece is awaited
+      return pending;
+    };
+    let next = fetchPiece(pieces[0]);
+    for (let i = 0; i < pieces.length; i += 1) {
+      let data;
+      try { data = await next; } catch (err) { err.from = i; throw err; }
+      if (gen !== speech.gen) return;
+      next = i + 1 < pieces.length ? fetchPiece(pieces[i + 1]) : null;
+      await playPcm(ctx, data.audio, data.rate, gen);
+      if (gen !== speech.gen) return;
+    }
+  }
+
+  /**
+   * Speaks an answer, stopping anything already being said. Resolves when it is done or stopped,
+   * with { voice: 'natural' | 'browser' | 'none', error } (error: why the natural voice was not used).
+   */
+  async function speakAloud(text, { lang } = {}) {
+    stopSpeaking();
+    const words = speechText(text);
+    if (!words) return { voice: 'none' };
+    const gen = speech.gen;
+    const id = naturalVoiceProvider();
+    let error = '';
+    speech.speaking = true;
+    try {
+      if (id && window.AudioContext && Date.now() >= speech.offUntil) {
+        const pieces = speechPieces(words, 160, 600);
+        try {
+          await speakNatural(pieces, id, gen);
+          return { voice: 'natural' };
+        } catch (err) {
+          if (gen !== speech.gen || err.name === 'AbortError') return { voice: 'natural' };
+          error = err.message;
+          // A quota or key problem would fail the same way for a while; use the browser voice meanwhile.
+          speech.offUntil = Date.now() + 10 * 60 * 1000;
+          log('natural voice failed: ' + err.message);
+          await browserSpeak(pieces.slice(err.from || 0).join(' '), lang, gen);
+          return { voice: 'browser', error };
+        }
+      }
+      await browserSpeak(words, lang, gen);
+      return { voice: 'speechSynthesis' in window ? 'browser' : 'none' };
+    } finally {
+      if (gen === speech.gen) speech.speaking = false;
+    }
+  }
+
   // ---------------------------------------------------------------- live
   // A hands-free conversation, like the assistant on a phone. Two ways:
   // - Real-time voice (with a Gemini key): realtime.js streams the microphone to Google's Gemini
@@ -1866,7 +2062,6 @@
 
     // Listening: the browser's speech service, or a recording written down by a Groq or Gemini key.
     const SR = canRecord() && transcriber() ? true : !!browserSpeech();
-    const canSpeak = 'speechSynthesis' in window;
     const canShare = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
     const voicePrefs = { lang: '', voice: '', ...storageGet(VOICE_KEY, {}) };
     const lang = voicePrefs.lang || navigator.language || 'en-US';
@@ -1898,16 +2093,19 @@
     const noteBox = el('div', { class: 'livenotes' });
     const isRT = () => !!rtService[modeSel.value];
     const service = () => rtService[modeSel.value];
-    const voiceKey = () => (service() === 'openai' ? 'openaiVoice' : 'voice');
+    // Whose voice speaks: the real-time service, or in turn by turn the natural voice (if there is a key for one).
+    const voiceService = () => (isRT() ? service() : naturalVoiceProvider());
+    const voiceKey = () => (voiceService() === 'openai' ? 'openaiVoice' : 'voice');
     function applyMode() {
-      voiceRow.classList.toggle('hidden', !isRT());
+      const vs = voiceService();
+      voiceRow.classList.toggle('hidden', !vs);
       paidRow.classList.toggle('hidden', service() !== 'openai');
-      if (isRT()) {
-        const voices = window.AtlasRealtime.SERVICES[service()].voices;
+      if (vs) {
+        const voices = NATURAL_VOICES[vs];
         voiceSel.replaceChildren(...voices.map((name) => el('option', { value: name, text: name[0].toUpperCase() + name.slice(1) })));
         voiceSel.value = voices.includes(prefs[voiceKey()]) ? prefs[voiceKey()] : voices[0];
-        lookupModels(modeSel.value);
       }
+      if (isRT()) lookupModels(modeSel.value);
       routeText.textContent = service() === 'gemini' ? 'Talks to Google Gemini' : service() === 'openai' ? 'Talks to OpenAI (paid)' : 'Sends to ' + p.label;
       const notes = [];
       if (service() === 'gemini') {
@@ -1918,6 +2116,8 @@
       } else {
         if (!SR) notes.push('This browser cannot listen, so type your questions. Chrome, Edge and Safari can listen, or add a free Groq or Gemini key.');
         notes.push((browserSpeech() ? 'Listening uses your browser\'s speech service (Chrome and Edge send the audio to Google or Microsoft).' : 'This browser has no speech service of its own, so what you say is recorded and written down by your ' + TRANSCRIBER_LABELS[transcriber()] + ' key.') + ' Camera and screen pictures go to ' + p.label + ' only with a question. For pictures, pick a model that can see images, such as Gemini 2.5 Flash or Llama 4 Scout on Groq.');
+        notes.push(vs ? 'Answers are spoken in a natural ' + NATURAL_LABELS[vs] + ' voice: the answer text goes to ' + NATURAL_LABELS[vs] + ' with your key to be spoken' + (vs === 'openai' ? ', billed to your OpenAI account' : '') + '.'
+          : 'Answers are spoken with your browser\'s own voice, which can sound robotic. For a natural human voice, add a free Google Gemini key in AI Chat.');
         if (!canUse.realtime) notes.push('For real-time voice like the Gemini app, add a free Google Gemini key in AI Chat.');
       }
       if (!canShare) notes.push('Screen sharing works in desktop browsers only; phones and iPads do not allow it. The camera works everywhere.');
@@ -2043,19 +2243,10 @@
       try { r.start(); } catch { setTimeout(listen, 500); }
     }
 
-    function speak(text) {
-      return new Promise((resolve) => {
-        if (!canSpeak) { resolve(); return; }
-        window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = lang;
-        const chosen = window.speechSynthesis.getVoices().find((x) => x.name === voicePrefs.voice);
-        if (chosen) u.voice = chosen;
-        u.onend = resolve;
-        u.onerror = resolve;
-        setState('speaking', 'Speaking… tap to interrupt');
-        window.speechSynthesis.speak(u);
-      });
+    async function speak(text) {
+      setState('speaking', 'Speaking… tap to interrupt');
+      const r = await speakAloud(text, { lang });
+      if (r.error) status.textContent += ' The natural voice did not work (' + r.error + '), so your browser\'s voice spoke instead.';
     }
 
     async function ask(text) {
@@ -2063,7 +2254,7 @@
       if (state.recording) { const rec = state.recording; state.recording = null; rec.abort(); }
       if (state.recognition) { const r = state.recognition; state.recognition = null; try { r.abort(); } catch { /* already stopped */ } }
       if (state.controller) state.controller.abort();
-      if (canSpeak) window.speechSynthesis.cancel();
+      stopSpeaking();
       const controller = new AbortController();
       state.controller = controller;
       heard.textContent = text;
@@ -2177,7 +2368,7 @@
       orb.style.removeProperty('--lvl');
       if (state.recognition) { const r = state.recognition; state.recognition = null; try { r.abort(); } catch { /* already stopped */ } }
       if (state.controller) state.controller.abort();
-      if (canSpeak) window.speechSynthesis.cancel();
+      stopSpeaking();
       stopMedia();
       endBtn.disabled = true;
       setState('idle', isRT() || SR ? 'Tap to start' : 'Type below');
@@ -2199,7 +2390,7 @@
         else if (orb.dataset.state === 'listening') { end(); status.textContent = 'Live ended.'; }
         return;
       }
-      if (orb.dataset.state === 'speaking') { window.speechSynthesis.cancel(); return; } // interrupt; it listens again
+      if (orb.dataset.state === 'speaking') { stopSpeaking(); return; } // interrupt; it listens again
       if (orb.dataset.state === 'listening') { end(); status.textContent = 'Live ended.'; }
     });
     endBtn.addEventListener('click', () => { end(); status.textContent = 'Live ended.'; });

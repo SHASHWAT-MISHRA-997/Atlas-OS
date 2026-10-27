@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.22.0 — 2026-10-27
+
+The owner said the spoken answers sounded robotic, not like ChatGPT or Gemini:
+- **Natural voice for spoken answers.** With a Google Gemini key, Live turn by turn and Read aloud in AI Chat now speak in Gemini's own natural voices (the same 8 voices as real-time Live, picked on the Live screen), even when Groq writes the answer. Long answers are spoken in pieces, the next one prepared while the current one plays. OpenAI's voice is used instead only when OpenAI is your chosen provider (paid).
+- The answer text goes to Google (or OpenAI) with your key to be spoken; nothing is stored. Markdown, code and links are not read out.
+- **Without such a key**, ATLAS now picks the most natural voice your browser has (for example "Natural" or "Google" voices, Indian English for Hinglish, Hindi for Devanagari) instead of the default one. Browser voices can still sound robotic, Brave's especially; a free Gemini key is the real fix.
+- If the natural voice fails (for example a used-up free quota), the browser voice reads the answer and the status line says why.
+- **Not yet tried against Google's real speech models**; the tests use FAKE audio.
+
 ## 0.21.0 — 2026-10-27
 
 From the owner's test on a Windows PC in Brave:

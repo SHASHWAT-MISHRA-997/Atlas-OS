@@ -327,3 +327,36 @@ test('speech to text: Whisper on Groq, Gemini on Google, WAV only, no OpenRouter
   assert.equal((await call('groq', 'UklGR' + 'A'.repeat(3_000_000))).status, 422);
   assert.equal(t.calls.length, 2, 'refused requests never reach a provider');
 });
+
+test('natural voice: Gemini speech models (falls back to Pro on 404), OpenAI pcm, checked input', async () => {
+  const PCM = Buffer.from([1, 0, 2, 0]).toString('base64');
+  let flashMissing = false;
+  const t = setup({ upstream: async (url) => {
+    if (url.includes('api.openai.com')) return new Response(Buffer.from([3, 0, 4, 0]));
+    if (flashMissing && url.includes('flash-preview-tts')) return new Response('{"error":{"message":"not found"}}', { status: 404 });
+    return Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: PCM } }] } }] });
+  } });
+  const call = (body) => t.call('speak', { method: 'POST', body: { api_key: KEY, ...body } });
+  const gemini = await call({ provider: 'gemini', text: 'Namaste, kal ka plan ready hai.', voice: 'Kore' });
+  assert.equal(gemini.status, 200);
+  assert.deepEqual(await gemini.json(), { provider: 'gemini', model: 'gemini-2.5-flash-preview-tts', audio: PCM, rate: 24000 });
+  assert.match(t.calls[0].url, /gemini-2\.5-flash-preview-tts:generateContent$/);
+  assert.equal(t.calls[0].init.headers['x-goog-api-key'], KEY);
+  const sent = JSON.parse(t.calls[0].init.body);
+  assert.deepEqual(sent.generationConfig.responseModalities, ['AUDIO']);
+  assert.equal(sent.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName, 'Kore');
+  assert.match(sent.contents[0].parts[0].text, /Namaste, kal ka plan ready hai\.$/);
+  flashMissing = true;
+  assert.equal((await (await call({ provider: 'gemini', text: 'hello' })).json()).model, 'gemini-2.5-pro-preview-tts');
+  const openai = await (await call({ provider: 'openai', text: 'hello', voice: 'marin' })).json();
+  assert.equal(openai.audio, Buffer.from([3, 0, 4, 0]).toString('base64'));
+  const last = t.calls[t.calls.length - 1];
+  assert.equal(last.url, 'https://api.openai.com/v1/audio/speech');
+  assert.equal(JSON.parse(last.init.body).response_format, 'pcm');
+  const before = t.calls.length;
+  assert.equal((await call({ provider: 'groq', text: 'hello' })).status, 422);
+  assert.equal((await call({ provider: 'gemini', text: '' })).status, 422);
+  assert.equal((await call({ provider: 'gemini', text: 'x'.repeat(1501) })).status, 422);
+  assert.equal((await call({ provider: 'gemini', text: 'hi', voice: '../evil' })).status, 422);
+  assert.equal(t.calls.length, before, 'refused requests never reach a provider');
+});

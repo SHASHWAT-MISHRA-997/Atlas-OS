@@ -838,3 +838,56 @@ test('a browser without a speech service (Brave): Dictate and Live record and th
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });
+
+test('natural voice: with a Gemini key, Live turn by turn and Read aloud speak in Gemini\'s voice; if it fails, the browser voice reads instead', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  const spoken = [];
+  let failSpeech = false;
+  await page.route('**/cloud/speak', async (route) => {
+    spoken.push(JSON.parse(route.request().postData()));
+    if (failSpeech) await route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ code: 'provider_error', detail: 'Provider answered HTTP 429: quota.' }) });
+    else await route.continue();
+  });
+  await page.addInitScript(() => {
+    window.browserSaid = [];
+    if (window.speechSynthesis) {
+      window.speechSynthesis.speak = (u) => { window.browserSaid.push(u.text); setTimeout(() => u.onend && u.onend(), 10); };
+    }
+  });
+  await page.goto(base + '/');
+  await go(page, 'chat');
+  await page.fill('#keycardinput', 'gsk_voice_key_123');
+  await page.click('#keycardsave');
+  await page.waitForSelector('#keycard', { state: 'hidden' });
+  await page.waitForFunction(() => /^fake-/.test(document.querySelector('#atlasmodel')?.value || ''));
+  await page.click('#chatsettings summary');
+  await page.selectOption('#atlasmodelpick', 'fake-large');
+  await page.evaluate(() => localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-test-voice-key')));
+  await go(page, 'live');
+  await page.waitForSelector('#liveorb');
+  await page.selectOption('#livemode', 'turns');
+  await page.waitForSelector('text=spoken in a natural Google Gemini voice');
+  await page.selectOption('#livevoice', 'Kore');
+  await page.fill('#livetyped', 'kal ka plan **batao**');
+  await page.press('#livetyped', 'Enter');
+  await page.waitForSelector('#livesaid >> text=FAKE reply to: kal ka plan');
+  await page.waitForFunction(() => document.querySelector('#liveorb').dataset.state !== 'speaking' && document.querySelector('#liveorb').dataset.state !== 'thinking');
+  assert.equal(spoken.length, 1);
+  assert.equal(spoken[0].provider, 'gemini');
+  assert.equal(spoken[0].api_key, 'AIza-test-voice-key');
+  assert.equal(spoken[0].voice, 'Kore');
+  assert.equal(spoken[0].text, 'FAKE reply to: kal ka plan batao.', 'markdown is not read out');
+  assert.deepEqual(await page.evaluate(() => window.browserSaid), [], 'the robotic browser voice is not used');
+  // Read aloud in AI Chat uses the same voice; when it fails, the browser voice reads the reply.
+  await go(page, 'chat');
+  await page.click('button:has-text("Read aloud")');
+  await page.waitForSelector('.chatstatus >> text=natural Google Gemini voice (Kore');
+  failSpeech = true;
+  await page.fill('.composer-input', 'hello');
+  await page.click('.sendbtn');
+  await page.waitForFunction(() => window.browserSaid.some((t) => t.includes('FAKE reply to: hello')));
+  await page.waitForSelector('text=natural voice did not work');
+  assert.equal(spoken.at(-1).text, 'FAKE reply to: hello.');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});

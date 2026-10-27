@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.21.0';
+export const VERSION = '0.22.0';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -58,6 +58,12 @@ const MAX_BODY = 5_000_000; // a chat with up to about 3 MB of images or PDFs
 // recording, written down by the visitor's own provider. OpenRouter has no speech model.
 const TRANSCRIBE_MODELS = { groq: 'whisper-large-v3-turbo', gemini: 'gemini-2.5-flash', openai: 'gpt-4o-mini-transcribe' };
 const MAX_AUDIO = 3_000_000; // base64 characters, about 70 seconds of 16 kHz speech
+// Text to speech in a natural voice for spoken answers (Live turn-by-turn, Read aloud). Gemini's TTS
+// models are free on a Gemini key; OpenAI's is paid and is used only when OpenAI is the chosen provider.
+const SPEAK_MODELS = { gemini: ['gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'], openai: ['gpt-4o-mini-tts'] };
+const MAX_SPEAK = 1500; // characters per request; the page sends long answers in pieces
+const VOICE_RE = /^[A-Za-z]{2,20}$/;
+const SPEAK_STYLE = 'Speak in a warm, natural, conversational human tone at a relaxed pace. Hinglish should sound like a fluent Indian speaker.';
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
 });
@@ -105,6 +111,42 @@ async function transcribe(fetchImpl, p, audio, signal) {
   const response = await fetchImpl(p.base + '/audio/transcriptions', { method: 'POST', signal, headers: { Authorization: 'Bearer ' + p.key }, body: form });
   if (!response.ok) throw upstreamError(response.status, await response.text().catch(() => ''), p.key);
   return String((await response.json()).text || '').trim();
+}
+
+/** Speaks `text` with the visitor's provider; returns 16-bit mono PCM (base64) and its sample rate. */
+async function speak(fetchImpl, p, text, voice, signal) {
+  if (p.kind === 'gemini') {
+    let last;
+    for (const model of SPEAK_MODELS.gemini) {
+      const response = await fetchImpl(p.base + '/v1beta/models/' + model + ':generateContent', {
+        method: 'POST', signal, headers: { 'Content-Type': 'application/json', 'x-goog-api-key': p.key },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: SPEAK_STYLE + ' Say this:\n' + text }] }],
+          generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice || 'Kore' } } } },
+        }),
+      });
+      if (!response.ok) {
+        last = upstreamError(response.status, await response.text().catch(() => ''), p.key);
+        // Try the other TTS model only when this one is missing for the key.
+        if (response.status === 404) continue;
+        throw last;
+      }
+      const data = await response.json();
+      const parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+      const part = parts.find((x) => x.inlineData && x.inlineData.data);
+      if (!part) throw new Error('The provider sent no audio.');
+      const rate = Number((/rate=(\d+)/.exec(part.inlineData.mimeType || '') || [])[1]) || 24000;
+      return { model, audio: part.inlineData.data, rate };
+    }
+    throw last;
+  }
+  const model = SPEAK_MODELS.openai[0];
+  const response = await fetchImpl(p.base + '/audio/speech', {
+    method: 'POST', signal, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + p.key },
+    body: JSON.stringify({ model, voice: (voice || 'marin').toLowerCase(), input: text, instructions: SPEAK_STYLE, response_format: 'pcm' }),
+  });
+  if (!response.ok) throw upstreamError(response.status, await response.text().catch(() => ''), p.key);
+  return { model, audio: Buffer.from(await response.arrayBuffer()).toString('base64'), rate: 24000 };
 }
 
 function upstreamError(status, text, key) {
@@ -350,7 +392,7 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
         })),
       });
     }
-    if (method !== 'POST' || !['/chat', '/models', '/transcribe'].includes(path)) return fail(404, 'not_found', 'Unknown ATLAS cloud endpoint.');
+    if (method !== 'POST' || !['/chat', '/models', '/transcribe', '/speak'].includes(path)) return fail(404, 'not_found', 'Unknown ATLAS cloud endpoint.');
     if (fromOtherSite(req, url)) return fail(403, 'cross_site', 'ATLAS online only answers its own page.');
     // JSON only: a plain HTML form on another site cannot send this content type.
     if (!/^application\/json\s*(;|$)/i.test(req.headers.get('content-type') || '')) return fail(415, 'json_only', 'Send JSON (Content-Type: application/json).');
@@ -375,6 +417,17 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
         if (typeof audio !== 'string' || audio.length > MAX_AUDIO || !BASE64_RE.test(audio) || !audio.startsWith('UklGR')) return fail(422, 'invalid_request', 'Send a WAV recording of at most about a minute.');
         try {
           return json({ provider: p.id, model: TRANSCRIBE_MODELS[p.id], text: (await transcribe(fetchImpl, p, audio, req.signal)).slice(0, 4000) });
+        } catch (err) {
+          return fail(502, 'provider_error', err.message);
+        }
+      }
+      if (path === '/speak') {
+        if (!SPEAK_MODELS[p.id]) return fail(422, 'invalid_request', p.label + ' has no natural voice here. Add a free Google Gemini key.');
+        const words = typeof body.text === 'string' ? body.text.trim() : '';
+        if (!words || words.length > MAX_SPEAK) return fail(422, 'invalid_request', 'Send between 1 and ' + MAX_SPEAK + ' characters to speak.');
+        if (body.voice !== undefined && (typeof body.voice !== 'string' || !VOICE_RE.test(body.voice))) return fail(422, 'invalid_request', 'Unknown voice name.');
+        try {
+          return json({ provider: p.id, ...(await speak(fetchImpl, p, words, body.voice, req.signal)) });
         } catch (err) {
           return fail(502, 'provider_error', err.message);
         }

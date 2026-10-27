@@ -14,12 +14,12 @@ Fakes live only in tests and in the preview server behind `ATLAS_FAKE_MODEL=1`; 
 
 ## Latest report
 
-Date: 2026-10-27, v0.21.0. Environment: Linux container, Node 22, Chromium 141. **Not Safari, not a real phone.**
+Date: 2026-10-27, v0.22.0. Environment: Linux container, Node 22, Chromium 141. **Not Safari, not a real phone.**
 
 | Command | Passed | Failed |
 |---|---|---|
-| `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 31 | 0 |
-| `node --test netlify/tests/e2e.test.mjs` | 14 | 0 |
+| `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 32 | 0 |
+| `node --test netlify/tests/e2e.test.mjs` | 15 | 0 |
 | `detect-secrets scan` (excluding tests, node_modules, dist) | no findings | — |
 
 ## Manual checks still needed
@@ -27,6 +27,7 @@ Date: 2026-10-27, v0.21.0. Environment: Linux container, Node 22, Chromium 141. 
 - Real provider chat with the owner's own key on the live site, including a thinking level, a photo and a PDF.
 - Live on a real phone and iPad: microphone, speech, camera; screen sharing on a computer.
 - Live real-time voice with the owner's real Gemini key: that Google accepts the setup, the voice sounds right, interrupting works, and a session lasting over 10 minutes reconnects. The e2e test uses a FAKE Gemini Live server.
+- Natural voice with the owner's real Gemini key: that `gemini-2.5-flash-preview-tts` answers on a free key, how it sounds for Hinglish, and how long the first words take (the e2e test uses a FAKE tone).
 - ChatGPT voice with a real paid OpenAI key (the e2e test uses a FAKE OpenAI Realtime server).
 - Real iPad and iPhone in Safari: layout, Paste button, Add to Home Screen.
 - Real Android phone: install prompt.
