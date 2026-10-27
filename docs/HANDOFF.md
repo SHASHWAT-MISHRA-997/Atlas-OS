@@ -1,4 +1,4 @@
-# Handoff — 2026-10-28 (v0.25.2)
+# Handoff — 2026-10-28 (v0.25.3)
 
 ## State
 
@@ -11,6 +11,7 @@
 
 ## Recent versions
 
+- v0.25.3: Test my voice setup passed on the owner's phone with real keys; Whisper words for silence are dropped.
 - v0.25.2: fixes found on real services and the owner's phone: stale version after a tab restore (service worker), a wrong OpenRouter key accepted, a wrong OpenAI key in ChatGPT voice described as a dropped call. Also: README redesign, CodeQL and Dependabot.
 - v0.25.1: housekeeping: `ATLAS_OS_Research_Starter_v4.zip` removed from `main` (still in Git history), stale claims fixed across the docs, the Integrations voice tile now describes Brave/Firefox correctly.
 - v0.25.0: "Test my voice setup" on Live (real-time models, Gemini Live `setupComplete`, `/cloud/speak`, 1-second `/cloud/transcribe`, each with pass/fail and the provider's exact words); every Live error names the step and what to do. Untested against real services.
@@ -26,7 +27,7 @@
 ## Verified in this session (Windows 11, Node 24, Playwright Chromium 141 headless, FAKE services)
 
 - At v0.22.1 (start of the session): 32 function/attack/size tests and 15 browser tests passed.
-- At v0.25.2: 36 function/attack/size tests and 17 browser tests pass; the secret scan reports nothing; first load is 72.4 KB gzipped (budget 80 KB).
+- At v0.25.3: 37 function/attack/size tests and 17 browser tests pass; the secret scan reports nothing; first load is 72.4 KB gzipped (budget 80 KB).
 - Nothing was run against real Google, Groq, OpenAI or Gemini services, in Brave, in Safari or on a phone.
 
 ## Next tasks, in order

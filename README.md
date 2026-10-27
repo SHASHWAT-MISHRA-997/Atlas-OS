@@ -28,7 +28,7 @@
 
 > [!NOTE]
 > **ATLAS OS is a web app, not an operating system, and it is not production-ready.** It is built and
-> tested by one developer. Everything on this page describes what exists today (v0.25.2). Features
+> tested by one developer. Everything on this page describes what exists today (v0.25.3). Features
 > marked 🧪 pass their automated tests with **FAKE** AI services but have **not yet been tried against
 > the real provider**. The full, honest status of every feature is in
 > [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md).
@@ -304,7 +304,7 @@ ATLAS_FAKE_MODEL=1 node scripts/netlify/dev-server.mjs  # http://localhost:8888 
 | Browser tests | `node --test netlify/tests/e2e.test.mjs` | Real Chromium (Playwright) at phone size against the preview with FAKE providers |
 | Secret scan | `detect-secrets scan --all-files --exclude-files '(^|/)(\.git\|node_modules\|dist\|tests)/'` | Must report no results |
 
-Latest run (2026-10-28, v0.25.2): **36** function tests and **17** browser tests passed in Chromium; CI job `cloud` runs the same on every push. Details and the list of manual checks still needed: [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
+Latest run (2026-10-28, v0.25.3): **37** function tests and **17** browser tests passed in Chromium; CI job `cloud` runs the same on every push. Details and the list of manual checks still needed: [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 
 To refresh the README screenshots: `node scripts/netlify/build.mjs && node scripts/netlify/screenshots.mjs`.
 

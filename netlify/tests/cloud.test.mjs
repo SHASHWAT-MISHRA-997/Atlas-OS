@@ -420,3 +420,18 @@ test('a wrong OpenRouter key is refused even though OpenRouter lists its models 
   const right = await (await t.call('models', { method: 'POST', body: { provider: 'openrouter', api_key: KEY } })).json();
   assert.deepEqual(right.models, ['google/gemma-4-31b-it:free']);
 });
+
+test('Whisper words for silence ("Gracias.", seen on the owner\'s phone) are dropped; real speech is kept', async () => {
+  const WAV = Buffer.from('RIFF$\u0000\u0000\u0000WAVEfmt fake test audio').toString('base64');
+  let reply;
+  const t = setup({ upstream: async () => Response.json(reply) });
+  const call = async () => (await (await t.call('transcribe', { method: 'POST', body: { provider: 'groq', api_key: KEY, audio: WAV } })).json()).text;
+  reply = { text: ' Gracias.', segments: [{ text: ' Gracias.', no_speech_prob: 0.93, avg_logprob: -0.9 }] };
+  assert.equal(await call(), '', 'silence gives no words');
+  assert.equal(t.calls[0].init.body.get('response_format'), 'verbose_json');
+  assert.equal(t.calls[0].init.body.get('temperature'), '0');
+  reply = { text: ' kal ka plan batao Thank you.', segments: [{ text: ' kal ka plan batao', no_speech_prob: 0.02 }, { text: ' Thank you.', no_speech_prob: 0.81 }] };
+  assert.equal(await call(), 'kal ka plan batao');
+  reply = { text: ' namaste atlas ' };
+  assert.equal(await call(), 'namaste atlas', 'a reply without pieces is used as it is');
+});
