@@ -1,0 +1,26 @@
+# GitHub code scanning (CodeQL) for the app and the function: looks for injection, XSS and other
+# security bugs on every push, pull request and once a week. Free for public repositories; if the
+# repository is made private without GitHub Advanced Security, remove this file.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '23 4 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
