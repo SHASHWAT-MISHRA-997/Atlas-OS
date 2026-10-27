@@ -644,7 +644,7 @@ test('Live real-time voice: streams the mic to Gemini Live, plays and shows the 
   await go(page, 'live');
   await page.waitForSelector('#livemode');
   assert.equal(await page.inputValue('#livemode'), 'realtime', 'a Gemini key starts in real-time voice');
-  assert.equal(await page.$eval('#livemode option[value=turns]', (o) => o.disabled), true, 'turn by turn needs an AI Chat model');
+  assert.match(await page.textContent('#livemode option[value=turns]'), /set up/, 'turn by turn needs an AI Chat model');
   await page.selectOption('#livevoice', 'Kore');
   await page.click('#liveorb');
   await page.waitForSelector('#livesaid >> text=FAKE live hi');
@@ -862,9 +862,20 @@ test('natural voice: with a Gemini key, Live turn by turn and Read aloud speak i
   await page.waitForFunction(() => /^fake-/.test(document.querySelector('#atlasmodel')?.value || ''));
   await page.click('#chatsettings summary');
   await page.selectOption('#atlasmodelpick', 'fake-large');
-  await page.evaluate(() => localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-test-voice-key')));
+  // Every mode can be picked; one without its key asks for it right on the Live screen.
   await go(page, 'live');
   await page.waitForSelector('#liveorb');
+  assert.equal(await page.inputValue('#livemode'), 'turns');
+  await page.waitForSelector('#livesetup >> text=Optional: for a natural human voice');
+  await page.selectOption('#livemode', 'realtime');
+  await page.waitForSelector('#livesetup >> text=needs a free Google Gemini key');
+  await page.click('#liveorb');
+  await page.waitForSelector('#livestatus >> text=needs a free Google Gemini key');
+  await page.fill('#livekeyinput', 'AIza-test-voice-key');
+  await page.click('#livekeysave');
+  await page.waitForFunction(() => document.querySelector('#livesetup')?.classList.contains('hidden') && document.querySelector('#livemode').value === 'realtime');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.cloud.key.gemini'))), 'AIza-test-voice-key');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.chat.settings.v1')).provider), 'groq', 'AI Chat keeps its provider');
   await page.selectOption('#livemode', 'turns');
   await page.waitForSelector('text=spoken in a natural Google Gemini voice');
   await page.selectOption('#livevoice', 'Kore');

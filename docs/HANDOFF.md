@@ -1,4 +1,4 @@
-# Handoff — 2026-10-26 (v0.22.0)
+# Handoff — 2026-10-26 (v0.22.1)
 
 ## State
 
@@ -15,6 +15,7 @@
 - v0.20.0: ChatGPT voice in Live (OpenAI Realtime API over WebSocket, paid, behind a billing tick). Untested against the real API.
 - v0.21.0: Dictate and Live work in Brave/Firefox (record + Groq Whisper or Gemini writes it down), Compress shows when it can be used, Live no longer talks about images without one.
 - v0.22.0: natural voice for spoken answers (Live turn by turn, Read aloud): Gemini speech models through `/cloud/speak` with the user's Gemini key (OpenAI `gpt-4o-mini-tts` only when OpenAI is the chosen provider); otherwise the browser's most natural installed voice. Untested against the real Gemini TTS API.
+- v0.22.1: every Live mode can be picked; a mode without its key shows a key box on the Live screen (Gemini or OpenAI key saved without changing the AI Chat provider).
 - v0.17.0: thinking level, images and PDFs, steering mid-reply, chat compression; Stop now cancels the request online.
 - v0.16.1: removed the top-bar task box.
 - v0.16.0: neon redesign with dark/light theme, per-screen colours and transitions; System screen; Automations and Devices back as web versions.

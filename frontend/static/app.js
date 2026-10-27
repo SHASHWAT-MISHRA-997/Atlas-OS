@@ -2080,9 +2080,9 @@
     const typedSend = el('button', { class: 'btn primary', type: 'submit', text: 'Ask' });
     const status = el('p', { class: 'tiny muted', id: 'livestatus', role: 'status' });
     const modeSel = el('select', { id: 'livemode', 'aria-label': 'How Live talks' }, [
-      el('option', { value: 'realtime', text: 'Real-time (Gemini)', disabled: !canUse.realtime }),
-      el('option', { value: 'chatgpt', text: 'ChatGPT (paid)', disabled: !canUse.chatgpt }),
-      el('option', { value: 'turns', text: 'Turn by turn' + (p ? ' (' + p.label + ')' : ''), disabled: !turnsReady }),
+      el('option', { value: 'realtime', text: 'Real-time (Gemini)' + (canUse.realtime ? '' : ' · add key') }),
+      el('option', { value: 'chatgpt', text: 'ChatGPT (paid)' + (canUse.chatgpt ? '' : ' · add key') }),
+      el('option', { value: 'turns', text: 'Turn by turn' + (p ? ' (' + p.label + ')' : '') + (turnsReady ? '' : ' · set up') }),
     ]);
     modeSel.value = prefs.mode;
     const voiceSel = el('select', { id: 'livevoice', 'aria-label': 'Voice' });
@@ -2091,10 +2091,53 @@
     const paidOk = el('input', { type: 'checkbox', id: 'livepaidok', checked: prefs.paidOk === true });
     const paidRow = el('label', { class: 'check livepaid' }, [paidOk, el('span', { text: 'I understand ChatGPT voice is billed to my OpenAI account for every minute it is on.' })]);
     const noteBox = el('div', { class: 'livenotes' });
+    // Every mode can be picked; one that is not ready yet shows what it needs right here, so a
+    // Gemini (or OpenAI) key can be added without leaving Live or changing the AI Chat provider.
+    const keyFor = { realtime: 'gemini', chatgpt: 'openai' };
+    const setupText = el('p', { class: 'tiny' });
+    const setupKey = el('input', { id: 'livekeyinput', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: 'Paste your key here', 'aria-label': 'API key' });
+    const setupPaste = el('button', { class: 'btn', type: 'button', text: 'Paste' });
+    const setupSave = el('button', { class: 'btn primary', type: 'button', id: 'livekeysave', text: 'Save key' });
+    const setupLink = el('a', { class: 'btn', target: '_blank', rel: 'noopener', text: 'Get a free key ↗' });
+    const setupChat = el('button', { class: 'btn primary', type: 'button', text: 'Open AI Chat', onclick: () => document.querySelector('.nav [data-section=chat]').click() });
+    const setupKeyRow = el('div', { class: 'liverow field' }, [setupKey, setupPaste, setupSave]);
+    const setupBox = el('div', { class: 'panel livesetupbox hidden', id: 'livesetup' }, [setupText, setupKeyRow, el('div', { class: 'chips-row' }, [setupLink, setupChat])]);
+    setupPaste.addEventListener('click', async () => {
+      try { setupKey.value = cleanKey(await navigator.clipboard.readText()); } catch { setupKey.focus(); }
+    });
+    setupSave.addEventListener('click', async () => {
+      const id = setupBox.dataset.provider;
+      const key = cleanKey(setupKey.value);
+      if (!id || key.length < 10) { setupText.textContent = 'That does not look like a key. Copy the whole key and paste it here.'; return; }
+      cloudKey.set(id, key, true);
+      log('live: saved a ' + id + ' key');
+      stopLive();
+      v.replaceChildren();
+      await renderLive(v);
+    });
+    function applySetup() {
+      const mode = modeSel.value;
+      const need = keyFor[mode] && !canUse[mode] ? keyFor[mode] : !isRT() && !turnsReady ? 'chat'
+        : mode === 'turns' && !naturalVoiceProvider() ? 'voice' : null;
+      setupBox.classList.toggle('hidden', !need);
+      if (!need) return;
+      const id = need === 'chat' ? null : need === 'voice' ? 'gemini' : need;
+      setupBox.dataset.provider = id || '';
+      setupKeyRow.classList.toggle('hidden', !id);
+      setupChat.classList.toggle('hidden', need !== 'chat');
+      const info = id && providers.find((x) => x.id === id);
+      setupLink.classList.toggle('hidden', !info);
+      if (info) { setupLink.href = info.key_url; setupLink.textContent = (id === 'openai' ? 'Get an OpenAI key' : 'Get a free Gemini key') + ' ↗'; }
+      setupText.textContent = need === 'chat' ? 'Turn by turn uses your AI Chat model. Pick a provider and a model in AI Chat first.'
+        : need === 'voice' ? 'Optional: for a natural human voice (like the Gemini app), add a free Google Gemini key. Answers still come from ' + p.label + '.'
+          : need === 'gemini' ? 'Real-time (Gemini) needs a free Google Gemini key. Make one with your Google account, then paste it here. It stays on this device.'
+            : 'ChatGPT voice needs your own OpenAI key. It is paid: every minute is billed to your OpenAI account.';
+    }
     const isRT = () => !!rtService[modeSel.value];
+    const ready = () => !!canUse[modeSel.value];
     const service = () => rtService[modeSel.value];
     // Whose voice speaks: the real-time service, or in turn by turn the natural voice (if there is a key for one).
-    const voiceService = () => (isRT() ? service() : naturalVoiceProvider());
+    const voiceService = () => (isRT() ? (ready() ? service() : null) : naturalVoiceProvider());
     const voiceKey = () => (voiceService() === 'openai' ? 'openaiVoice' : 'voice');
     function applyMode() {
       const vs = voiceService();
@@ -2106,23 +2149,24 @@
         voiceSel.value = voices.includes(prefs[voiceKey()]) ? prefs[voiceKey()] : voices[0];
       }
       if (isRT()) lookupModels(modeSel.value);
-      routeText.textContent = service() === 'gemini' ? 'Talks to Google Gemini' : service() === 'openai' ? 'Talks to OpenAI (paid)' : 'Sends to ' + p.label;
+      routeText.textContent = service() === 'gemini' ? 'Talks to Google Gemini' : service() === 'openai' ? 'Talks to OpenAI (paid)' : p ? 'Sends to ' + p.label : 'Set up AI Chat first';
       const notes = [];
       if (service() === 'gemini') {
         notes.push('Real-time voice streams your microphone straight from this browser to Google Gemini with your own Gemini key, and Gemini answers in its own voice. Talk over it to interrupt. With the camera or screen on, Gemini sees about one picture a second. Free Gemini keys have daily limits for this.');
         if (!turnsReady) notes.push('Turn by turn needs a model picked in AI Chat.');
       } else if (service() === 'openai') {
         notes.push('ChatGPT voice uses OpenAI\'s Realtime API, the voice technology behind ChatGPT, with your own OpenAI key, straight from this browser. It is paid: every minute of talking is billed to your OpenAI account and costs much more than text chat (see OpenAI\'s pricing page). With the camera or screen on, the current picture goes with each thing you say.');
-      } else {
+      } else if (turnsReady) {
         if (!SR) notes.push('This browser cannot listen, so type your questions. Chrome, Edge and Safari can listen, or add a free Groq or Gemini key.');
         notes.push((browserSpeech() ? 'Listening uses your browser\'s speech service (Chrome and Edge send the audio to Google or Microsoft).' : 'This browser has no speech service of its own, so what you say is recorded and written down by your ' + TRANSCRIBER_LABELS[transcriber()] + ' key.') + ' Camera and screen pictures go to ' + p.label + ' only with a question. For pictures, pick a model that can see images, such as Gemini 2.5 Flash or Llama 4 Scout on Groq.');
         notes.push(vs ? 'Answers are spoken in a natural ' + NATURAL_LABELS[vs] + ' voice: the answer text goes to ' + NATURAL_LABELS[vs] + ' with your key to be spoken' + (vs === 'openai' ? ', billed to your OpenAI account' : '') + '.'
-          : 'Answers are spoken with your browser\'s own voice, which can sound robotic. For a natural human voice, add a free Google Gemini key in AI Chat.');
-        if (!canUse.realtime) notes.push('For real-time voice like the Gemini app, add a free Google Gemini key in AI Chat.');
+          : 'Answers are spoken with your browser\'s own voice, which can sound robotic. For a natural human voice, add a free Google Gemini key above.');
+        if (!canUse.realtime) notes.push('For real-time voice like the Gemini app, pick Real-time (Gemini) as the mode and add a free Gemini key.');
       }
       if (!canShare) notes.push('Screen sharing works in desktop browsers only; phones and iPads do not allow it. The camera works everywhere.');
       noteBox.replaceChildren(...notes.map((t) => el('p', { class: 'tiny muted', text: t })));
-      if (!state.running) setState('idle', isRT() || SR ? 'Tap to start' : 'Type below');
+      applySetup();
+      if (!state.running) setState('idle', !ready() ? 'Add a key below' : isRT() || SR ? 'Tap to start' : 'Type below');
     }
     modeSel.addEventListener('change', () => { prefs.mode = modeSel.value; storageSet(LIVE_KEY, prefs); applyMode(); });
     voiceSel.addEventListener('change', () => { prefs[voiceKey()] = voiceSel.value; storageSet(LIVE_KEY, prefs); });
@@ -2132,6 +2176,7 @@
       el('div', { class: 'panel hud livestage' }, [orb, heard, said, video]),
       el('div', { class: 'panel hud livecontrols' }, [
         el('div', { class: 'liveopts' }, [el('label', { class: 'liveopt field' }, [el('span', { class: 'tiny muted', text: 'Mode' }), modeSel]), voiceRow]),
+        setupBox,
         paidRow,
         el('div', { class: 'chips-row' }, [camBtn, flipBtn, shareBtn, muteBtn, endBtn]),
         el('form', { class: 'liverow field', onsubmit: (e) => { e.preventDefault(); const t = typed.value.trim(); if (t) { typed.value = ''; ask(t); } } }, [typed, typedSend]),
@@ -2251,6 +2296,7 @@
 
     async function ask(text) {
       if (state.rt) { state.rt.sendText(text); return; }
+      if (!turnsReady) { status.textContent = isRT() && ready() ? 'Tap the orb to start, then ask.' : 'Turn by turn needs a model picked in AI Chat.'; return; }
       if (state.recording) { const rec = state.recording; state.recording = null; rec.abort(); }
       if (state.recognition) { const r = state.recognition; state.recognition = null; try { r.abort(); } catch { /* already stopped */ } }
       if (state.controller) state.controller.abort();
@@ -2350,6 +2396,7 @@
     }
 
     function start() {
+      if (!ready()) { applySetup(); status.textContent = setupText.textContent; (setupKeyRow.classList.contains('hidden') ? setupChat : setupKey).focus(); return; }
       if (isRT()) { startRealtime(); return; }
       state.running = true;
       endBtn.disabled = false;
