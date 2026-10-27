@@ -332,7 +332,7 @@ test('natural voice: Gemini speech models (falls back to Pro on 404), OpenAI pcm
   const PCM = Buffer.from([1, 0, 2, 0]).toString('base64');
   let flashMissing = false;
   const t = setup({ upstream: async (url) => {
-    if (url.includes('api.openai.com')) return new Response(Buffer.from([3, 0, 4, 0]));
+    if (new URL(url).host === 'api.openai.com') return new Response(Buffer.from([3, 0, 4, 0]));
     if (flashMissing && url.includes('flash-preview-tts')) return new Response('{"error":{"message":"not found"}}', { status: 404 });
     return Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: PCM } }] } }] });
   } });
@@ -367,7 +367,7 @@ test('Google Calendar and Gmail: the browser may reach only Google sign-in and t
   const csp = Object.fromEntries(/Content-Security-Policy = "([^"]+)"/.exec(toml)[1].split(';').map((d) => d.trim().split(/\s+/)).map(([k, ...v]) => [k, v]));
   assert.deepEqual(csp['script-src'], ["'self'", 'https://accounts.google.com/gsi/client']);
   assert.deepEqual(csp['frame-src'], ['https://accounts.google.com/gsi/']);
-  assert.deepEqual(csp['connect-src'].filter((h) => /google\.com|googleapis\.com/.test(h)).sort(), [
+  assert.deepEqual(csp['connect-src'].filter((h) => /^(https|wss):\/\/([a-z0-9-]+\.)*(google|googleapis)\.com(\/|$)/.test(h)).sort(), [
     'https://accounts.google.com/gsi/', 'https://gmail.googleapis.com/gmail/v1/', 'https://oauth2.googleapis.com/revoke',
     'https://www.googleapis.com/calendar/v3/', 'wss://generativelanguage.googleapis.com']);
   assert.match(toml, /Cross-Origin-Opener-Policy = "same-origin-allow-popups"/, 'the Google sign-in pop-up can report back');
