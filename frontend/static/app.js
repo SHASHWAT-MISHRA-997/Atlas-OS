@@ -1884,13 +1884,17 @@
         const started = Date.now();
         let spoke = false;
         let quietSince = 0;
+        let samples = 0;
         const finish = () => { node.port.onmessage = null; resolve(spoke || seconds ? kept : null); };
         if (signal) { if (signal.aborted) { finish(); return; } signal.addEventListener('abort', finish, { once: true }); }
         node.port.onmessage = (e) => {
           const now = Date.now();
           onLevel(e.data.level);
-          kept.push(new Int16Array(e.data.pcm));
-          if (seconds) { if (now - started >= seconds * 1000) finish(); return; }
+          const pcm = new Int16Array(e.data.pcm);
+          kept.push(pcm);
+          samples += pcm.length;
+          // Counted in samples, not wall-clock time: the microphone takes a moment to start.
+          if (seconds) { if (samples >= seconds * 16000) finish(); return; }
           if (e.data.level > 0.02) { spoke = true; quietSince = 0; } else if (!quietSince) quietSince = now;
           if (!spoke && kept.length > 3) kept.shift(); // keep a little sound from just before speech
           if ((spoke && quietSince && now - quietSince > 1200) || now - started > 30000 || (!spoke && now - started > 8000)) finish();
