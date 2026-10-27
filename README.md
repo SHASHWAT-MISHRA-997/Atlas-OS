@@ -7,7 +7,7 @@ screen as an app. It is **not** an operating system and **not** production-ready
 describes only what exists today; see [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the
 status of every feature.
 
-## What it does today (v0.21.0)
+## What it does today (v0.22.0)
 
 - **AI Chat** with your own key. Free providers come first: Groq, Google Gemini and OpenRouter
   (free models only). Paid OpenAI is optional and clearly marked. Replies stream, can be stopped,
@@ -19,6 +19,8 @@ status of every feature.
   app (Gemini Live API: streaming audio, Gemini's own voices, talk over it to interrupt); with any
   other key it goes turn by turn. With a paid OpenAI key, ChatGPT's voice (OpenAI Realtime API)
   is available too, only after you tick that it is billed to your account. It can look through your camera (or a shared screen on a computer).
+  Turn by turn and Read aloud speak in Gemini's natural voice when you have a Gemini key, and
+  otherwise in your browser's most natural voice.
 - **About:** who builds ATLAS OS.
 - **Auto-switch:** when the free provider you picked hits its limit or is down, the message goes to
   another free provider you added a key for. It never switches into a paid provider.

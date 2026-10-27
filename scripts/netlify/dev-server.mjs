@@ -21,6 +21,12 @@ export function fakeModelFetch(url, init) {
   }), { headers: { 'Content-Type': 'text/event-stream' } });
   const auth = (init.headers && init.headers.Authorization) || '';
   if (String(url).endsWith('/audio/transcriptions')) return Promise.resolve(Response.json({ text: 'FAKE heard speech' }));
+  // FAKE speech: a quarter second of a quiet tone as 24 kHz PCM, so tests can check it is played.
+  if (String(url).includes('-tts:generateContent')) {
+    const pcm = Buffer.alloc(12000);
+    for (let i = 0; i < 6000; i += 1) pcm.writeInt16LE(Math.round(Math.sin(i / 8) * 3000), i * 2);
+    return Promise.resolve(Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: pcm.toString('base64') } }] } }] }));
+  }
   if (auth === 'Bearer wrong-key-123') return Promise.resolve(new Response('{"error":{"message":"Invalid API Key"}}', { status: 401 }));
   if (String(url).includes('/v1beta/models?')) return Promise.resolve(Response.json({ models: [
     { name: 'models/fake-flash', supportedGenerationMethods: ['generateContent'] },
