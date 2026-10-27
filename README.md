@@ -134,7 +134,7 @@ flowchart LR
         GM["Gmail API"]
     end
 
-    Static -. "HTML · JS · CSS" .-> UI
+    Static -.->|"HTML · JS · CSS"| UI
     Shim -- "chat · models · speak · transcribe" --> Fn
     Fn --> Groq & Gemini & ORT & OAI
     RT == "WebSocket, your key" ==> Gemini
@@ -269,7 +269,7 @@ flowchart LR
     K -.->|"remembered only if you tick it"| L[("🗄️ This browser")]
     M["🧠 Memories · 💬 chat · 🗂️ tasks"] --> L
     T["🔐 Google token"] -->|"memory only, revoked on Sign out"| GA["📅 Google APIs"]
-    F -. "never stores or logs" .-> DB[("No database")]
+    F -.->|"never stores or logs"| DB[("No database")]
 ```
 
 - **No ATLAS account, no database, no sync.** What you save stays in that browser on that device.
