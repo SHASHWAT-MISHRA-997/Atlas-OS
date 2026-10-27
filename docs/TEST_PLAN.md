@@ -14,12 +14,12 @@ Fakes live only in tests and in the preview server behind `ATLAS_FAKE_MODEL=1`; 
 
 ## Latest report
 
-Date: 2026-10-27, v0.22.1. Environment: Linux container, Node 22, Chromium 141. **Not Safari, not a real phone.**
+Date: 2026-10-28, v0.24.0. Environment: Windows 11, Node 24, Playwright Chromium 141 (headless); CI runs the same on Linux with Node 22. **Not Safari, not Brave, not a real phone.**
 
 | Command | Passed | Failed |
 |---|---|---|
-| `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 32 | 0 |
-| `node --test netlify/tests/e2e.test.mjs` | 15 | 0 |
+| `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 33 | 0 |
+| `node --test netlify/tests/e2e.test.mjs` | 16 | 0 |
 | `detect-secrets scan` (excluding tests, node_modules, dist) | no findings | — |
 
 ## Manual checks still needed
@@ -28,6 +28,7 @@ Date: 2026-10-27, v0.22.1. Environment: Linux container, Node 22, Chromium 141. 
 - Live on a real phone and iPad: microphone, speech, camera; screen sharing on a computer.
 - Live real-time voice with the owner's real Gemini key: that Google accepts the setup, the voice sounds right, interrupting works, and a session lasting over 10 minutes reconnects. The e2e test uses a FAKE Gemini Live server.
 - Natural voice with the owner's real Gemini key: that `gemini-2.5-flash-preview-tts` answers on a free key, how it sounds for Hinglish, and how long the first words take (the e2e test uses a FAKE tone).
+- Google Calendar and Gmail with the owner's real OAuth client ID, on the PC (Brave) and the phone: the sign-in pop-up opens and reports back (Brave Shields may block it; allow pop-ups), the consent screen lists only the two read-only scopes, today's and tomorrow's events and the 10 unread emails match Gmail, Sign out revokes (the app disappears from https://myaccount.google.com/permissions). The e2e test uses a FAKE Google sign-in script and FAKE APIs.
 - ChatGPT voice with a real paid OpenAI key (the e2e test uses a FAKE OpenAI Realtime server).
 - Real iPad and iPhone in Safari: layout, Paste button, Add to Home Screen.
 - Real Android phone: install prompt.

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.24.0 — 2026-10-28
+
+Task 1 of the owner's list: Calendar and Gmail.
+- **Google Calendar and Gmail, read-only** (Integrations). Sign in with Google and ATLAS shows today's and tomorrow's events on your main calendar and the sender and subject of your 10 latest unread emails. It asks Google only for `calendar.readonly` and `gmail.readonly`, reads only email headers (never the message text), and never sends, deletes or changes anything.
+- The sign-in uses Google Identity Services' token client, loaded only when Integrations opens (`google.js`). The access token stays in the page's memory: it is never stored, never sent to ATLAS's server or an AI model, and closing the page forgets it. **Sign out** asks Google to revoke it.
+- It needs a Google OAuth client ID that the site owner creates (see docs/CLOUD.md). It is never in the code: the owner sets the Netlify build variable `ATLAS_GOOGLE_CLIENT_ID` (written to `/config.json`) or pastes it on the Integrations screen.
+- Clear messages when sign-in is refused (Testing mode allows only test users), the pop-up is blocked or closed, an API is not turned on, or the sign-in expires.
+- Security headers: the CSP now allows Google's sign-in script and frame, `www.googleapis.com/calendar/v3/`, `gmail.googleapis.com/gmail/v1/` and `oauth2.googleapis.com/revoke`; `Cross-Origin-Opener-Policy` is `same-origin-allow-popups` so Google's sign-in pop-up can report back. The local preview server now reads the CSP from `netlify.toml`.
+- Messaging stays "Not yet".
+- Version 0.23.0 is left for the open PC-control pull request.
+- **Not yet tried against Google's real sign-in or APIs**; the tests use a FAKE Google sign-in script and FAKE Calendar and Gmail answers.
+
 ## 0.22.1 — 2026-10-27
 
 The owner said the Live mode did not work properly:

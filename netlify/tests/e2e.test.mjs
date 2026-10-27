@@ -902,3 +902,112 @@ test('natural voice: with a Gemini key, Live turn by turn and Read aloud speak i
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });
+
+// A FAKE Google Identity Services script, served in place of https://accounts.google.com/gsi/client.
+const FAKE_GIS = `
+  window.fakeGis = { inits: [], revoked: [], next: 'ok' };
+  window.google = { accounts: { oauth2: {
+    initTokenClient(cfg) {
+      fakeGis.inits.push({ client_id: cfg.client_id, scope: cfg.scope });
+      return { requestAccessToken() { setTimeout(() => {
+        if (fakeGis.next === 'deny') cfg.callback({ error: 'access_denied' });
+        else if (fakeGis.next === 'closed') cfg.error_callback({ type: 'popup_closed' });
+        else cfg.callback({ access_token: 'FAKE-google-token', expires_in: 3599, scope: cfg.scope });
+      }, 10); } };
+    },
+    revoke(token, done) { fakeGis.revoked.push(token); if (done) done({ successful: true }); },
+  } } };`;
+
+test('Google Calendar and Gmail: read-only sign-in, today and tomorrow, 10 unread, token in memory only, Sign out revokes', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  // FAKE Google: the sign-in script and the Calendar and Gmail APIs are answered inside the browser.
+  const calls = [];
+  let expired = false;
+  await page.route('https://accounts.google.com/gsi/client', (route) => route.fulfill({ contentType: 'text/javascript', body: FAKE_GIS }));
+  const at = (days, h, m) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + days); d.setHours(h, m); return d; };
+  const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  await page.route(/^https:\/\/(www|gmail)\.googleapis\.com\//, (route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    calls.push({ method: req.method(), url, auth: req.headers().authorization });
+    if (expired) return route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":{"code":401,"message":"Invalid Credentials"}}' });
+    if (url.pathname === '/calendar/v3/calendars/primary/events') return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [
+      { summary: 'FAKE standup', start: { dateTime: at(0, 9, 30).toISOString() }, end: { dateTime: at(0, 10, 0).toISOString() } },
+      { summary: '<img src=x onerror="window.pwned=1">', start: { dateTime: at(0, 15, 0).toISOString() }, end: { dateTime: at(0, 16, 0).toISOString() } },
+      { summary: 'FAKE cancelled', status: 'cancelled', start: { dateTime: at(0, 11, 0).toISOString() }, end: { dateTime: at(0, 12, 0).toISOString() } },
+      { summary: 'FAKE holiday', start: { date: ymd(at(1, 0, 0)) }, end: { date: ymd(at(2, 0, 0)) } }] }) });
+    if (url.pathname === '/gmail/v1/users/me/messages') return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ messages: Array.from({ length: 12 }, (_, i) => ({ id: 'm' + i, threadId: 't' + i })) }) });
+    const m = /^\/gmail\/v1\/users\/me\/messages\/(m\d+)$/.exec(url.pathname);
+    if (m) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ id: m[1], internalDate: String(Date.now()), payload: { headers: [
+      { name: 'From', value: '"FAKE Sender ' + m[1] + '" <sender' + m[1] + '@example.com>' }, { name: 'Subject', value: 'FAKE subject ' + m[1] }] } }) });
+    return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+  });
+  await page.goto(base + '/');
+  await go(page, 'integrations');
+  await page.waitForSelector('text=Calendar and Gmail');
+  await page.waitForSelector('#googlepanel >> text=Not set up yet');
+  // The client ID is typed by the owner (or comes from the build), never from the code.
+  assert.equal(await page.evaluate(() => fetch('/config.json').then((r) => r.json()).then((c) => c.google_client_id)), null);
+  await page.fill('#googleclientid', 'not-a-client-id');
+  await page.click('#googleclientsave');
+  await page.waitForSelector('#googlestatus >> text=not a Google OAuth client ID');
+  await page.fill('#googleclientid', '123456789012-fakeclientidfortests.apps.googleusercontent.com');
+  await page.click('#googleclientsave');
+  await page.waitForSelector('#googleconnect:not([disabled])');
+  // A refused sign-in says why and what to do.
+  await page.evaluate(() => { window.fakeGis.next = 'deny'; });
+  await page.click('#googleconnect');
+  await page.waitForSelector('#googlestatus >> text=only accounts added as test users');
+  await page.evaluate(() => { window.fakeGis.next = 'ok'; });
+  await page.click('#googleconnect');
+  await page.waitForSelector('#googleevents >> text=FAKE standup');
+  await page.waitForSelector('#googleevents >> text=FAKE holiday');
+  await page.waitForSelector('#googlemail >> text=FAKE subject m0');
+  await page.locator('#googleevents').scrollIntoViewIfNeeded();
+  await shot(page, '12-google-connected');
+  const inits = await page.evaluate(() => window.fakeGis.inits);
+  assert.equal(inits.at(-1).client_id, '123456789012-fakeclientidfortests.apps.googleusercontent.com');
+  assert.deepEqual(inits.at(-1).scope.split(' ').sort(), ['https://www.googleapis.com/auth/calendar.readonly', 'https://www.googleapis.com/auth/gmail.readonly'], 'read-only scopes only');
+  const today = await page.textContent('#googleevents > div:first-child');
+  assert.match(today, /TODAY.*FAKE standup/s);
+  assert.ok(!today.includes('FAKE holiday') && !today.includes('FAKE cancelled'));
+  assert.match(await page.textContent('#googleevents > div:last-child'), /TOMORROW.*All day.*FAKE holiday/s);
+  assert.equal(await page.locator('#googlemail li').count(), 10, 'the 10 latest unread');
+  assert.match(await page.textContent('#googlemail li:first-child'), /FAKE Sender m0.*FAKE subject m0/s);
+  // Text from Google is shown as text, never run.
+  await page.waitForSelector('#googleevents >> text=<img src=x');
+  assert.equal(await page.evaluate(() => window.pwned), undefined);
+  // Only reads: every call is a GET with the token; Gmail headers only, never message bodies.
+  assert.ok(calls.length >= 12);
+  for (const c of calls) {
+    assert.equal(c.method, 'GET');
+    assert.equal(c.auth, 'Bearer FAKE-google-token');
+  }
+  const cal = calls.find((c) => c.url.host === 'www.googleapis.com').url.searchParams;
+  assert.equal(new Date(cal.get('timeMin')).getTime(), at(0, 0, 0).getTime(), 'from the start of today');
+  assert.equal(new Date(cal.get('timeMax')).getTime(), at(2, 0, 0).getTime(), 'to the end of tomorrow');
+  assert.equal(calls.find((c) => c.url.pathname.endsWith('/messages')).url.searchParams.get('q'), 'is:unread');
+  assert.ok(calls.filter((c) => /\/messages\/m/.test(c.url.pathname)).every((c) => c.url.searchParams.get('format') === 'metadata'));
+  // The token is kept in memory only.
+  assert.ok(!(await page.evaluate(() => JSON.stringify(localStorage) + JSON.stringify(sessionStorage) + document.cookie)).includes('FAKE-google-token'));
+  // An expired sign-in asks to connect again.
+  expired = true;
+  await page.click('#googlerefresh');
+  await page.waitForSelector('#googlestatus >> text=Google sign-in expired');
+  await page.waitForSelector('#googleconnect:not([disabled])');
+  expired = false;
+  await page.click('#googleconnect');
+  await page.waitForSelector('#googlemail >> text=FAKE subject m0');
+  // Sign out revokes the token with Google and forgets it.
+  await page.click('#googlesignout');
+  await page.waitForSelector('#googlestatus >> text=Signed out');
+  assert.deepEqual(await page.evaluate(() => window.fakeGis.revoked), ['FAKE-google-token']);
+  assert.equal(await page.evaluate(() => window.AtlasGoogle.connected()), false);
+  // After a reload ATLAS is not connected: nothing was stored.
+  await page.reload();
+  await go(page, 'integrations');
+  await page.waitForSelector('#googleconnect:not([disabled])');
+  assert.equal(await page.locator('#googleevents').count(), 0);
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});

@@ -20,6 +20,10 @@ browser                                         Netlify
   browser: chat and model lists go to the function; tasks run in the page and are saved in
   localStorage; auto-switch between free providers happens here, so each key only ever travels to
   its own provider.
+- `frontend/static/google.js`: loaded only on the Integrations screen. Google sign-in (Google
+  Identity Services token client, read-only scopes) and GET calls to the Calendar and Gmail APIs,
+  straight from the browser; the token stays in memory. The client ID comes from `dist/config.json`
+  (build variable `ATLAS_GOOGLE_CLIENT_ID`) or is typed by the owner.
 - `frontend/static/sw.js` and `manifest.webmanifest`: installable app and an offline shell. The
   service worker never caches `/cloud` replies.
 - `netlify/lib/cloud.mjs`: the whole server side. Fixed provider URLs, input validation, output

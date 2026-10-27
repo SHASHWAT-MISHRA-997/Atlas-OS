@@ -360,3 +360,23 @@ test('natural voice: Gemini speech models (falls back to Pro on 404), OpenAI pcm
   assert.equal((await call({ provider: 'gemini', text: 'hi', voice: '../evil' })).status, 422);
   assert.equal(t.calls.length, before, 'refused requests never reach a provider');
 });
+
+test('Google Calendar and Gmail: the browser may reach only Google sign-in and the two read APIs; the function is no proxy for them', async () => {
+  const { readFileSync } = await import('node:fs');
+  const toml = readFileSync(new URL('../../netlify.toml', import.meta.url), 'utf8');
+  const csp = Object.fromEntries(/Content-Security-Policy = "([^"]+)"/.exec(toml)[1].split(';').map((d) => d.trim().split(/\s+/)).map(([k, ...v]) => [k, v]));
+  assert.deepEqual(csp['script-src'], ["'self'", 'https://accounts.google.com/gsi/client']);
+  assert.deepEqual(csp['frame-src'], ['https://accounts.google.com/gsi/']);
+  assert.deepEqual(csp['connect-src'].filter((h) => /google\.com|googleapis\.com/.test(h)).sort(), [
+    'https://accounts.google.com/gsi/', 'https://gmail.googleapis.com/gmail/v1/', 'https://oauth2.googleapis.com/revoke',
+    'https://www.googleapis.com/calendar/v3/', 'wss://generativelanguage.googleapis.com']);
+  assert.match(toml, /Cross-Origin-Opener-Policy = "same-origin-allow-popups"/, 'the Google sign-in pop-up can report back');
+  for (const f of ['app.js', 'google.js', 'cloud.js']) {
+    assert.ok(!/[0-9]{6,}-[a-z0-9_]{8,}\.apps\.googleusercontent\.com/.test(readFileSync(new URL('../../frontend/static/' + f, import.meta.url), 'utf8')), 'no client ID in ' + f);
+  }
+  const t = setup();
+  for (const path of ['google', 'calendar', 'gmail', 'oauth']) {
+    assert.equal((await t.call(path, { method: 'POST', body: { url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages' } })).status, 404);
+  }
+  assert.equal(t.calls.length, 0);
+});

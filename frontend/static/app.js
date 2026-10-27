@@ -1682,8 +1682,123 @@
       tile('memory', 'Memory', 'on', 'BROWSER', 'Saved in this browser and sent with chats when memory is on.'),
       tile('mic', 'Voice and Live', 'on', 'BROWSER', 'Dictation, read-aloud and Live use this browser\'s speech service. Live can also use your camera or a shared screen.'),
       tile('globe', 'Other devices', 'on', 'SAME LINK', 'Open the same link anywhere. Move your data with Devices → Export and Import.'),
-      tile('bell', 'Calendar, email, messaging', 'plan', 'NOT YET', 'Not built yet. Reading your Google Calendar or Gmail needs a Google sign-in app that the owner registers first. Until then ATLAS says so instead of pretending.'),
-    ]));
+      tile('bell', 'Calendar and Gmail', 'on', 'READ-ONLY', 'Today\'s and tomorrow\'s events and your latest unread email, after you sign in with Google below. ATLAS never sends, deletes or changes anything.'),
+      tile('send', 'Messaging', 'plan', 'NOT YET', 'Sending email or messages is not built. ATLAS says so instead of pretending.'),
+    ]), googlePanel());
+  }
+
+  // ---------------------------------------------------------------- Google Calendar and Gmail
+  // Read-only, straight from the browser to Google with a token kept in memory (google.js, loaded
+  // only here). The Google OAuth client ID is public, not a secret: it comes from the site build
+  // (ATLAS_GOOGLE_CLIENT_ID, in /config.json) or is typed here by the owner, never from the code.
+  const GOOGLE_CLIENT_STORE = 'atlas.google.clientid.v1';
+  let siteConfig = null;
+
+  async function googleClientId() {
+    const typed = storageGet(GOOGLE_CLIENT_STORE, '');
+    if (typed) return { id: typed, typed: true };
+    if (!siteConfig) siteConfig = fetch('/config.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+    const id = (await siteConfig).google_client_id;
+    return id ? { id, typed: false } : null;
+  }
+
+  function googlePanel() {
+    const panel = el('div', { class: 'panel hud googlepanel', id: 'googlepanel' }, [
+      el('div', { class: 'sectionhead' }, [el('h2', { text: 'Google Calendar and Gmail' }), el('span', { class: 'badge', text: 'READ-ONLY' })]),
+      el('p', { class: 'tiny muted', text: 'Loading…' }),
+    ]);
+    fillGooglePanel(panel);
+    return panel;
+  }
+
+  async function fillGooglePanel(panel) {
+    const head = panel.firstChild;
+    const status = el('p', { class: 'tiny', id: 'googlestatus', role: 'status' });
+    const show = (...nodes) => panel.replaceChildren(head, ...nodes, status);
+    const about = el('p', { class: 'tiny muted', text: 'Sign in with Google to see today\'s and tomorrow\'s events on your main calendar and the subjects and senders of your 10 latest unread emails. ATLAS asks Google only for read-only access, keeps the sign-in in this page\'s memory (closing the page forgets it), and talks to Google straight from this browser. Nothing goes to ATLAS\'s server or to an AI model.' });
+    let G;
+    try {
+      await loadScript('/static/google.js');
+      G = window.AtlasGoogle;
+    } catch (err) {
+      show(el('p', { class: 'tiny', text: 'Could not load the Google part of ATLAS: ' + err.message }));
+      return;
+    }
+    const client = await googleClientId();
+
+    if (!client || !G.validClientId(client.id)) {
+      const input = el('input', { id: 'googleclientid', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: '1234567890-abc….apps.googleusercontent.com', 'aria-label': 'Google OAuth client ID' });
+      const save = el('button', { class: 'btn primary', type: 'button', id: 'googleclientsave', text: 'Save client ID' });
+      save.addEventListener('click', () => {
+        const id = cleanKey(input.value);
+        if (!G.validClientId(id)) { status.textContent = 'That is not a Google OAuth client ID. It ends in .apps.googleusercontent.com.'; return; }
+        storageSet(GOOGLE_CLIENT_STORE, id);
+        log('google: client ID saved');
+        fillGooglePanel(panel);
+      });
+      show(about,
+        el('p', { class: 'tiny', text: 'Not set up yet. This needs a Google OAuth client ID that the site owner makes once in Google Cloud Console: a Web application client with this site as an authorised JavaScript origin, the Google Calendar API and Gmail API turned on, and the consent screen in Testing mode with your Google account as a test user. Paste the client ID here (it is not a secret). It is saved in this browser.' }),
+        el('div', { class: 'liverow field' }, [input, save]));
+      return;
+    }
+
+    const connectBtn = el('button', { class: 'btn primary', type: 'button', id: 'googleconnect', text: 'Loading Google sign-in…', disabled: true });
+    const forget = client.typed ? el('button', { class: 'btn chip', type: 'button', id: 'googleforget', text: 'Change client ID' }) : null;
+    if (forget) forget.addEventListener('click', async () => { await G.signOut(); localStorage.removeItem(GOOGLE_CLIENT_STORE); log('google: client ID removed'); fillGooglePanel(panel); });
+
+    if (G.connected()) { showGoogleData(panel, G, show, status); return; }
+    show(about, el('div', { class: 'chips-row' }, [connectBtn, forget]));
+    // Google's script loads first, so the sign-in window opens straight from the tap and is not blocked.
+    G.load().then(() => { connectBtn.disabled = false; connectBtn.textContent = 'Connect Google (read-only)'; },
+      (err) => { connectBtn.textContent = 'Google sign-in unavailable'; status.textContent = err.message; });
+    connectBtn.addEventListener('click', async () => {
+      status.textContent = 'Waiting for Google sign-in…';
+      try {
+        const granted = await G.connect(client.id);
+        log('google: connected (' + granted.length + ' of 2 read-only scopes)');
+        status.textContent = '';
+        showGoogleData(panel, G, show, status);
+      } catch (err) {
+        status.textContent = err.message;
+        log('google: sign-in failed: ' + err.message);
+      }
+    });
+  }
+
+  async function showGoogleData(panel, G, show, status) {
+    const refresh = el('button', { class: 'btn chip', type: 'button', id: 'googlerefresh' }, [icon('repeat'), 'Refresh']);
+    const signOut = el('button', { class: 'btn chip', type: 'button', id: 'googlesignout' }, [icon('lock'), 'Sign out']);
+    const cal = el('div', { class: 'googlelist', id: 'googleevents' }, el('p', { class: 'tiny muted', text: 'Loading events…' }));
+    const mail = el('div', { class: 'googlelist', id: 'googlemail' }, el('p', { class: 'tiny muted', text: 'Loading email…' }));
+    show(el('div', { class: 'chips-row' }, [refresh, signOut]),
+      el('div', { class: 'googlegrid' }, [el('div', {}, [el('h3', { text: 'Calendar' }), cal]), el('div', {}, [el('h3', { text: 'Unread email' }), mail])]));
+    signOut.addEventListener('click', async () => {
+      await G.signOut();
+      log('google: signed out and access revoked');
+      await fillGooglePanel(panel);
+      const s = $('googlestatus');
+      if (s) s.textContent = 'Signed out. ATLAS asked Google to revoke its access.';
+    });
+    refresh.addEventListener('click', () => showGoogleData(panel, G, show, status));
+    const time = (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const failed = (box, err) => {
+      box.replaceChildren(el('p', { class: 'tiny', text: err.message }));
+      if (!G.connected()) fillGooglePanel(panel).then(() => { const s = $('googlestatus'); if (s) s.textContent = err.message; });
+    };
+    G.events().then((list) => {
+      cal.replaceChildren(...['today', 'tomorrow'].map((day) => {
+        const items = list.filter((e) => e.day === day);
+        return el('div', {}, [
+          el('p', { class: 'tiny muted mono', text: day === 'today' ? 'TODAY' : 'TOMORROW' }),
+          items.length ? el('ul', {}, items.map((e) => el('li', {}, [el('span', { class: 'mono', text: e.allDay ? 'All day' : time(e.start) + (e.end && !Number.isNaN(e.end.getTime()) ? '–' + time(e.end) : '') }), ' ', el('span', { text: e.title })])))
+            : el('p', { class: 'tiny muted', text: 'Nothing on your calendar.' }),
+        ]);
+      }));
+    }, (err) => failed(cal, err));
+    G.unread().then((list) => {
+      mail.replaceChildren(list.length ? el('ul', {}, list.map((m) => el('li', { title: m.address }, [el('strong', { text: m.from }), el('span', { text: m.subject })])))
+        : el('p', { class: 'tiny muted', text: 'No unread email.' }));
+    }, (err) => failed(mail, err));
   }
 
   /** The auto-switch setting, with a switch that is the same setting as in AI Chat. */
