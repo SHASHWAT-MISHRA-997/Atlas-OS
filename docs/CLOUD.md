@@ -15,7 +15,8 @@ Gateway credits are never used, so visitors cannot spend the owner's quota.
 | Memory, chat history | Yes | Stored **in this browser only**. Another device starts empty. Memory → Export moves them |
 | Tasks: plan a goal, summarize long text | Yes | Run while the page is open; saved in this browser. The key is held in memory for the task only |
 | Home quick plan | Yes | Uses your key and the chat's model |
-| Dictation and read-aloud | Yes | Browser speech service (in Chrome the audio goes to Google) |
+| Dictation and read-aloud | Yes | Chrome, Edge, Safari: the browser's speech service (in Chrome the audio goes to Google). Brave, Firefox: a short recording goes through `/cloud/transcribe` to your Groq or Gemini key. Read aloud: Gemini's natural voice through `/cloud/speak` with a Gemini key, otherwise the browser's voice |
+| Live (real-time voice, turn by turn, camera, screen) | Yes | Real-time: straight from the browser to Google (Gemini key) or OpenAI (paid, after a tick). "Test my voice setup" checks each part |
 | CSV workbench | Yes | In the browser |
 | Install as an app | Yes | Android and desktop Chrome/Edge: "Install app". iPhone/iPad: Safari → Share → Add to Home Screen |
 | Google Calendar and Gmail, read-only | Yes, once the owner sets a client ID | Today's and tomorrow's events, 10 latest unread emails (sender, subject). Straight from the browser to Google; token in memory only |
@@ -49,10 +50,12 @@ AI Chat → Model settings, edit the key or untick "Remember".
 
 ## Where the key goes
 
-The browser sends the key with each chat or model-list request to `/cloud/chat` or `/cloud/models`
-over HTTPS. The function uses it for that one call to the provider's official address (fixed in
+The browser sends the key with each request to `/cloud/chat`, `/cloud/models`, `/cloud/speak` or
+`/cloud/transcribe` over HTTPS. The function uses it for that one call to the provider's official address (fixed in
 code; it cannot be pointed elsewhere) and does not store or log it. If a provider's error message
-repeats the key, ATLAS replaces it with "[your key]" before showing it.
+repeats the key, ATLAS replaces it with "[your key]" before showing it. Real-time voice is the
+exception: the browser opens the WebSocket to Google or OpenAI itself, with the key in the URL
+(Google) or as a WebSocket subprotocol (OpenAI), so the key does not pass through Netlify.
 
 ## Google Calendar and Gmail (read-only)
 
@@ -83,7 +86,8 @@ While the consent screen is in Testing mode only the listed test users can sign 
 - `scripts/netlify/build.mjs` copies `frontend/` into `dist/`, adds version numbers and writes
   `config.json` (the Google client ID from `ATLAS_GOOGLE_CLIENT_ID`, or null).
   `frontend/static/cloud.js` loads before `app.js` and answers the app's `/api/*` calls in the browser.
-- `netlify/lib/cloud.mjs` is the whole server side: status, chat streaming and model lists.
+- `netlify/lib/cloud.mjs` is the whole server side: status, chat streaming, model lists (including
+  real-time voice models), speech (`/speak`) and transcription (`/transcribe`).
 - The GitHub repository is linked to the Netlify project, so every merge to `main` deploys.
 
 Local preview: `npm install && npm run build && npm run dev`, then open http://localhost:8888 and

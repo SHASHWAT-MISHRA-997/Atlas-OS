@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.25.1 — 2026-10-28
+
+Task 3 of the owner's list: housekeeping.
+- Removed `ATLAS_OS_Research_Starter_v4.zip` from `main` (a normal commit; it stays in the Git history).
+- docs/HANDOFF.md brought up to date: the date, the owner now sometimes uses a Windows PC with Brave, the test counts (32 function and 15 browser tests at v0.22.1; 34 and 17 now), and how to run the secret scan on Windows.
+- Stale claims fixed: ARCHITECTURE (was v0.15.0; now covers Live, real-time voice, the speech and transcription routes and Google), CLOUD (dictation in Brave/Firefox, Live, which routes carry the key), README (voice), SECURITY (sign-in), THREAT_MODEL (T11, T36), FEATURE_MATRIX (dictation row, size), PROJECT_AUDIT (zip). The Integrations "Voice and Live" tile no longer says everything uses the browser's speech service.
+
 ## 0.25.0 — 2026-10-28
 
 Task 2 of the owner's list: Live voice hardening.

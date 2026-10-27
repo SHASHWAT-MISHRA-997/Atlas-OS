@@ -1,37 +1,36 @@
-# Handoff — 2026-10-26 (v0.22.1)
+# Handoff — 2026-10-28 (v0.25.1)
 
 ## State
 
-- ATLAS is one web app at https://atlas-os-sm.netlify.app (Netlify project `atlas-os-sm`, site id `d61caa99-389d-418d-8f50-f49928bf0c2c`). Every merge to `main` deploys. Claude pushes as GitHub user `SRM100`, a Write collaborator (no admin, so branch protection must be set by the owner).
-- The owner works from a phone and an iPad, has no PC, and chose to delete the PC version (D-025, v0.15.0). It is in the Git history up to 45298f7.
-- This workspace's network cannot open the live site; check deploys with the Netlify MCP tools.
+- ATLAS is one web app at https://atlas-os-sm.netlify.app (Netlify project `atlas-os-sm`, site id `d61caa99-389d-418d-8f50-f49928bf0c2c`). Every merge to `main` deploys.
+- The owner works from a phone and an iPad, and now sometimes from a Windows PC with Brave. The PC version of ATLAS stays deleted (D-025, v0.15.0); it is in the Git history up to 45298f7.
+- Earlier sessions pushed as GitHub user `SRM100`, a Write collaborator (no admin, so branch protection must be set by the owner). The 2026-10-28 session ran on the owner's Windows PC and pushed with the owner's own `gh` login; its commits use the owner's GitHub no-reply address.
+- On Windows, run the secret scan with `PYTHONUTF8=1` (otherwise Python reads the UTF-8 sources as cp1252 and skips them silently), and use `--exclude-files '(^|.)(\.git|node_modules|dist|tests).'` because paths use `\`. CI on Linux runs the command from `.github/workflows/tests.yml` unchanged.
 - Feature plan from 2026-10-25: https://claude.ai/artifact/6jsB1Jyo3mppD8b4u1BUY8.
+- An open pull request (#25, PC control in Live through an "ATLAS PC helper", v0.23.0) is handled elsewhere. 0.24.0–0.25.1 were numbered after it; whichever lands second must rebase VERSION and CHANGELOG.
 
 ## Recent versions
 
-- v0.18.0: Live screen (voice, camera, screen share), About the developer, key remembered by default, Auto-switch switch in Integrations.
-- v0.18.1: Home cleaned up: the title no longer shows a copied layer of its own text, repeated wording removed.
-- v0.19.0: Live real-time voice through the Gemini Live API (`frontend/static/realtime.js`, `live-worklet.js`), straight from the browser to Google with the user's Gemini key. Untested against the real API; the owner must try it with their key.
-- v0.20.0: ChatGPT voice in Live (OpenAI Realtime API over WebSocket, paid, behind a billing tick). Untested against the real API.
-- v0.21.0: Dictate and Live work in Brave/Firefox (record + Groq Whisper or Gemini writes it down), Compress shows when it can be used, Live no longer talks about images without one.
-- v0.22.0: natural voice for spoken answers (Live turn by turn, Read aloud): Gemini speech models through `/cloud/speak` with the user's Gemini key (OpenAI `gpt-4o-mini-tts` only when OpenAI is the chosen provider); otherwise the browser's most natural installed voice. Untested against the real Gemini TTS API.
-- v0.22.1: every Live mode can be picked; a mode without its key shows a key box on the Live screen (Gemini or OpenAI key saved without changing the AI Chat provider).
-- v0.17.0: thinking level, images and PDFs, steering mid-reply, chat compression; Stop now cancels the request online.
-- v0.16.1: removed the top-bar task box.
-- v0.16.0: neon redesign with dark/light theme, per-screen colours and transitions; System screen; Automations and Devices back as web versions.
-- v0.15.0: web app only; iPhone/iPad install hint; one CI job (`cloud`).
-- v0.14.0: auto-switch between free providers on 429/5xx (never into paid); optional paid OpenAI.
-- v0.13.3: security pass with attack tests (T38/T39).
-- v0.13.2: update banner and Check for update; model dropdown.
-- v0.13.1: key card is a plain text box with Paste; edit/delete messages; Clear all.
+- v0.25.1: housekeeping: `ATLAS_OS_Research_Starter_v4.zip` removed from `main` (still in Git history), stale claims fixed across the docs, the Integrations voice tile now describes Brave/Firefox correctly.
+- v0.25.0: "Test my voice setup" on Live (real-time models, Gemini Live `setupComplete`, `/cloud/speak`, 1-second `/cloud/transcribe`, each with pass/fail and the provider's exact words); every Live error names the step and what to do. Untested against real services.
+- v0.24.0: read-only Google Calendar and Gmail on Integrations (`frontend/static/google.js`): today's and tomorrow's events, the 10 latest unread senders and subjects, token in memory only, Sign out revokes. Needs the owner's Google OAuth client ID (docs/CLOUD.md). Untested against real Google.
+- v0.22.1: every Live mode can be picked; a mode without its key shows a key box on the Live screen.
+- v0.22.0: natural voice for spoken answers through `/cloud/speak` (Gemini speech models; OpenAI only when chosen). Untested against the real Gemini TTS API.
+- v0.21.0: Dictate and Live work in Brave/Firefox (record + Groq Whisper or Gemini writes it down).
+- v0.20.0: ChatGPT voice in Live (OpenAI Realtime API, paid, behind a billing tick). Untested against the real API.
+- v0.19.0: Live real-time voice through the Gemini Live API. Untested against the real API.
+- v0.18.0: Live screen, About the developer, key remembered by default, Auto-switch switch in Integrations.
+- v0.15.0–v0.17.0: web app only; neon redesign; thinking level, images and PDFs, steering, chat compression.
 
-## Verified in this session (Linux, Chromium, FAKE model)
+## Verified in this session (Windows 11, Node 24, Playwright Chromium 141 headless, FAKE services)
 
-29 function/attack/size tests and 11 browser tests pass. iPad sizes were checked in Chromium only. With 4x CPU slowdown on slow 4G (headless, no GPU): first paint about 0.8 s, app ready about 1.4 s, idle animation about 52–58 fps, longest task 133 ms on load.
+- At v0.22.1 (start of the session): 32 function/attack/size tests and 15 browser tests passed.
+- At v0.25.1: 34 function/attack/size tests and 17 browser tests pass; the secret scan reports nothing; first load is about 70 KB gzipped (budget 80 KB).
+- Nothing was run against real Google, Groq, OpenAI or Gemini services, in Brave, in Safari or on a phone.
 
 ## Next tasks, in order
 
-1. The owner checks the redesign on the iPad and phone and says what to change.
-2. The owner sends a real chat with their own key on the live site, on the iPad, including a photo, a PDF (Gemini) and a thinking level.
-3. Remove `ATLAS_OS_Research_Starter_v4.zip` from `main` once the owner agrees.
-4. The owner makes the repository private and protects `main` (only the `cloud` check) in GitHub settings; Claude's account cannot change repository settings.
+1. The owner creates the Google OAuth Web client (docs/CLOUD.md, "Google Calendar and Gmail"), sets `ATLAS_GOOGLE_CLIENT_ID` in Netlify and redeploys (or pastes the ID on Integrations), then tries Connect on the PC in Brave and on the phone.
+2. The owner runs **Live → Test my voice setup** with real Gemini and Groq keys on the PC (Brave) and the phone, and sends the text of any FAIL.
+3. The owner sends a real chat with their own key on the live site, including a photo, a PDF (Gemini) and a thinking level.
+4. The owner makes the repository private and protects `main` (only the `cloud` check) in GitHub settings.
