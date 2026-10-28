@@ -1277,6 +1277,12 @@ test('Live typing: a question typed before tapping the orb starts real-time voic
   assert.ok(setupAt >= 0 && textAt > setupAt, 'the text goes after the setup');
   assert.deepEqual(got[textAt].clientContent.turns[0].parts, [{ text: 'capital of India?' }]);
   assert.equal(got.filter((m) => m.clientContent).length, 1, 'sent once, not lost and not twice');
+  // Started by typing: the microphone is muted, so nearby speech cannot take over (seen on a real phone).
+  await page.waitForSelector('#livemute.on');
+  assert.equal((await page.textContent('#livemute')).trim(), 'Unmute');
+  await page.waitForSelector('#livestatus >> text=muted because you typed');
+  await page.waitForTimeout(700);
+  assert.equal(got.filter((m) => m.realtimeInput && m.realtimeInput.audio).length, 0, 'no microphone audio was sent');
   // Typed again while connecting after End and a new tap: it waits and is sent once Gemini is ready.
   await page.click('#liveend');
   await page.click('#liveorb');
@@ -1284,6 +1290,10 @@ test('Live typing: a question typed before tapping the orb starts real-time voic
   await page.press('#livetyped', 'Enter');
   for (let i = 0; i < 50 && got.filter((m) => m.clientContent).length < 2; i += 1) await page.waitForTimeout(100);
   assert.deepEqual(got.filter((m) => m.clientContent)[1].clientContent.turns[0].parts, [{ text: 'second question' }]);
+  // Started with the orb: the microphone is on as usual.
+  for (let i = 0; i < 30 && !got.some((m) => m.realtimeInput && m.realtimeInput.audio); i += 1) await page.waitForTimeout(100);
+  assert.ok(got.some((m) => m.realtimeInput && m.realtimeInput.audio), 'microphone audio flows after tapping the orb');
+  assert.equal(await page.locator('#livemute.on').count(), 0);
   await page.click('#liveend');
   assert.deepEqual(page.errors, []);
   await page.context().close();

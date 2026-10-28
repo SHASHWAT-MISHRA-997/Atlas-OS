@@ -16,7 +16,7 @@ Fakes live only in tests and in the preview server behind `ATLAS_FAKE_MODEL=1`; 
 
 ## Latest report
 
-Date: 2026-10-28, v0.26.0. Environment: Windows 11, Node 24, Playwright 1.64 Chromium (headless); CI runs the same on Linux with Node 22. **Not Safari.**
+Date: 2026-10-28, v0.26.1. Environment: Windows 11, Node 24, Playwright 1.64 Chromium (headless); CI runs the same on Linux with Node 22. **Not Safari.**
 
 | Command | Passed | Failed |
 |---|---|---|
@@ -66,6 +66,8 @@ Not covered: a real Gemini/OpenAI tool call (needs a key in the PC browser), pai
 | 2. Gemini Live connection | PASS: Google accepted the key and model, setup in 2,753 ms |
 | 3. Natural voice (`/cloud/speak`) | PASS: 3.8 s of Gemini speech (voice Puck), played on the phone |
 | 4. 1 s of microphone (`/cloud/transcribe`, Groq) | PASS, but Whisper wrote "Gracias." for (most likely) silence: fixed in 0.25.3 |
+
+Live typing with the real Gemini key on the phone (v0.26.0): tapping the orb and typing at once was answered in 4 s while Gemini was still connecting; a question typed without tapping the orb was sent (`setup`, then `clientContent`) but not answered because the open microphone heard a video playing nearby: fixed in 0.26.1 (started by typing = microphone muted).
 
 Not yet with real keys: a full Live conversation, ChatGPT voice (paid), Calendar and Gmail.
 
