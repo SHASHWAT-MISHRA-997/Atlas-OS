@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.29.0 — 2026-10-29
+
+At the owner's request:
+- **Removed "Test my voice setup"** from Live: the button, the list of step results, the connection check in `realtime.js` (`AtlasRealtime.probe`), the one-second fixed-length recording, its two browser tests, the screenshot in the README and the app manifest, and its diagram.
+- Live errors still name the step that failed, the provider's own words and what to do; they no longer point to the removed check.
+- The speech and transcription endpoints are unchanged and still tested.
+- First load is smaller: 72.8 KB gzipped (was 75.1 KB).
+
 ## 0.28.0 — 2026-10-29
 
 At the owner's request ("ye calendar and gmail permanently delete kardo", "also messaging remove"):

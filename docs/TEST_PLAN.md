@@ -58,7 +58,7 @@ Not covered: a real Gemini/OpenAI tool call (needs a key in the PC browser), pai
 
 ## With the owner's real keys, on the owner's phone (2026-10-28)
 
-**Test my voice setup** on the live site (v0.25.2), with the Gemini and Groq keys saved on the phone, microphone allowed by the owner:
+**Test my voice setup** (removed in 0.29.0) on the live site (v0.25.2), with the Gemini and Groq keys saved on the phone, microphone allowed by the owner:
 
 | Step | Result |
 |---|---|
@@ -86,7 +86,6 @@ All 10 screens open with no sideways scrolling and no controls off screen; no sm
 
 - Real provider chat with the owner's own key on the live site, including a thinking level, a photo and a PDF.
 - Live on a real phone and iPad: microphone, speech, camera; screen sharing on a computer.
-- **Test my voice setup** on the live site with the owner's real Gemini and Groq keys, on the PC (Brave) and the phone: all four steps should pass; note the exact text of any FAIL. This is the quickest way to check the steps below.
 - Live real-time voice with the owner's real Gemini key: that Google accepts the setup, the voice sounds right, interrupting works, and a session lasting over 10 minutes reconnects. The e2e test uses a FAKE Gemini Live server.
 - Natural voice with the owner's real Gemini key: that `gemini-2.5-flash-preview-tts` answers on a free key, how it sounds for Hinglish, and how long the first words take (the e2e test uses a FAKE tone).
 - ChatGPT voice with a real paid OpenAI key (the e2e test uses a FAKE OpenAI Realtime server).
