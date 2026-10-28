@@ -28,7 +28,7 @@
 
 > [!NOTE]
 > **ATLAS OS is a web app, not an operating system, and it is not production-ready.** It is built and
-> tested by one developer. Everything on this page describes what exists today (v0.26.1). Features
+> tested by one developer. Everything on this page describes what exists today (v0.27.0). Features
 > marked 🧪 pass their automated tests with **FAKE** AI services but have **not yet been tried against
 > the real provider**. The full, honest status of every feature is in
 > [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md).
@@ -85,6 +85,7 @@
 | 🔊 | **Natural voice** | Answers read aloud in Gemini's natural voices with a Gemini key; otherwise the best voice your browser has. | 🧪 |
 | ⌨️ | **Dictate anywhere** | Chrome, Edge and Safari use their own speech service. In **Brave and Firefox**, your Groq or Gemini key writes down what you say. | ✅ |
 | 🖥️ | **PC control in Live** *(Windows)* | With the free ATLAS PC helper running on your PC and paired with a 6-digit code, Live opens apps, websites and files, searches YouTube, plays music, changes the volume, types and presses shortcuts. Typing, shortcuts and closing windows ask **Allow?** on the PC first; it never deletes, runs commands or shuts down. See [pc-helper/README.md](pc-helper/README.md). | 🧪 |
+| 📞 | **Phone actions in Live** | "Call Mom", "WhatsApp Rahul: running late", "navigate to India Gate", "play Arijit on YouTube": Live fills it in as a button; **nothing happens until you tap it**, then your phone's own app opens. | 🧪 |
 | 📅 | **Google Calendar and Gmail** *(read-only)* | Today's and tomorrow's events and your 10 latest unread emails. Never sends, deletes or changes anything. Needs a Google client ID set up by the site owner. | 🧪 |
 | 🧠 | **Memory** | Notes you save are sent with chats so answers fit you. Export as JSON. | ✅ |
 | 🗺️ | **Plans and summaries** | Turn a goal into steps or summarize long text. Plans are written, never executed. | ✅ |
@@ -95,7 +96,7 @@
 
 <sub>✅ passes its automated browser tests (Chromium, with a labelled FAKE model) · 🧪 passes its tests with FAKE services, not yet tried with the real provider · ⚪ built, no automated test. None of this is a guarantee for every browser or device; see <a href="docs/FEATURE_MATRIX.md">FEATURE_MATRIX</a>.</sub>
 
-**Not supported** (ATLAS says so instead of pretending): sending email or messages, changing calendar events, controlling a phone or iPad, acting on a computer without the ATLAS PC helper, and local models.
+**Not supported** (ATLAS says so instead of pretending): sending email or messages, changing calendar events, controlling a phone beyond prepared one-tap actions (no reading contacts, messages or notifications), acting on a computer without the ATLAS PC helper, and local models.
 
 ---
 

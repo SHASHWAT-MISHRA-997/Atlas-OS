@@ -1,4 +1,4 @@
-# Handoff — 2026-10-28 (v0.26.1)
+# Handoff — 2026-10-28 (v0.27.0)
 
 ## State
 
@@ -11,6 +11,7 @@
 
 ## Recent versions
 
+- v0.27.0: phone actions in Live (one-tap call, SMS, WhatsApp, Maps, YouTube, website, share); Microsoft Store readiness (privacy page, manifest); WebKit run.
 - v0.26.1: Live started by typing starts with the microphone muted (nearby speech took over a typed question on the owner's phone); typing while connecting confirmed against real Gemini.
 - v0.26.0: PC control in Live (ATLAS PC helper) with fixes from a real test on the owner's PC; typing in Live real-time modes works (auto-start, waits while connecting); silence cut before Whisper.
 - v0.25.3: Test my voice setup passed on the owner's phone with real keys; Whisper words for silence are dropped.
@@ -29,7 +30,7 @@
 ## Verified in this session (Windows 11, Node 24, Playwright Chromium 141 headless, FAKE services)
 
 - At v0.22.1 (start of the session): 32 function/attack/size tests and 15 browser tests passed.
-- At v0.26.0: 37 function/attack/size tests, 20 browser tests and 19 PC helper tests pass; the secret scan reports nothing; first load is 72.4 KB gzipped (budget 80 KB).
+- At v0.27.0: 38 function/attack/size tests, 23 browser tests and 19 PC helper tests pass; the secret scan reports nothing; first load is 72.4 KB gzipped (budget 80 KB).
 - Real services were checked with invalid keys (daily `Provider check`), Test my voice setup passed on the owner's Android phone with real keys, the browser tests passed in real Brave, Chrome and Edge, and the PC helper was tested for real on the owner's Windows PC. Not in Safari.
 
 ## Next tasks, in order

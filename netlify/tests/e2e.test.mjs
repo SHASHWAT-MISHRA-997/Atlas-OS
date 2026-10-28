@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const port = 8900 + Math.floor(Math.random() * 90);
@@ -25,7 +25,9 @@ before(async () => {
   server = await startServer(port, { ATLAS_FAKE_MODEL: '1' });
   // A fake camera (a test pattern) so Live can be tested without a real device.
   const args = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'];
-  browser = await chromium.launch(process.env.ATLAS_E2E_CHROMIUM ? { executablePath: process.env.ATLAS_E2E_CHROMIUM, args } : { args });
+  // ATLAS_E2E_BROWSER=webkit runs the suite in WebKit, the engine of Safari (no fake camera or microphone there).
+  browser = process.env.ATLAS_E2E_BROWSER === 'webkit' ? await webkit.launch()
+    : await chromium.launch(process.env.ATLAS_E2E_CHROMIUM ? { executablePath: process.env.ATLAS_E2E_CHROMIUM, args } : { args });
 });
 
 after(async () => {
@@ -1324,6 +1326,105 @@ test('Test my voice setup with a silent microphone: the Whisper guess for silenc
   assert.match(row, /PASS/);
   assert.match(row, /The second was silent, so nothing was said \(Whisper guessed "FAKE heard speech" for the silence; ATLAS ignores that/);
   assert.doesNotMatch(row, /Heard:/);
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+test('Phone actions in Live: the model prepares a call, WhatsApp, directions or YouTube; nothing happens until the user taps', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  // FAKE Gemini Live that asks for phone actions; nothing reaches Google.
+  const got = [];
+  const next = [];
+  await page.routeWebSocket(/^wss:\/\/generativelanguage\.googleapis\.com\//, (ws) => {
+    ws.onMessage((raw) => {
+      const msg = JSON.parse(String(raw));
+      got.push(msg);
+      if (msg.setup) ws.send(JSON.stringify({ setupComplete: {} }));
+      if (msg.clientContent && next.length) ws.send(JSON.stringify({ toolCall: { functionCalls: [next.shift()] } }));
+      if (msg.toolResponse) {
+        ws.send(JSON.stringify({ serverContent: { outputTranscription: { text: 'FAKE tap the button' } } }));
+        ws.send(JSON.stringify({ serverContent: { turnComplete: true } }));
+      }
+    });
+  });
+  await page.addInitScript(() => localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-test-phone-key')));
+  await page.goto(base + '/');
+  await go(page, 'live');
+  await page.waitForSelector('#livemode');
+  const ask = async (call, text) => {
+    next.push(call);
+    await page.fill('#livetyped', text);
+    await page.press('#livetyped', 'Enter');
+    await page.waitForFunction((n) => document.querySelectorAll('#liveaction a, #liveaction button').length > 0 && document.querySelector('#liveaction strong')?.textContent.includes(n), call.args.name || call.args.place || call.args.query || call.args.text);
+  };
+  await ask({ id: 'c1', name: 'call_phone', args: { number: '+91 98765-43210', name: 'Mom' } }, 'mom ko call karo');
+  const setup = got.find((m) => m.setup).setup;
+  const decls = setup.tools[0].functionDeclarations.map((d) => d.name);
+  assert.ok(['call_phone', 'send_sms', 'send_whatsapp', 'navigate_to', 'play_youtube', 'open_website', 'share_text'].every((n) => decls.includes(n)), decls.join());
+  assert.match(setup.systemInstruction.parts[0].text, /nothing happens until the user taps it/);
+  assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'tel:+919876543210');
+  assert.match(await page.textContent('#liveaction'), /Call Mom \(\+919876543210\).*Nothing happens until you tap/s);
+  const reply = got.find((m) => m.toolResponse).toolResponse.functionResponses[0];
+  assert.equal(reply.response.ok, true);
+  assert.match(reply.response.message, /the user taps it/);
+  await ask({ id: 'c2', name: 'send_whatsapp', args: { number: '919876543210', name: 'Rahul', text: 'Running 10 min late' } }, 'whatsapp rahul');
+  assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://wa.me/919876543210?text=Running%2010%20min%20late');
+  await ask({ id: 'c3', name: 'navigate_to', args: { place: 'India Gate, Delhi' } }, 'india gate ka rasta');
+  assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.google.com/maps/dir/?api=1&destination=India%20Gate%2C%20Delhi');
+  await ask({ id: 'c4', name: 'play_youtube', args: { query: 'arijit singh' } }, 'arijit chalao');
+  assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.youtube.com/results?search_query=arijit%20singh');
+  assert.equal(await page.getAttribute('#liveactiongo', 'rel'), 'noopener noreferrer');
+  // Unsafe or empty requests are refused and nothing is shown.
+  next.push({ id: 'c5', name: 'open_website', args: { url: 'javascript:alert(1)' } });
+  await page.fill('#livetyped', 'open this');
+  await page.press('#livetyped', 'Enter');
+  for (let i = 0; i < 40 && got.filter((m) => m.toolResponse).length < 5; i += 1) await page.waitForTimeout(100);
+  assert.equal(got.filter((m) => m.toolResponse)[4].toolResponse.functionResponses[0].response.ok, false);
+  assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.youtube.com/results?search_query=arijit%20singh', 'the unsafe link was not shown');
+  assert.equal(await page.evaluate(() => window.pwned), undefined);
+  await page.click('#liveend');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+test('Phone actions, turn by turn: an ACTION line becomes a button; a name without a number asks to pick the contact', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  const sent = [];
+  await page.route('**/cloud/chat', async (route) => {
+    const body = JSON.parse(route.request().postData());
+    sent.push(body);
+    const last = body.messages.at(-1).content;
+    const answer = /^ACTION RESULT/.test(last) ? 'FAKE tap the button to message Papa.' : 'ACTION {"name": "send_sms", "args": {"name": "Papa", "text": "Ghar aa raha hoon"}}';
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ answer, provider: 'groq', model: 'fake-large', local: false, latency_ms: 5 }) });
+  });
+  await page.addInitScript(() => {
+    localStorage.setItem('atlas.cloud.key.groq', JSON.stringify('gsk_phone_key'));
+    localStorage.setItem('atlas.os.chat.settings.v1', JSON.stringify({ provider: 'groq', model: 'fake-large' }));
+  });
+  await page.goto(base + '/');
+  await go(page, 'live');
+  await page.fill('#livetyped', 'papa ko sms karo ghar aa raha hoon');
+  await page.press('#livetyped', 'Enter');
+  await page.waitForSelector('#livesaid >> text=FAKE tap the button to message Papa.');
+  assert.match(sent[0].messages[0].content, /ACTION \{"name"/);
+  assert.match(sent[0].messages[0].content, /send_sms/);
+  assert.match(await page.textContent('#liveaction strong'), /SMS Papa: "Ghar aa raha hoon"/);
+  // Chromium on a computer has no contact picker: the card says to give the number instead.
+  assert.match(await page.textContent('#liveaction'), /cannot open your contacts/);
+  const history = await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.chat.v1')));
+  assert.equal(history.at(-1).content, 'FAKE tap the button to message Papa.', 'ACTION lines are not saved');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+test('store details: an app shortcut opens Live directly, and the privacy policy page opens without errors', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  await page.goto(base + '/?section=live');
+  await page.waitForSelector('#subview:not(.hidden) >> text=Talk hands-free');
+  assert.equal(await page.evaluate(() => document.body.dataset.page), 'live');
+  await page.goto(base + '/privacy.html');
+  await page.waitForSelector('h1 >> text=Privacy policy');
+  assert.match(await page.textContent('body'), /There is no ATLAS account/);
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });

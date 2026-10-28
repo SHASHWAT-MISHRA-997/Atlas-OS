@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.27.0 — 2026-10-28
+
+- **Phone actions in Live** (`frontend/static/phone.js`): say or type "call Mom", "WhatsApp Rahul: running late", "navigate to India Gate", "play Arijit on YouTube", "open example.com" or "share this". Live prepares it as a button with everything filled in; **nothing happens until you tap it**, then your phone's dialer, messages, WhatsApp, Google Maps or YouTube opens. A web page may not dial, send or open other apps by itself, so this is the furthest a web app can go; it cannot read contacts, messages or notifications. If you name a person without a number, Android Chrome lets you pick the contact (only that contact's name and number are read). Works in Real-time (Gemini tools), ChatGPT voice (OpenAI tools) and Turn by turn (ACTION lines), together with PC control.
+- **Ready for the Microsoft Store:** a privacy policy page (`/privacy.html`, linked in the footer), and a fuller app manifest (screenshots for wide and narrow screens, categories, Live and AI Chat shortcuts that open those screens, Windows title-bar mode).
+- **Fix:** Live said "Live needs an AI key" in a browser without audio support even when a key was saved; it now says the browser cannot record or play audio and what to do.
+- Tested in WebKit (the engine of Safari) on Windows: every test that does not need a microphone, camera or audio passes (11 of 20; Playwright's WebKit on Windows has no audio or media devices at all).
+
 ## 0.26.1 — 2026-10-28
 
 Checked on the owner's phone with the real Gemini key:
