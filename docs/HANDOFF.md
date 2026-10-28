@@ -1,4 +1,4 @@
-# Handoff — 2026-10-28 (v0.27.1)
+# Handoff — 2026-10-29 (v0.28.0)
 
 ## State
 
@@ -11,6 +11,7 @@
 
 ## Recent versions
 
+- v0.28.0: Google Calendar and Gmail and the "Calendar, email, messaging" tile removed at the owner's request; CSP and COOP tightened back.
 - v0.27.1: phone actions fixed against real Gemini Live (stricter tool instruction; `call_phone` renamed `dial_number` because Google's server failed on it).
 - v0.27.0: phone actions in Live (one-tap call, SMS, WhatsApp, Maps, YouTube, website, share); Microsoft Store readiness (privacy page, manifest); WebKit run.
 - v0.26.1: Live started by typing starts with the microphone muted (nearby speech took over a typed question on the owner's phone); typing while connecting confirmed against real Gemini.
@@ -31,12 +32,12 @@
 ## Verified in this session (Windows 11, Node 24, Playwright Chromium 141 headless, FAKE services)
 
 - At v0.22.1 (start of the session): 32 function/attack/size tests and 15 browser tests passed.
-- At v0.27.0: 38 function/attack/size tests, 23 browser tests and 19 PC helper tests pass; the secret scan reports nothing; first load is 77.5 KB gzipped (budget 80 KB, getting close).
+- At v0.27.0: 38 function/attack/size tests, 23 browser tests and 19 PC helper tests pass; the secret scan reports nothing; first load is 75.1 KB gzipped at v0.28.0 (budget 80 KB).
 - Real services were checked with invalid keys (daily `Provider check`), Test my voice setup passed on the owner's Android phone with real keys, the browser tests passed in real Brave, Chrome and Edge, and the PC helper was tested for real on the owner's Windows PC. Not in Safari.
 
 ## Next tasks, in order
 
-1. Google Calendar and Gmail: done on 2026-10-28. Google Cloud project `atlas-os-513012` ("ATLAS OS"), Calendar and Gmail APIs on, consent screen External in Testing with the owner as the only test user, Web client "ATLAS OS web app" with origins `https://atlas-os-sm.netlify.app` and `http://localhost:8888`. Its public client ID is in the Netlify build variable `ATLAS_GOOGLE_CLIENT_ID`; the client secret is not used and was not saved anywhere. To let someone else sign in, add them under Google Auth Platform → Audience → Test users.
+1. Google Calendar and Gmail were removed in 0.28.0 at the owner's request (also the Google Cloud project `atlas-os-513012` and the Netlify variable `ATLAS_GOOGLE_CLIENT_ID`).
 2. The owner runs **Live → Test my voice setup** with real Gemini and Groq keys on the PC (Brave) and the phone, and sends the text of any FAIL.
 3. The owner sends a real chat with their own key on the live site, including a photo, a PDF (Gemini) and a thinking level.
 4. The owner makes the repository private and protects `main` (only the `cloud` check) in GitHub settings.

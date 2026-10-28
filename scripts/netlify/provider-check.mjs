@@ -77,13 +77,6 @@ await check('openai: Realtime WebSocket sends an error, then closes, for a wrong
   const err = r.messages.map((m) => { try { return JSON.parse(m); } catch { return {}; } }).find((m) => m.type === 'error');
   return expect(err && err.error && /api key/i.test(err.error.message || ''), 'close ' + r.code + ' "' + r.reason + '", error: ' + (err ? err.error.message : 'none').slice(0, 100));
 });
-await check('google: sign-in script is served', async () => {
-  // Google answers 403 to requests that do not look like a browser loading it from a page.
-  const r = await fetch('https://accounts.google.com/gsi/client', { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36', Accept: '*/*', Referer: site + '/' } });
-  const text = await r.text();
-  return expect(r.ok && /javascript/.test(r.headers.get('content-type') || '') && text.length > 10000, r.status + ' ' + r.headers.get('content-type') + ' ' + text.length + ' bytes');
-});
-
 for (const [name, state, detail] of results) console.log(state.padEnd(5) + name + ' — ' + detail);
 const failed = results.filter((r) => r[1] === 'FAIL').length;
 console.log('\n' + (results.length - failed) + ' passed, ' + failed + ' failed');

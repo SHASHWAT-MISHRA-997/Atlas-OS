@@ -1,7 +1,7 @@
 {
   "name": "ATLAS OS",
   "short_name": "ATLAS",
-  "description": "Your AI assistant: chat, real-time voice, camera, plans, read-only Calendar and Gmail, phone actions and Windows PC control, with your own free AI key. Nothing is stored on our servers.",
+  "description": "Your AI assistant: chat, real-time voice, camera, plans, phone actions and Windows PC control, with your own free AI key. Nothing is stored on our servers.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
@@ -27,7 +27,6 @@
   "screenshots": [
     { "src": "/static/screenshots/home-desktop-dark.png", "sizes": "1440x900", "type": "image/png", "form_factor": "wide", "label": "Home: a goal turned into a step-by-step plan" },
     { "src": "/static/screenshots/chat-desktop-dark.png", "sizes": "1440x900", "type": "image/png", "form_factor": "wide", "label": "AI Chat with your own key" },
-    { "src": "/static/screenshots/integrations-google-desktop-dark.png", "sizes": "1440x900", "type": "image/png", "form_factor": "wide", "label": "Read-only Google Calendar and Gmail" },
     { "src": "/static/screenshots/live-phone-dark.png", "sizes": "780x1688", "type": "image/png", "form_factor": "narrow", "label": "Live: talk hands-free" },
     { "src": "/static/screenshots/voice-check-phone-dark.png", "sizes": "780x1688", "type": "image/png", "form_factor": "narrow", "label": "Test my voice setup" }
   ]

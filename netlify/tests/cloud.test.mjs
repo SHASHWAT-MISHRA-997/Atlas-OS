@@ -361,22 +361,19 @@ test('natural voice: Gemini speech models (falls back to Pro on 404), OpenAI pcm
   assert.equal(t.calls.length, before, 'refused requests never reach a provider');
 });
 
-test('Google Calendar and Gmail: the browser may reach only Google sign-in and the two read APIs; the function is no proxy for them', async () => {
-  const { readFileSync } = await import('node:fs');
+test('Calendar and Gmail were removed: no Google sign-in, Calendar or Gmail hosts, and the strict window isolation is back', async () => {
+  const { readFileSync, existsSync } = await import('node:fs');
   const toml = readFileSync(new URL('../../netlify.toml', import.meta.url), 'utf8');
-  const csp = Object.fromEntries(/Content-Security-Policy = "([^"]+)"/.exec(toml)[1].split(';').map((d) => d.trim().split(/\s+/)).map(([k, ...v]) => [k, v]));
-  assert.deepEqual(csp['script-src'], ["'self'", 'https://accounts.google.com/gsi/client']);
-  assert.deepEqual(csp['frame-src'], ['https://accounts.google.com/gsi/']);
-  assert.deepEqual(csp['connect-src'].filter((h) => /^(https|wss):\/\/([a-z0-9-]+\.)*(google|googleapis)\.com(\/|$)/.test(h)).sort(), [
-    'https://accounts.google.com/gsi/', 'https://gmail.googleapis.com/gmail/v1/', 'https://oauth2.googleapis.com/revoke',
-    'https://www.googleapis.com/calendar/v3/', 'wss://generativelanguage.googleapis.com']);
-  assert.match(toml, /Cross-Origin-Opener-Policy = "same-origin-allow-popups"/, 'the Google sign-in pop-up can report back');
-  for (const f of ['app.js', 'google.js', 'cloud.js']) {
-    assert.ok(!/[0-9]{6,}-[a-z0-9_]{8,}\.apps\.googleusercontent\.com/.test(readFileSync(new URL('../../frontend/static/' + f, import.meta.url), 'utf8')), 'no client ID in ' + f);
-  }
+  const csp = /Content-Security-Policy = "([^"]+)"/.exec(toml)[1];
+  assert.doesNotMatch(csp, /accounts\.google\.com|gmail\.googleapis\.com|www\.googleapis\.com|oauth2\.googleapis\.com|frame-src/);
+  assert.match(csp, /script-src 'self';/);
+  assert.match(toml, /Cross-Origin-Opener-Policy = "same-origin"\r?\n/);
+  assert.equal(existsSync(new URL('../../frontend/static/google.js', import.meta.url)), false);
+  const app = readFileSync(new URL('../../frontend/static/app.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(app, /gmail\.googleapis|googleapis\.com\/calendar|\/static\/google\.js|\/config\.json|AtlasGoogle/);
   const t = setup();
   for (const path of ['google', 'calendar', 'gmail', 'oauth']) {
-    assert.equal((await t.call(path, { method: 'POST', body: { url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages' } })).status, 404);
+    assert.equal((await t.call(path, { method: 'POST', body: {} })).status, 404);
   }
   assert.equal(t.calls.length, 0);
 });

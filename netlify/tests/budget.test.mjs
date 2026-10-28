@@ -59,7 +59,7 @@ test('store-ready app manifest: icons, screenshots with their real sizes, shortc
   for (const s of m.screenshots) assert.equal(pngSize(s.src), s.sizes, s.src);
   for (const s of m.shortcuts) assert.match(s.url, /^\/\?section=[a-z]+$/);
   const privacy = readFileSync(new URL('privacy.html', dist), 'utf8');
-  for (const words of ['no ATLAS account', 'stores nothing', 'Google Calendar and Gmail', 'ATLAS PC helper', 'Phone actions', 'Deleting your data', 'Contact']) assert.ok(privacy.includes(words), 'privacy policy covers: ' + words);
+  for (const words of ['no ATLAS account', 'stores nothing', 'ATLAS PC helper', 'Phone actions', 'Deleting your data', 'Contact']) assert.ok(privacy.includes(words), 'privacy policy covers: ' + words);
   assert.ok(!/<script/i.test(privacy), 'the privacy page runs no script');
   assert.match(readFileSync(new URL('index.html', dist), 'utf8'), /href="\/privacy\.html"/);
 });

@@ -1,8 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.28.0 — 2026-10-29
 
-- Google Calendar and Gmail are configured for the live site: Google Cloud project "ATLAS OS", read-only APIs, consent screen in Testing with the owner as test user, and the public client ID in the Netlify build variable `ATLAS_GOOGLE_CLIENT_ID`.
+At the owner's request ("ye calendar and gmail permanently delete kardo", "also messaging remove"):
+- **Removed Google Calendar and Gmail** completely: the Integrations panel, `google.js`, `config.json`, the `ATLAS_GOOGLE_CLIENT_ID` build step, the tests, the README screenshot and diagrams, and the privacy policy section. A client ID saved by an older version is cleared from the browser.
+- **Removed the "Calendar, email, messaging" tile** from Integrations. Phone actions in Live (SMS and WhatsApp prepared for you to send) stay.
+- **Tighter page security:** the CSP no longer allows Google's sign-in script, frame or the Calendar and Gmail addresses, and `Cross-Origin-Opener-Policy` is back to `same-origin`.
+- The Google Cloud project "ATLAS OS" and the Netlify variable created for it on 2026-10-28 are deleted. Your own calendar and email were never changed (ATLAS could only read them).
+- First load is smaller: 75.1 KB gzipped (was 77.5 KB).
 
 ## 0.27.1 — 2026-10-28
 
