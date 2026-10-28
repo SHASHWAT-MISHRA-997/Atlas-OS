@@ -28,7 +28,7 @@
 
 > [!NOTE]
 > **ATLAS OS is a web app, not an operating system, and it is not production-ready.** It is built and
-> tested by one developer. Everything on this page describes what exists today (v0.27.1). Features
+> tested by one developer. Everything on this page describes what exists today (v0.28.0). Features
 > marked 🧪 pass their automated tests with **FAKE** AI services but have **not yet been tried against
 > the real provider**. The full, honest status of every feature is in
 > [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md).
@@ -55,11 +55,11 @@
     <td align="center"><b>Live</b> — tap the orb and talk; camera and screen share</td>
   </tr>
   <tr>
-    <td><img src="docs/images/integrations-google-desktop-dark.png" alt="Integrations screen with Google Calendar events and unread Gmail subjects"></td>
+    <td><img src="docs/images/chat-phone-light.png" alt="AI Chat on a phone in the light theme"></td>
     <td><img src="docs/images/voice-check-phone-dark.png" alt="Test my voice setup: four steps with PASS results"></td>
   </tr>
   <tr>
-    <td align="center"><b>Integrations</b> — read-only Google Calendar and Gmail</td>
+    <td align="center"><b>AI Chat on a phone</b></td>
     <td align="center"><b>Test my voice setup</b> — every step, pass or fail</td>
   </tr>
   <tr>
@@ -86,7 +86,6 @@
 | ⌨️ | **Dictate anywhere** | Chrome, Edge and Safari use their own speech service. In **Brave and Firefox**, your Groq or Gemini key writes down what you say. | ✅ |
 | 🖥️ | **PC control in Live** *(Windows)* | With the free ATLAS PC helper running on your PC and paired with a 6-digit code, Live opens apps, websites and files, searches YouTube, plays music, changes the volume, types and presses shortcuts. Typing, shortcuts and closing windows ask **Allow?** on the PC first; it never deletes, runs commands or shuts down. See [pc-helper/README.md](pc-helper/README.md). | 🧪 |
 | 📞 | **Phone actions in Live** | "Call Mom", "WhatsApp Rahul: running late", "navigate to India Gate", "play Arijit on YouTube": Live fills it in as a button; **nothing happens until you tap it**, then your phone's own app opens. | 🧪 |
-| 📅 | **Google Calendar and Gmail** *(read-only)* | Today's and tomorrow's events and your 10 latest unread emails. Never sends, deletes or changes anything. Needs a Google client ID set up by the site owner. | 🧪 |
 | 🧠 | **Memory** | Notes you save are sent with chats so answers fit you. Export as JSON. | ✅ |
 | 🗺️ | **Plans and summaries** | Turn a goal into steps or summarize long text. Plans are written, never executed. | ✅ |
 | ⏰ | **Automations** | Plans and reminders on a schedule, while ATLAS is open. | ✅ |
@@ -111,11 +110,9 @@ flowchart LR
         Shim["🔀 cloud.js<br/>answers /api/*"]
         Store[("🗄️ localStorage<br/>memories · chat · tasks<br/>remembered keys")]
         RT["🎙️ realtime.js<br/>live voice"]
-        GG["📅 google.js<br/>Calendar · Gmail"]
         UI --> Shim
         UI <--> Store
         UI --> RT
-        UI --> GG
     end
 
     subgraph Netlify["☁️ Netlify"]
@@ -130,18 +127,11 @@ flowchart LR
         OAI["OpenAI<br/>(paid, optional)"]
     end
 
-    subgraph Google["🔐 Google (read-only)"]
-        GIS["Sign-in"]
-        CAL["Calendar API"]
-        GM["Gmail API"]
-    end
-
     Static -.->|"HTML · JS · CSS"| UI
     Shim -- "chat · models · speak · transcribe" --> Fn
     Fn --> Groq & Gemini & ORT & OAI
     RT == "WebSocket, your key" ==> Gemini
     RT == "WebSocket, paid tick" ==> OAI
-    GG -- "token in memory only" --> GIS & CAL & GM
 ```
 
 <details>
@@ -194,24 +184,6 @@ sequenceDiagram
     end
     You->>App: End
     Note over App: Only the text is saved to chat history — never audio or pictures
-```
-
-</details>
-
-<details>
-<summary><b>📅 How read-only Calendar and Gmail work</b></summary>
-
-```mermaid
-flowchart TD
-    A([Tap 'Connect Google']) --> B[Google sign-in pop-up]
-    B -->|you allow| C{{Scopes: calendar.readonly + gmail.readonly}}
-    B -->|refused / closed| X[/Clear message: why, and what to do/]
-    C --> D[Access token kept in page memory only]
-    D --> E[GET today's + tomorrow's events]
-    D --> F[GET 10 latest unread: sender + subject only]
-    E & F --> G[Shown as plain text]
-    D --> H([Sign out]) --> I[Token revoked with Google and forgotten]
-    D -. closing the page .-> I
 ```
 
 </details>
@@ -270,7 +242,6 @@ flowchart LR
     K["🔑 Your AI key"] -->|"each request, HTTPS"| F["⚙️ /cloud function"] -->|"official URL only"| P["🤖 Provider you picked"]
     K -.->|"remembered only if you tick it"| L[("🗄️ This browser")]
     M["🧠 Memories · 💬 chat · 🗂️ tasks"] --> L
-    T["🔐 Google token"] -->|"memory only, revoked on Sign out"| GA["📅 Google APIs"]
     F -.->|"never stores or logs"| DB[("No database")]
 ```
 
@@ -325,7 +296,6 @@ Atlas-OS/
 │       ├── cloud.js               answers /api/* in the browser, auto-switch
 │       ├── realtime.js            Gemini Live + OpenAI Realtime voice (lazy-loaded)
 │       ├── live-worklet.js        microphone capture
-│       ├── google.js              read-only Calendar + Gmail (lazy-loaded)
 │       └── sw.js · manifest       install + offline shell
 ├── netlify/
 │   ├── functions/atlas.mjs        the one function (/cloud/*)
@@ -343,8 +313,7 @@ Atlas-OS/
 
 The GitHub repository is linked to the Netlify project **atlas-os-sm**: every merge to `main` builds with
 `node scripts/netlify/build.mjs` and deploys to **https://atlas-os-sm.netlify.app**; pull requests get a
-deploy preview. For Google Calendar and Gmail, the site owner sets the build variable
-`ATLAS_GOOGLE_CLIENT_ID` — setup steps are in [docs/CLOUD.md](docs/CLOUD.md).
+deploy preview.
 
 </details>
 

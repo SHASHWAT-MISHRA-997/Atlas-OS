@@ -19,10 +19,4 @@ if (!html.includes('<script src="/static/app.js" defer></script>')) throw new Er
 writeFileSync(join(out, 'index.html'), html.replace(/(\/static\/(?:app|cloud)\.(?:js|css))/g, '$1?v=' + version));
 // The app compares this with its own version to show "New version available".
 writeFileSync(join(out, 'version.json'), JSON.stringify({ version }) + '\n');
-// Public site settings. The Google OAuth client ID (read-only Calendar and Gmail) is not a secret, but
-// it is never written in the code: it comes from the Netlify build variable ATLAS_GOOGLE_CLIENT_ID,
-// or the owner types it into the app.
-const googleClientId = String(process.env.ATLAS_GOOGLE_CLIENT_ID || '').trim();
-if (googleClientId && !/^[0-9]{6,30}-[a-z0-9_]{8,64}\.apps\.googleusercontent\.com$/.test(googleClientId)) throw new Error('ATLAS_GOOGLE_CLIENT_ID is not a Google OAuth client ID');
-writeFileSync(join(out, 'config.json'), JSON.stringify({ google_client_id: googleClientId || null }) + '\n');
 console.log('ATLAS build ' + version + ' written to dist/');

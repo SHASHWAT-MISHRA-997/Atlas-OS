@@ -1,5 +1,5 @@
 // Screenshots of the real app for the README, taken from the local preview with the labelled FAKE
-// model (every reply says "FAKE") and FAKE Google, Gemini Live and speech services. No real key,
+// model (every reply says "FAKE") and FAKE Gemini Live and speech services. No real key,
 // account or personal data is used.
 //
 //   node scripts/netlify/build.mjs && node scripts/netlify/screenshots.mjs
@@ -28,26 +28,9 @@ const seed = (theme) => {
   localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-FAKE-demo-key'));
   localStorage.setItem('atlas.cloud.ack.groq', 'true');
   localStorage.setItem('atlas.os.chat.settings.v1', JSON.stringify({ provider: 'groq', model: 'fake-large' }));
-  localStorage.setItem('atlas.google.clientid.v1', JSON.stringify('123456789012-fakeclientidforscreens.apps.googleusercontent.com'));
 };
 
-const FAKE_GIS = `window.google = { accounts: { oauth2: {
-  initTokenClient(cfg) { return { requestAccessToken() { setTimeout(() => cfg.callback({ access_token: 'FAKE', expires_in: 3599, scope: cfg.scope }), 10); } }; },
-  revoke(t, done) { if (done) done({}); } } } };`;
-
 async function fakeServices(page) {
-  await page.route('https://accounts.google.com/gsi/client', (r) => r.fulfill({ contentType: 'text/javascript', body: FAKE_GIS }));
-  const at = (days, h, m) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + days); d.setHours(h, m); return d.toISOString(); };
-  await page.route(/^https:\/\/(www|gmail)\.googleapis\.com\//, (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname.endsWith('/events')) return route.fulfill({ json: { items: [
-      { summary: 'Team standup (demo)', start: { dateTime: at(0, 9, 30) }, end: { dateTime: at(0, 10, 0) } },
-      { summary: 'Project review (demo)', start: { dateTime: at(0, 15, 0) }, end: { dateTime: at(0, 16, 0) } },
-      { summary: 'Gym (demo)', start: { dateTime: at(1, 7, 0) }, end: { dateTime: at(1, 8, 0) } }] } });
-    if (url.pathname.endsWith('/messages')) return route.fulfill({ json: { messages: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] } });
-    const n = { a: ['Demo Bank', 'Your monthly statement is ready (demo)'], b: ['Demo Airline', 'Your boarding pass (demo)'], c: ['Demo Team', 'Notes from today\'s review (demo)'] }[url.pathname.split('/').pop()];
-    return route.fulfill({ json: { internalDate: String(Date.now()), payload: { headers: [{ name: 'From', value: n[0] + ' <noreply@example.com>' }, { name: 'Subject', value: n[1] }] } } });
-  });
   await page.routeWebSocket(/^wss:\/\/generativelanguage\.googleapis\.com\//, (ws) => ws.onMessage((raw) => { if (JSON.parse(String(raw)).setup) ws.send(JSON.stringify({ setupComplete: {} })); }));
 }
 
@@ -89,12 +72,6 @@ try {
   }
   await snap(page, 'chat-desktop-dark');
 
-  // Integrations with Google Calendar and Gmail connected (desktop, dark).
-  await go(page, 'integrations');
-  await page.click('#googleconnect:not([disabled])');
-  await page.waitForSelector('#googlemail >> text=Demo Bank');
-  await page.locator('#googlepanel').scrollIntoViewIfNeeded();
-  await snap(page, 'integrations-google-desktop-dark');
   await page.context().close();
 
   // Phone: Home, Live with the voice check, System (light).

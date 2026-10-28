@@ -38,11 +38,10 @@ Each provider was called through the live function (or directly, for the WebSock
 | OpenRouter models | **HTTP 200 with any key** (public list) → bug, fixed in 0.25.2 via `/api/v1/key` (401) | "HTTP 401 … Check your API key." |
 | Gemini Live WebSocket | closes with code 1007, reason "API key not valid. Please pass a valid API key." | "Connecting to Google Gemini (…) failed: API key not valid…" |
 | OpenAI Realtime WebSocket | `error` event "Incorrect API key provided…", then close 3000 | fixed in 0.25.2 to name the connecting step |
-| Google sign-in script (`accounts.google.com/gsi/client`) | loads under the CSP with no errors; a blocked pop-up reports `popup_failed_to_open` | "The browser blocked the Google sign-in window. Allow pop-ups…" |
 
 2026-10-28 run of `provider-check.mjs`: 14 passed, 0 failed. Real browsers on the owner's PC (Windows 11): **Brave 1.98 (Chromium 156, `navigator.brave` true), Chrome 156 and Edge 156 each passed all 17 browser tests.**
 
-Not covered: a successful answer, a real voice, real Calendar/Gmail data and quotas, which need the owner's own keys and Google client ID.
+Not covered: a successful answer and a real voice, which need the owner's own keys.
 
 ## PC control on the owner's Windows PC (2026-10-28, real helper, real Brave, local preview)
 
@@ -70,7 +69,7 @@ Not covered: a real Gemini/OpenAI tool call (needs a key in the PC browser), pai
 
 Live typing with the real Gemini key on the phone (v0.26.0): tapping the orb and typing at once was answered in 4 s while Gemini was still connecting; a question typed without tapping the orb was sent (`setup`, then `clientContent`) but not answered because the open microphone heard a video playing nearby: fixed in 0.26.1 (started by typing = microphone muted).
 
-Not yet with real keys: a full Live conversation, ChatGPT voice (paid), Calendar and Gmail.
+Not yet with real keys: a full Live conversation, ChatGPT voice (paid).
 
 ## On the owner's phone (OnePlus CPH2573, Android 16, Chrome 156, over USB)
 
@@ -90,7 +89,6 @@ All 10 screens open with no sideways scrolling and no controls off screen; no sm
 - **Test my voice setup** on the live site with the owner's real Gemini and Groq keys, on the PC (Brave) and the phone: all four steps should pass; note the exact text of any FAIL. This is the quickest way to check the steps below.
 - Live real-time voice with the owner's real Gemini key: that Google accepts the setup, the voice sounds right, interrupting works, and a session lasting over 10 minutes reconnects. The e2e test uses a FAKE Gemini Live server.
 - Natural voice with the owner's real Gemini key: that `gemini-2.5-flash-preview-tts` answers on a free key, how it sounds for Hinglish, and how long the first words take (the e2e test uses a FAKE tone).
-- Google Calendar and Gmail with the owner's real OAuth client ID, on the PC (Brave) and the phone: the sign-in pop-up opens and reports back (Brave Shields may block it; allow pop-ups), the consent screen lists only the two read-only scopes, today's and tomorrow's events and the 10 unread emails match Gmail, Sign out revokes (the app disappears from https://myaccount.google.com/permissions). The e2e test uses a FAKE Google sign-in script and FAKE APIs.
 - ChatGPT voice with a real paid OpenAI key (the e2e test uses a FAKE OpenAI Realtime server).
 - Real iPad and iPhone in Safari: layout, Paste button, Add to Home Screen.
 - Real Android phone: install prompt.
