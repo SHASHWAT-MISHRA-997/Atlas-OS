@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.26.1 — 2026-10-28
+
+Checked on the owner's phone with the real Gemini key:
+- Typing right after tapping the orb now works on the real service: Gemini answered "New Delhi is the capital of India." 4 s after the question was typed while it was still connecting.
+- **Fix: a question typed without tapping the orb went unanswered when someone (or a video) was talking nearby.** ATLAS did send it, but the microphone was on and Gemini took the nearby speech as the user talking. When Live starts because you typed, the microphone now starts **muted** ("tap Unmute to talk"); starting with the orb works as before.
+
 ## 0.26.0 — 2026-10-28
 
 **PC control in Live, through the ATLAS PC helper** (built in PR #25 on 2026-10-27, brought up to date, reviewed and tested on the owner's Windows PC):

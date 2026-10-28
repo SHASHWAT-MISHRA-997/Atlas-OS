@@ -2548,7 +2548,7 @@
         state.pendingText = text;
         heard.textContent = text;
         said.textContent = '';
-        if (!state.running) startRealtime();
+        if (!state.running) { state.typedStart = true; startRealtime(); }
         return;
       }
       if (!turnsReady) { status.textContent = isRT() && ready() ? 'Tap the orb to start, then ask.' : 'Turn by turn needs a model picked in AI Chat.'; return; }
@@ -2674,9 +2674,14 @@
       }
       if (!state.running) { state.rt.end(); state.rt = null; return; }
       if (state.stream) state.rt.setVideo(video);
+      // Started by typing: the microphone starts muted. On the owner's phone a video playing nearby was
+      // taken as the user talking, and the typed question went unanswered.
+      const typedStart = state.typedStart;
+      state.typedStart = false;
+      if (typedStart) { state.rt.setMuted(true); muteBtn.classList.add('on'); muteBtn.lastChild.textContent = 'Unmute'; }
       if (state.pendingText) { const t = state.pendingText; state.pendingText = ''; state.rt.sendText(t); }
       muteBtn.classList.remove('hidden');
-      status.textContent = 'Live with ' + label + ' (' + liveModel + '). Talk any time; speak over it to interrupt.' + (pcOn ? ' PC control is on.' : '') + (svc === 'openai' ? ' Billed to your OpenAI account while on.' : '');
+      status.textContent = 'Live with ' + label + ' (' + liveModel + '). ' + (typedStart ? 'The microphone is muted because you typed; tap Unmute to talk.' : 'Talk any time; speak over it to interrupt.') + (pcOn ? ' PC control is on.' : '') + (svc === 'openai' ? ' Billed to your OpenAI account while on.' : '');
       log('live real-time started with ' + liveModel);
     }
 
@@ -2801,6 +2806,7 @@
     function end() {
       state.running = false;
       state.pendingText = '';
+      state.typedStart = false;
       if (state.recording) { const rec = state.recording; state.recording = null; rec.abort(); }
       if (state.rt) { const rt = state.rt; state.rt = null; rt.end(); }
       muteBtn.classList.add('hidden');
