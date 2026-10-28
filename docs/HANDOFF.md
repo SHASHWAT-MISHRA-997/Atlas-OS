@@ -31,12 +31,12 @@
 ## Verified in this session (Windows 11, Node 24, Playwright Chromium 141 headless, FAKE services)
 
 - At v0.22.1 (start of the session): 32 function/attack/size tests and 15 browser tests passed.
-- At v0.27.0: 38 function/attack/size tests, 23 browser tests and 19 PC helper tests pass; the secret scan reports nothing; first load is 72.4 KB gzipped (budget 80 KB).
+- At v0.27.0: 38 function/attack/size tests, 23 browser tests and 19 PC helper tests pass; the secret scan reports nothing; first load is 77.5 KB gzipped (budget 80 KB, getting close).
 - Real services were checked with invalid keys (daily `Provider check`), Test my voice setup passed on the owner's Android phone with real keys, the browser tests passed in real Brave, Chrome and Edge, and the PC helper was tested for real on the owner's Windows PC. Not in Safari.
 
 ## Next tasks, in order
 
-1. The owner creates the Google OAuth Web client (docs/CLOUD.md, "Google Calendar and Gmail"), sets `ATLAS_GOOGLE_CLIENT_ID` in Netlify and redeploys (or pastes the ID on Integrations), then tries Connect on the PC in Brave and on the phone.
+1. Google Calendar and Gmail: done on 2026-10-28. Google Cloud project `atlas-os-513012` ("ATLAS OS"), Calendar and Gmail APIs on, consent screen External in Testing with the owner as the only test user, Web client "ATLAS OS web app" with origins `https://atlas-os-sm.netlify.app` and `http://localhost:8888`. Its public client ID is in the Netlify build variable `ATLAS_GOOGLE_CLIENT_ID`; the client secret is not used and was not saved anywhere. To let someone else sign in, add them under Google Auth Platform → Audience → Test users.
 2. The owner runs **Live → Test my voice setup** with real Gemini and Groq keys on the PC (Brave) and the phone, and sends the text of any FAIL.
 3. The owner sends a real chat with their own key on the live site, including a photo, a PDF (Gemini) and a thinking level.
 4. The owner makes the repository private and protects `main` (only the `cloud` check) in GitHub settings.
