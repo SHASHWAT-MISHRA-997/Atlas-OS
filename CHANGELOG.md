@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Google Calendar and Gmail are configured for the live site: Google Cloud project "ATLAS OS", read-only APIs, consent screen in Testing with the owner as test user, and the public client ID in the Netlify build variable `ATLAS_GOOGLE_CLIENT_ID`.
+
 ## 0.27.1 — 2026-10-28
 
 From testing phone actions with the real Gemini Live service on the owner's phone:

@@ -76,6 +76,8 @@ One-time setup by the site owner in Google Cloud Console:
    set it as the Netlify build variable `ATLAS_GOOGLE_CLIENT_ID` and redeploy, or paste it on the
    Integrations screen (saved in that browser only).
 
+Set up for the live site on 2026-10-28 (project `atlas-os-513012`; the owner is the test user).
+
 While the consent screen is in Testing mode only the listed test users can sign in, Google shows an
 "unverified app" warning, and Google may ask to sign in again after 7 days.
 
