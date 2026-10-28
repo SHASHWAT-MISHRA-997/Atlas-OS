@@ -2167,8 +2167,11 @@
     const routeText = el('span', { text: 'Set up AI Chat first' });
     v.append(screenHead('live', el('span', { class: 'routebadge cloud' }, [icon('cloud'), routeText])));
     if (!turnsReady && !rtLoaded) {
+      // With a Gemini or OpenAI key the reason is the browser (no microphone or audio here), not the key.
+      const noAudio = !!(rtKeys.gemini || rtKeys.openai);
       v.append(el('div', { class: 'panel hud livesetup' }, [
-        el('p', { text: 'Live needs an AI key. For real-time voice like the Gemini app, add a free Google Gemini key in AI Chat (a paid OpenAI key gives ChatGPT\'s voice). With any other provider, pick a model in AI Chat and Live works turn by turn.' }),
+        noAudio ? el('p', { id: 'livenoaudio', text: 'This browser cannot record or play audio here, so real-time voice cannot start (your key is fine). To use Live by typing, pick a provider and model in AI Chat. For voice, open ATLAS in Chrome, Edge, Brave or Safari.' }) : null,
+        noAudio ? null : el('p', { text: 'Live needs an AI key. For real-time voice like the Gemini app, add a free Google Gemini key in AI Chat (a paid OpenAI key gives ChatGPT\'s voice). With any other provider, pick a model in AI Chat and Live works turn by turn.' }),
         el('button', { class: 'btn primary', type: 'button', text: 'Open AI Chat', onclick: () => document.querySelector('.nav [data-section=chat]').click() }),
       ]));
       return;
@@ -2193,6 +2196,8 @@
     // PC control: only on a computer, where the ATLAS PC helper can run next to the browser.
     let pcLoaded = false;
     if (canShare) { try { await loadScript('/static/pc.js'); pcLoaded = true; } catch { /* offline: no PC control */ } }
+    let PHONE = null;
+    try { await loadScript('/static/phone.js'); PHONE = window.AtlasPhone; } catch { /* offline: no phone actions */ }
     const voicePrefs = { lang: '', voice: '', ...storageGet(VOICE_KEY, {}) };
     const lang = voicePrefs.lang || navigator.language || 'en-US';
 
@@ -2200,6 +2205,8 @@
     const orb = el('button', { class: 'liveorb', id: 'liveorb', type: 'button', 'data-state': 'idle', 'aria-label': 'Start Live' }, [el('span', { class: 'orbcore' }), orbLabel]);
     const heard = el('p', { class: 'liveheard', id: 'liveheard' });
     const said = el('p', { class: 'livesaid', id: 'livesaid', 'aria-live': 'polite' });
+    // A phone action the model prepared: nothing happens until the user taps its button.
+    const actionBox = el('div', { class: 'liveaction hidden', id: 'liveaction', role: 'group', 'aria-label': 'Action to confirm' });
     const video = el('video', { id: 'livevideo', class: 'livevideo hidden', playsinline: '', muted: '', autoplay: '' });
     video.muted = true;
     const camBtn = el('button', { class: 'btn chip', type: 'button', id: 'livecam' }, [icon('camera'), 'Camera']);
@@ -2325,7 +2332,7 @@
     paidOk.addEventListener('change', () => { prefs.paidOk = paidOk.checked; storageSet(LIVE_KEY, prefs); });
 
     v.append(el('div', { class: 'livegrid' }, [
-      el('div', { class: 'panel hud livestage' }, [orb, heard, said, video]),
+      el('div', { class: 'panel hud livestage' }, [orb, heard, said, actionBox, video]),
       el('div', { class: 'panel hud livecontrols' }, [
         el('div', { class: 'liveopts' }, [el('label', { class: 'liveopt field' }, [el('span', { class: 'tiny muted', text: 'Mode' }), modeSel]), voiceRow]),
         setupBox,
@@ -2395,6 +2402,63 @@
       if (/no longer paired/.test(r.message || '')) refreshPC();
       return r;
     }
+    /** Shows a prepared phone action as a button; returns what the model is told. */
+    function phoneTool(name, args) {
+      const r = PHONE.plan(name, args);
+      log('phone ' + name + ': ' + (r.ok ? 'shown' : 'refused'));
+      if (!r.ok) { status.textContent = 'Phone: ' + r.message; return { ok: false, message: r.message }; }
+      const c = r.card;
+      const go = el('a', { class: 'btn primary', id: 'liveactiongo', target: '_blank', rel: 'noopener noreferrer' });
+      const close = el('button', { class: 'btn', type: 'button', text: 'Cancel', onclick: () => { actionBox.replaceChildren(); actionBox.classList.add('hidden'); } });
+      const note = el('p', { class: 'tiny muted', text: 'Nothing happens until you tap. ' + (c.share ? 'Choose the app to share to.' : 'Your phone opens the app with everything filled in.') });
+      const setLink = (href, label) => {
+        go.textContent = label;
+        if (href) { go.setAttribute('href', href); go.classList.remove('hidden'); } else go.classList.add('hidden');
+      };
+      const parts = [el('strong', { text: c.title }), note, el('div', { class: 'chips-row' }, [go, close])];
+      if (c.share) {
+        const share = el('button', { class: 'btn primary', type: 'button', id: 'liveactiongo', text: 'Share' });
+        share.addEventListener('click', async () => {
+          try { if (navigator.share) await navigator.share({ text: c.share }); else { await navigator.clipboard.writeText(c.share); status.textContent = 'Copied: this browser cannot share, so paste it where you want.'; } } catch { /* the user closed the share sheet */ }
+        });
+        parts[2] = el('div', { class: 'chips-row' }, [share, close]);
+      } else {
+        setLink(c.href, c.label);
+        if (c.pickContact) {
+          if (PHONE.canPickContact()) {
+            const pick = el('button', { class: 'btn', type: 'button', id: 'liveactionpick', text: 'Choose ' + (args && args.name ? args.name : 'contact') + ' from contacts' });
+            pick.addEventListener('click', async () => {
+              try {
+                const person = await PHONE.pickContact();
+                if (!person || !person.number) return;
+                const href = c.sms ? 'sms:' + person.number + (PHONE.isIOS() ? '&' : '?') + 'body=' + encodeURIComponent(c.sms.body) : 'tel:' + person.number;
+                setLink(href, (c.sms ? 'Open messages to ' : 'Call ') + (person.name || person.number));
+                pick.remove();
+              } catch { /* the user closed the contact list */ }
+            });
+            parts[2] = el('div', { class: 'chips-row' }, [pick, go, close]);
+          } else {
+            note.textContent = 'This browser cannot open your contacts. Say or type the number, for example "call +91 98765 43210".';
+          }
+        }
+      }
+      actionBox.replaceChildren(...parts);
+      actionBox.classList.remove('hidden');
+      status.textContent = 'Phone: ' + (c.href || c.share ? 'tap "' + (c.share ? 'Share' : c.label) + '" to do it.' : 'pick the contact first.');
+      return { ok: true, message: r.message };
+    }
+    /** Runs a tool the model asked for: phone actions on this screen, PC actions through the helper. */
+    async function liveTool(name, args) {
+      if (PHONE && PHONE.has(name)) return phoneTool(name, args);
+      if (PC && PC.enabled()) return pcTool(name, args);
+      return { ok: false, message: 'There is no tool called ' + name + ' here.' };
+    }
+    /** Tools for the real-time services: phone actions always, PC actions when the helper is on. */
+    const liveTools = (pcOn) => (PHONE || pcOn ? {
+      gemini: [{ functionDeclarations: [...(PHONE ? PHONE.geminiDecls() : []), ...(pcOn ? PC.geminiTools()[0].functionDeclarations : [])] }],
+      openai: [...(PHONE ? PHONE.openaiTools() : []), ...(pcOn ? PC.openaiTools() : [])],
+    } : null);
+    const NO_PC = 'You cannot act on the user\'s device beyond these tools; never claim you did.';
     if (PC) {
       refreshPC(PC.enabled());
       pcBtn.addEventListener('click', () => {
@@ -2565,7 +2629,8 @@
       const pcOn = await pcReady();
       const system = 'You are ATLAS OS in Live voice mode. Answer in one to three short spoken sentences, with no markdown or lists, in the language the user speaks (English, Hindi or Hinglish). ' +
         (picture ? 'The attached image is the current view of the user\'s ' + picture.name.replace('.jpg', '') + ': describe only what you can actually see, and say so when it is unclear. ' : 'Do not mention images or attachments. ') +
-        (pcOn ? PC.textPrompt() : 'You cannot act on the user\'s device; never claim you did.');
+        (pcOn ? PC.textPrompt() + ' ' : '') + (PHONE ? PHONE.PROMPT + (pcOn ? 'Phone tools: ' + PHONE.describe() : 'To use a tool, reply with only one line: ACTION {"name": "<tool>", "args": {...}} and nothing else; you will get the result back. Tools: ' + PHONE.describe()) + ' ' : '') +
+        (pcOn ? '' : NO_PC);
       const messages = [{ role: 'system', content: system }, ...state.turns.slice(-10), { role: 'user', content: text, ...(picture ? { attachments: [picture] } : {}) }];
       try {
         let data;
@@ -2575,11 +2640,11 @@
           data = await api('/api/llm/chat', { method: 'POST', signal: controller.signal, body: { provider: p.id, model, api_key: cloudKey.get(p.id), messages, max_tokens: 400 } });
           if (state.controller !== controller) return;
           answer = String(data.answer || '').trim();
-          const action = pcOn && PC.parseAction(answer);
+          const action = (PHONE || pcOn) && (PHONE || PC).parseAction(answer);
           if (!action) break;
-          if (step >= 4) { answer = 'I stopped after several steps on your PC. Tell me what to do next.'; break; }
-          said.textContent = 'Working on your PC…';
-          const result = await pcTool(action.name, action.args);
+          if (step >= 4) { answer = 'I stopped after several steps. Tell me what to do next.'; break; }
+          said.textContent = 'Working on it…';
+          const result = await liveTool(action.name, action.args);
           if (state.controller !== controller) return;
           messages.push({ role: 'assistant', content: answer }, { role: 'user', content: 'ACTION RESULT: ' + JSON.stringify(result) + '\nNow tell the user in one short spoken sentence what happened, or reply with another ACTION line if one more step is needed.' });
         }
@@ -2588,7 +2653,7 @@
         // Live turns also appear in AI Chat history (text only, never the pictures).
         await store.appendChat({ role: 'user', content: text, ...(picture ? { files: [picture.name] } : {}) });
         await store.appendChat({ role: 'assistant', content: answer, meta: 'Live · ' + describeAnswer(data, p.label) });
-        if (!/^PC: /.test(status.textContent)) status.textContent = 'Answered by ' + p.label + (picture ? ', looking at your ' + picture.name.replace('.jpg', '') : '') + '.';
+        if (!/^(PC|Phone): /.test(status.textContent)) status.textContent = 'Answered by ' + p.label + (picture ? ', looking at your ' + picture.name.replace('.jpg', '') : '') + '.';
         log('live answer from ' + p.id + '/' + model);
         await speak(answer);
       } catch (err) {
@@ -2606,7 +2671,7 @@
       'Reply in the language the user speaks (English, Hindi or Hinglish). When you get camera or screen pictures, describe only what you can actually see, and say so when it is unclear. ' +
       'You cannot act on the user\'s device, open apps or send messages; never claim you did.';
     // With PC control, the "cannot act" rule is swapped for what the PC tools can and cannot do.
-    const rtSystem = (pcOn) => (pcOn ? RT_SYSTEM.replace(/You cannot act on the user's device[^]*$/, '') + PC.PROMPT : RT_SYSTEM);
+    const rtSystem = (pcOn) => RT_SYSTEM.replace(/You cannot act on the user's device[^]*$/, '') + (PHONE ? PHONE.PROMPT : '') + (pcOn ? PC.PROMPT : NO_PC);
 
     async function startRealtime() {
       const svc = service();
@@ -2639,14 +2704,14 @@
       try {
         state.rt = await window.AtlasRealtime.start({
           service: svc, key: rtKeys[svc], model: liveModel, voice: voiceSel.value, system: rtSystem(pcOn),
-          tools: pcOn ? { gemini: PC.geminiTools(), openai: PC.openaiTools() } : null,
+          tools: liveTools(pcOn),
           worklet: '/static/live-worklet.js' + (ASSET_VERSION ? '?v=' + ASSET_VERSION : ''),
           on: {
             state: (s) => setState(s === 'connecting' ? 'thinking' : s, s === 'speaking' ? 'Speaking… tap to stop' : s === 'listening' ? 'Listening… tap to end' : 'Connecting…'),
             level: (x) => orb.style.setProperty('--lvl', Math.min(0.5, x * 3).toFixed(3)),
             heard: (t) => { heard.textContent = t; },
             said: (t) => { said.textContent = t; },
-            tool: pcTool,
+            tool: liveTool,
             turn: async ({ user, model: answer }) => {
               // Text only: the audio and pictures are never stored.
               if (user) await store.appendChat({ role: 'user', content: user });
@@ -3378,4 +3443,8 @@
 
   log('ATLAS UI loaded');
   refreshStatus().then(updateMemoryStat);
+  // App shortcuts (Windows Start menu, a long press on Android) open a screen directly: /?section=live
+  const wantedSection = new URLSearchParams(location.search).get('section');
+  const shortcut = wantedSection && /^[a-z]+$/.test(wantedSection) && document.querySelector('.nav [data-section="' + wantedSection + '"]');
+  if (shortcut) shortcut.click();
 })();

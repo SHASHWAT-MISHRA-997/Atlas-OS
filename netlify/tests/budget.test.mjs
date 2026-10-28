@@ -48,3 +48,18 @@ test('the service worker always asks the server for fresh pages and code, even w
   }
   assert.match(readFileSync(new URL('sw.js', dist), 'utf8'), /CACHE = 'atlas-shell-v5'/, 'a new cache name removes the old cached page');
 });
+
+test('store-ready app manifest: icons, screenshots with their real sizes, shortcuts, and a privacy policy', () => {
+  const m = JSON.parse(readFileSync(new URL('static/manifest.webmanifest', dist), 'utf8'));
+  for (const k of ['name', 'short_name', 'description', 'id', 'start_url', 'display', 'background_color', 'theme_color', 'categories', 'lang']) assert.ok(m[k], 'manifest needs ' + k);
+  const pngSize = (path) => { const b = readFileSync(new URL(path.slice(1), dist)); return b.readUInt32BE(16) + 'x' + b.readUInt32BE(20); };
+  for (const icon of m.icons.filter((i) => i.type === 'image/png')) assert.equal(pngSize(icon.src), icon.sizes, icon.src);
+  assert.ok(m.icons.some((i) => i.sizes === '512x512' && i.purpose === 'maskable'), 'a maskable 512 icon');
+  assert.ok(m.screenshots.some((s) => s.form_factor === 'wide') && m.screenshots.some((s) => s.form_factor === 'narrow'));
+  for (const s of m.screenshots) assert.equal(pngSize(s.src), s.sizes, s.src);
+  for (const s of m.shortcuts) assert.match(s.url, /^\/\?section=[a-z]+$/);
+  const privacy = readFileSync(new URL('privacy.html', dist), 'utf8');
+  for (const words of ['no ATLAS account', 'stores nothing', 'Google Calendar and Gmail', 'ATLAS PC helper', 'Phone actions', 'Deleting your data', 'Contact']) assert.ok(privacy.includes(words), 'privacy policy covers: ' + words);
+  assert.ok(!/<script/i.test(privacy), 'the privacy page runs no script');
+  assert.match(readFileSync(new URL('index.html', dist), 'utf8'), /href="\/privacy\.html"/);
+});

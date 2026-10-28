@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ATLAS OS — Privacy policy</title>
+<meta name="description" content="How ATLAS OS handles your data: no account, nothing stored on our servers, your own AI keys.">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<style>
+  :root { color-scheme: dark light; }
+  body { font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; background: #04060d; color: #e8eef9; }
+  @media (prefers-color-scheme: light) { body { background: #f6f8fc; color: #0b1220; } a { color: #0068a8; } }
+  a { color: #00d8ff; } h1 { font-size: 28px; margin: 0 0 4px; } h2 { font-size: 19px; margin-top: 28px; } .muted { opacity: .75; font-size: 14px; }
+  li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<h1>ATLAS OS — Privacy policy</h1>
+<p class="muted">Last updated: 28 October 2026. Applies to the ATLAS OS web app at https://atlas-os-sm.netlify.app, the same app installed from an app store, and the optional ATLAS PC helper for Windows.</p>
+
+<h2>The short version</h2>
+<ul>
+  <li>There is no ATLAS account. ATLAS does not collect, sell or share your personal data, and runs no analytics or advertising.</li>
+  <li>What you save (chats, memories, tasks, settings, and AI keys if you choose to remember them) stays in your browser on your device.</li>
+  <li>When you ask something, it goes to the AI provider <strong>you</strong> chose, with <strong>your</strong> key, under that provider's own privacy terms.</li>
+</ul>
+
+<h2>What leaves your device, and where it goes</h2>
+<ul>
+  <li><strong>Chat, plans and summaries:</strong> your message, recent turns and saved memories go through ATLAS's server function to the provider you picked (Groq, Google Gemini, OpenRouter, or OpenAI if you choose it). The function forwards each request and stores nothing; it does not log your messages or keys.</li>
+  <li><strong>Voice:</strong> in Live real-time mode your microphone audio (and, if you turn it on, camera or screen pictures) streams straight from your browser to Google Gemini or OpenAI. Speech-to-text and the natural voice send short recordings or answer text through the function to the provider. Nothing is recorded or kept by ATLAS; only the text of a conversation is saved in your browser's chat history.</li>
+  <li><strong>Google Calendar and Gmail (optional, read-only):</strong> if you sign in with Google, your browser reads today's and tomorrow's events and the sender and subject of your 10 latest unread emails directly from Google. The access is kept only in the page's memory and is revoked when you sign out. Nothing is sent to ATLAS's server or to an AI model.</li>
+  <li><strong>Phone actions:</strong> ATLAS prepares calls, messages, directions or searches as a button; nothing happens until you tap it, and then your phone's own app opens. If you choose a contact, only that contact's name and number are read, once.</li>
+  <li><strong>ATLAS PC helper (Windows, optional):</strong> runs on your PC and talks only to the ATLAS page in your browser on the same PC (127.0.0.1). It does not send anything over the internet. Typing, shortcuts and closing windows ask for your permission on the PC first.</li>
+</ul>
+
+<h2>Hosting</h2>
+<p>The app is hosted on Netlify, which processes standard request information (such as IP addresses) to deliver the site and limit abuse, under Netlify's privacy policy. ATLAS limits requests to 60 a minute per visitor.</p>
+
+<h2>Your keys</h2>
+<p>You bring your own AI keys. They are sent only to the provider they belong to, with your own requests. If you tick "Remember", the key is kept in your browser's storage on that device; anyone using your unlocked device could see it. Devices → Export leaves keys out unless you ask.</p>
+
+<h2>Children</h2>
+<p>ATLAS is not directed at children under 13. AI providers set their own minimum ages.</p>
+
+<h2>Deleting your data</h2>
+<p>Use Devices → Erase in the app, Clear all in AI Chat, or clear the site's data in your browser. Data held by an AI provider is governed by that provider; see their privacy policy.</p>
+
+<h2>Contact</h2>
+<p>Questions or requests: open an issue at <a href="https://github.com/SHASHWAT-MISHRA-997/Atlas-OS/issues">github.com/SHASHWAT-MISHRA-997/Atlas-OS/issues</a>, or contact the developer, Shashwat Mishra, through <a href="https://www.linkedin.com/in/sm980/">LinkedIn</a>.</p>
+<p><a href="/">← Back to ATLAS OS</a></p>
+</body>
+</html>

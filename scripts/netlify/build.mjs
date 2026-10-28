@@ -9,6 +9,8 @@ rmSync(out, { recursive: true, force: true });
 mkdirSync(out);
 cpSync(join(root, 'frontend', 'static'), join(out, 'static'), { recursive: true });
 cpSync(join(root, 'frontend', 'static', 'sw.js'), join(out, 'sw.js'));
+// The privacy policy app stores (Microsoft Store) and visitors can read: /privacy.html
+cpSync(join(root, 'frontend', 'privacy.html'), join(out, 'privacy.html'));
 
 const version = readFileSync(join(root, 'VERSION'), 'utf8').trim();
 const html = readFileSync(join(root, 'frontend', 'index.html'), 'utf8');

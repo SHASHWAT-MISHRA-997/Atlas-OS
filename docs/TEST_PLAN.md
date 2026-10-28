@@ -16,12 +16,13 @@ Fakes live only in tests and in the preview server behind `ATLAS_FAKE_MODEL=1`; 
 
 ## Latest report
 
-Date: 2026-10-28, v0.26.1. Environment: Windows 11, Node 24, Playwright 1.64 Chromium (headless); CI runs the same on Linux with Node 22. **Not Safari.**
+Date: 2026-10-28, v0.27.0. Environment: Windows 11, Node 24, Playwright 1.64 Chromium (headless); CI runs the same on Linux with Node 22. **Not Safari.**
 
 | Command | Passed | Failed |
 |---|---|---|
-| `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 37 | 0 |
-| `node --test netlify/tests/e2e.test.mjs` (set `PYTHON=python` on Windows for the PC helper test) | 20 | 0 |
+| `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 38 | 0 |
+| `node --test netlify/tests/e2e.test.mjs` (set `PYTHON=python` on Windows for the PC helper test) | 23 | 0 |
+| Same suite in WebKit (Safari's engine): `ATLAS_E2E_BROWSER=webkit` | 11 | 9 (all need a microphone, camera or audio, which Playwright's WebKit on Windows does not have) |
 | `python -m unittest test_atlas_helper` (in `pc-helper/`, Windows 11) | 19 | 0 |
 | `detect-secrets scan` (excluding tests, node_modules, dist) | no findings | — |
 
