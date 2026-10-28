@@ -1357,11 +1357,12 @@ test('Phone actions in Live: the model prepares a call, WhatsApp, directions or 
     await page.press('#livetyped', 'Enter');
     await page.waitForFunction((n) => document.querySelectorAll('#liveaction a, #liveaction button').length > 0 && document.querySelector('#liveaction strong')?.textContent.includes(n), call.args.name || call.args.place || call.args.query || call.args.text);
   };
-  await ask({ id: 'c1', name: 'call_phone', args: { number: '+91 98765-43210', name: 'Mom' } }, 'mom ko call karo');
+  await ask({ id: 'c1', name: 'dial_number', args: { number: '+91 98765-43210', name: 'Mom' } }, 'mom ko call karo');
   const setup = got.find((m) => m.setup).setup;
   const decls = setup.tools[0].functionDeclarations.map((d) => d.name);
-  assert.ok(['call_phone', 'send_sms', 'send_whatsapp', 'navigate_to', 'play_youtube', 'open_website', 'share_text'].every((n) => decls.includes(n)), decls.join());
-  assert.match(setup.systemInstruction.parts[0].text, /nothing happens until the user taps it/);
+  assert.ok(!decls.includes('call_phone'), 'the name the real Gemini server failed on is not offered');
+  assert.ok(['dial_number', 'send_sms', 'send_whatsapp', 'navigate_to', 'play_youtube', 'open_website', 'share_text'].every((n) => decls.includes(n)), decls.join());
+  assert.match(setup.systemInstruction.parts[0].text, /you must call the matching tool in that same turn/);
   assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'tel:+919876543210');
   assert.match(await page.textContent('#liveaction'), /Call Mom \(\+919876543210\).*Nothing happens until you tap/s);
   const reply = got.find((m) => m.toolResponse).toolResponse.functionResponses[0];

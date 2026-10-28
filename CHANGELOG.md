@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.27.1 — 2026-10-28
+
+From testing phone actions with the real Gemini Live service on the owner's phone:
+- **Fix: no button appeared.** Gemini said "tap the button to call…" without calling the tool. The instructions now say the button exists only after the tool is called, and it must be called in the same turn (checked on the real service: directions and WhatsApp then showed their buttons).
+- **Fix: asking to call someone ended the session** with Google's "Internal error occurred" whenever the model called the tool named `call_phone`. It is now `dial_number` (the old name still works in turn by turn); with it, Gemini called the tool for "Call +91 98765 43210" and for "Call my mom".
+
 ## 0.27.0 — 2026-10-28
 
 - **Phone actions in Live** (`frontend/static/phone.js`): say or type "call Mom", "WhatsApp Rahul: running late", "navigate to India Gate", "play Arijit on YouTube", "open example.com" or "share this". Live prepares it as a button with everything filled in; **nothing happens until you tap it**, then your phone's dialer, messages, WhatsApp, Google Maps or YouTube opens. A web page may not dial, send or open other apps by itself, so this is the furthest a web app can go; it cannot read contacts, messages or notifications. If you name a person without a number, Android Chrome lets you pick the contact (only that contact's name and number are read). Works in Real-time (Gemini tools), ChatGPT voice (OpenAI tools) and Turn by turn (ACTION lines), together with PC control.

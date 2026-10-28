@@ -1,4 +1,4 @@
-# Handoff — 2026-10-28 (v0.27.0)
+# Handoff — 2026-10-28 (v0.27.1)
 
 ## State
 
@@ -11,6 +11,7 @@
 
 ## Recent versions
 
+- v0.27.1: phone actions fixed against real Gemini Live (stricter tool instruction; `call_phone` renamed `dial_number` because Google's server failed on it).
 - v0.27.0: phone actions in Live (one-tap call, SMS, WhatsApp, Maps, YouTube, website, share); Microsoft Store readiness (privacy page, manifest); WebKit run.
 - v0.26.1: Live started by typing starts with the microphone muted (nearby speech took over a typed question on the owner's phone); typing while connecting confirmed against real Gemini.
 - v0.26.0: PC control in Live (ATLAS PC helper) with fixes from a real test on the owner's PC; typing in Live real-time modes works (auto-start, waits while connecting); silence cut before Whisper.
