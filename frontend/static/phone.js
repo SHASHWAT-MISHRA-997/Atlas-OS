@@ -9,7 +9,9 @@
   const str = (description) => ({ type: 'string', description });
   const obj = (properties, required) => ({ type: 'object', properties, required: required || Object.keys(properties) });
   const TOOLS = [
-    { name: 'call_phone', description: 'Prepare a phone call on this device. Give the number with country code if known (e.g. +919876543210), or only the contact name if the user did not say a number.', parameters: obj({ number: str('Phone number, digits with optional +'), name: str('Who is called, if said') }, []) },
+    // Named dial_number: with the name "call_phone", Google's Gemini Live server ended the session with
+    // "Internal error occurred" whenever the model called it (seen on the owner's phone, 2026-10-28).
+    { name: 'dial_number', description: 'Show a button that opens the phone dialer with this number filled in. Give the number with country code if known, or only the name of the person if the user did not say a number.', parameters: obj({ number: str('Phone number, digits with optional +'), name: str('Who is called, if said') }, []) },
     { name: 'send_sms', description: 'Prepare an SMS on this device with the text filled in; the user taps Send in their messages app.', parameters: obj({ number: str('Phone number, or empty to choose in the app'), name: str('Who it is for, if said'), text: str('Message text') }, ['text']) },
     { name: 'send_whatsapp', description: 'Prepare a WhatsApp message with the text filled in; the user taps Send in WhatsApp. Number with country code (e.g. 919876543210), or empty to choose the chat in WhatsApp.', parameters: obj({ number: str('Number with country code, or empty'), name: str('Who it is for, if said'), text: str('Message text') }, ['text']) },
     { name: 'navigate_to', description: 'Prepare directions to a place in Google Maps on this device.', parameters: obj({ place: str('Place or address') }) },
@@ -17,11 +19,14 @@
     { name: 'open_website', description: 'Prepare a web address (http or https) to open on this device.', parameters: obj({ url: str('Full http(s) address') }) },
     { name: 'share_text', description: 'Prepare text to share to any app on this device (the share sheet).', parameters: obj({ text: str('Text to share') }) },
   ];
-  const NAMES = new Set(TOOLS.map((t) => t.name));
+  const NAMES = new Set([...TOOLS.map((t) => t.name), 'call_phone']); // the old name still works (ACTION lines)
 
-  const PROMPT = 'On this device you can prepare actions with the phone tools: call, SMS, WhatsApp, Google Maps directions, YouTube, a website, or sharing text. ' +
-    'A tool only shows a button on the screen; nothing happens until the user taps it, so say "tap the button to …", never that you called, sent or opened anything. ' +
-    'You cannot read contacts, messages, notifications or call history; if the user names a person without a number, pass the name and they can pick the contact. ';
+  // Checked against the real Gemini Live service: with a softer wording the model said "tap the button"
+  // without calling the tool, so no button appeared.
+  const PROMPT = 'You have phone tools: dial_number, send_sms, send_whatsapp, navigate_to, play_youtube, open_website and share_text. ' +
+    'When the user asks to call someone, send an SMS or WhatsApp, get directions, play something on YouTube, open a website or share text, you must call the matching tool in that same turn: the button the user taps exists only after you call the tool. ' +
+    'After the tool result, tell the user in a few words to tap the button; never say you called, sent or opened anything, and never say there is a button unless you called the tool and its result says ok. ' +
+    'You cannot read contacts, messages, notifications or call history; if the user names a person without a number, call the tool with only the name. ';
 
   const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
@@ -43,6 +48,7 @@
     const body = text(a.text, 1000);
     const fail = (message) => ({ ok: false, message });
     switch (name) {
+      case 'dial_number':
       case 'call_phone': {
         if (!number && !who) return fail('Say the number or who to call.');
         return card('Call ' + (who || number) + (who && number ? ' (' + number + ')' : ''), 'Call ' + (number || who), number ? 'tel:' + number : '', !number && who);
