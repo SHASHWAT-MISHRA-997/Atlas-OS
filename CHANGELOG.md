@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.26.0 — 2026-10-28
+
+**PC control in Live, through the ATLAS PC helper** (built in PR #25 on 2026-10-27, brought up to date, reviewed and tested on the owner's Windows PC):
+- A small Windows program (`pc-helper/`, `AtlasHelper.exe`) runs on the PC, listens only on 127.0.0.1 and does typed actions for Live: open apps (any Start menu app), websites, web/YouTube searches, files and folders in the user folder; media keys and volume; find files by name; save notes; type text; press shortcuts; manage windows; lock the PC; read time, battery and disk space. Pair once in Live → PC with the 6-digit code shown in the helper window.
+- Typing, most shortcuts and closing a window open a Windows Yes/No box on the PC first (No is the default; no answer in 60 s is No). It never deletes files, runs commands or shells, opens programs as files, installs, changes settings or shuts down.
+- Works in all three Live modes: Real-time (Gemini function calling), ChatGPT voice (OpenAI Realtime tools) and Turn by turn (ACTION lines).
+- CI tests the helper on Linux and Windows, builds the .exe and publishes it as a GitHub release after merge; the Live screen links to it. The .exe is not code-signed, so Windows SmartScreen warns once.
+
+Found and fixed during the review and the real test on the owner's PC:
+- **Typing went into a different window than the one approved.** The Allow box named one window, but when it closed Windows put another in front and the text went there. The helper now brings back exactly the approved window after Yes and refuses (types nothing) if it cannot.
+- **Deploy previews could pair.** The helper trusted any `*--atlas-os-sm.netlify.app` address; anyone can open a pull request on the public repository and get such a preview of their own code. Only `https://atlas-os-sm.netlify.app` is trusted now.
+- **The PC pairing token went into Devices → Export backups.** It is now never exported or imported.
+- **Find files missed a file it had just saved** (a big Desktop used up the search time). Folders are now searched level by level.
+- The Start menu list (13–17 s the first time on Windows) is loaded when the helper starts. Every Allow box answer (Yes, No, no answer) is written in the helper window.
+
+**Typing in Live (real-time modes) now works** (the owner reported it did nothing):
+- A question typed before tapping the orb only said "Tap the orb to start". It now starts real-time voice by itself.
+- A question typed while it was still connecting was dropped without a word. It now waits and is sent as soon as Gemini (or OpenAI) is ready.
+
+**Whisper words for silence, fixed properly:** 0.25.3's confidence filter was not enough (real Groq still wrote "Thank you." for silence). Dictate and Live now cut the recording 0.3 s after the last sound, so silence is not sent; Test my voice setup measures how loud its one second was and, when it was silent, shows Whisper's guess as a guess and ignores it.
+
 ## 0.25.3 — 2026-10-28
 
 From running **Test my voice setup on the owner's phone with the owner's real keys** (all four steps passed: 9 real-time models, Gemini Live setup in 2.8 s, 3.8 s of real Gemini speech, Groq answered):

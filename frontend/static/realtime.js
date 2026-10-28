@@ -110,8 +110,15 @@
       send(isGemini ? { realtimeInput: { audio: { data, mimeType: 'audio/pcm;rate=16000' } } } : { type: 'input_audio_buffer.append', audio: data });
     };
 
-    function send(obj) {
+    // Typed messages sent while the service is still connecting wait here and go as soon as it is
+    // ready; before, they were dropped without a word (typing right after tapping the orb did nothing).
+    const waiting = [];
+    function send(obj, keep) {
       if (ws && ready && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+      else if (keep && waiting.length < 20) waiting.push(obj);
+    }
+    function sendWaiting() {
+      while (waiting.length && ws && ready && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(waiting.shift()));
     }
 
     /** The current camera or screen picture as base64 JPEG, or null. */
@@ -183,6 +190,7 @@
         accepted = true;
         reconnects = 0;
         on.state(sources.size ? 'speaking' : 'listening');
+        sendWaiting();
         return;
       }
       if (msg.sessionResumptionUpdate) {
@@ -331,6 +339,7 @@
             output: { format: { type: 'audio/pcm', rate: 24000 }, voice: opts.voice },
           },
         } });
+        sendWaiting();
       };
       socket.onmessage = (e) => {
         let msg;
@@ -398,13 +407,13 @@
         userText = text;
         on.heard(text);
         if (isGemini) {
-          send({ clientContent: { turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true } });
+          send({ clientContent: { turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true } }, true);
           return;
         }
         flush();
         sendPictureToOpenAI();
-        send({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } });
-        send({ type: 'response.create' });
+        send({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } }, true);
+        send({ type: 'response.create' }, true);
       },
     };
   }

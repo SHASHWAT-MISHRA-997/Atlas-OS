@@ -45,6 +45,34 @@ class ActionTests(unittest.TestCase):
             self.run_action('__init__')
         self.assertEqual(self.pc.done, [])
 
+    def test_typing_only_goes_into_the_window_the_user_allowed(self):
+        # Seen on a real PC: after Yes, Windows put a different window in front. Then nothing is typed.
+        self.pc.front_ok = False
+        with self.assertRaisesRegex(h.ActionError, 'no longer the window in front'):
+            self.run_action('type_text', text='hello')
+        with self.assertRaisesRegex(h.ActionError, 'no longer the window in front'):
+            self.run_action('press_keys', keys='ctrl+s')
+        with self.assertRaisesRegex(h.ActionError, 'no longer the window in front'):
+            self.run_action('window', action='close')
+        self.assertEqual(len(self.pc.asked), 3, 'the user was asked each time')
+        self.assertEqual(self.pc.done, [], 'nothing was typed or pressed')
+        self.pc.front_ok = True
+        self.run_action('type_text', text='hello')
+        self.assertEqual(self.pc.done, [('type_text', 'hello')])
+
+    def test_find_files_reaches_documents_even_with_a_big_desktop(self):
+        # Seen on a real PC: a big Desktop used up the search time before Documents was looked at.
+        deep = self.home / 'Desktop'
+        for i in range(6):
+            deep = deep / f'level{i}'
+        deep.mkdir(parents=True)
+        for i in range(300):
+            (self.home / 'Desktop' / f'file{i}.txt').write_text('x')
+        (self.home / 'Documents' / 'ATLAS Notes').mkdir()
+        (self.home / 'Documents' / 'ATLAS Notes' / 'ATLAS test note.txt').write_text('x')
+        files = self.run_action('find_files', query='atlas test note')['files']
+        self.assertEqual([Path(f).name for f in files], ['ATLAS test note.txt'])
+
     def test_real_app_list_never_contains_shells(self):
         pc = h.WindowsPC()
         pc._apps = None
@@ -198,8 +226,14 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.call('POST', '/action', {'name': 'lock_pc'}, token=token, host='attacker.example:' + str(self.port))[0], 421)
         # A token works only from the site it was paired with.
         self.assertEqual(self.call('POST', '/action', {'name': 'lock_pc'}, origin='http://localhost:8888', token=token)[0], 401)
-        self.assertEqual(self.call('POST', '/action', {'name': 'lock_pc'}, origin='https://deploy-preview-3--atlas-os-sm.netlify.app', token=token)[0], 401)
+        self.assertEqual(self.call('POST', '/action', {'name': 'lock_pc'}, origin='https://deploy-preview-3--atlas-os-sm.netlify.app', token=token)[0], 403)
         self.assertEqual(self.pc.done, [])
+
+    def test_deploy_previews_cannot_pair(self):
+        # Anyone can open a pull request and get a preview of their own code on such an address.
+        for origin in ('https://deploy-preview-3--atlas-os-sm.netlify.app', 'https://evil-branch--atlas-os-sm.netlify.app'):
+            self.assertEqual(self.call('POST', '/pair', {'code': self.helper.new_code()}, origin=origin)[0], 403, origin)
+        self.assertEqual(self.helper.config['tokens'], [])
 
     def test_preflight_allows_the_local_network_request(self):
         status, _, headers = self.call('OPTIONS', '/action')

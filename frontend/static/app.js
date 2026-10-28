@@ -1865,6 +1865,7 @@
    * after 30 seconds, or when the signal aborts. Null when nothing is said within 8 seconds.
    * With seconds, it records exactly that long, speech or not (the voice check).
    */
+  const SPEECH_LEVEL = 0.02; // microphone level that counts as someone speaking
   async function recordUtterance({ onLevel = () => {}, signal, seconds } = {}) {
     const ctx = new AudioContext();
     let stream;
@@ -1887,7 +1888,10 @@
         let spoke = false;
         let quietSince = 0;
         let samples = 0;
-        const finish = () => { node.port.onmessage = null; resolve(spoke || seconds ? kept : null); };
+        let lastLoud = -1;
+        // Whisper writes words like "Thank you." for silence (seen with Groq on the owner's phone), so
+        // the quiet after the last sound is cut off: only the part with speech is sent.
+        const finish = () => { node.port.onmessage = null; resolve(seconds ? kept : spoke ? kept.slice(0, lastLoud + 4) : null); };
         if (signal) { if (signal.aborted) { finish(); return; } signal.addEventListener('abort', finish, { once: true }); }
         node.port.onmessage = (e) => {
           const now = Date.now();
@@ -1897,8 +1901,8 @@
           samples += pcm.length;
           // Counted in samples, not wall-clock time: the microphone takes a moment to start.
           if (seconds) { if (samples >= seconds * 16000) finish(); return; }
-          if (e.data.level > 0.02) { spoke = true; quietSince = 0; } else if (!quietSince) quietSince = now;
-          if (!spoke && kept.length > 3) kept.shift(); // keep a little sound from just before speech
+          if (!spoke && kept.length > 4) kept.shift(); // keep a little sound from just before speech
+          if (e.data.level > SPEECH_LEVEL) { spoke = true; quietSince = 0; lastLoud = kept.length - 1; } else if (!quietSince) quietSince = now;
           if ((spoke && quietSince && now - quietSince > 1200) || now - started > 30000 || (!spoke && now - started > 8000)) finish();
         };
       });
@@ -2538,6 +2542,15 @@
 
     async function ask(text) {
       if (state.rt) { state.rt.sendText(text); return; }
+      // Real-time mode: a typed question starts Live by itself (or waits while it connects) and goes to
+      // the real-time service as soon as it is ready. Before, it only said "Tap the orb", or was lost.
+      if (isRT() && ready()) {
+        state.pendingText = text;
+        heard.textContent = text;
+        said.textContent = '';
+        if (!state.running) startRealtime();
+        return;
+      }
       if (!turnsReady) { status.textContent = isRT() && ready() ? 'Tap the orb to start, then ask.' : 'Turn by turn needs a model picked in AI Chat.'; return; }
       if (state.recording) { const rec = state.recording; state.recording = null; rec.abort(); }
       if (state.recognition) { const r = state.recognition; state.recognition = null; try { r.abort(); } catch { /* already stopped */ } }
@@ -2600,6 +2613,7 @@
       const label = window.AtlasRealtime.SERVICES[svc].label;
       if (svc === 'openai' && !paidOk.checked) {
         status.textContent = 'ChatGPT voice is paid. Tick the box to confirm it may be billed to your OpenAI account, or pick Real-time (Gemini).';
+        state.pendingText = ''; // never sent later by surprise on a paid service
         paidOk.focus();
         return;
       }
@@ -2660,6 +2674,7 @@
       }
       if (!state.running) { state.rt.end(); state.rt = null; return; }
       if (state.stream) state.rt.setVideo(video);
+      if (state.pendingText) { const t = state.pendingText; state.pendingText = ''; state.rt.sendText(t); }
       muteBtn.classList.remove('hidden');
       status.textContent = 'Live with ' + label + ' (' + liveModel + '). Talk any time; speak over it to interrupt.' + (pcOn ? ' PC control is on.' : '') + (svc === 'openai' ? ' Billed to your OpenAI account while on.' : '');
       log('live real-time started with ' + liveModel);
@@ -2748,8 +2763,9 @@
       else {
         mark('transcribe', 'RUNNING', 'Recording 1 second: say something…');
         let audio = null;
+        let peak = 0;
         try {
-          audio = await recordUtterance({ seconds: 1 });
+          audio = await recordUtterance({ seconds: 1, onLevel: (x) => { peak = Math.max(peak, x); } });
         } catch (err) {
           mark('transcribe', 'FAIL', 'The microphone ' + (err.name === 'NotAllowedError' ? 'permission is blocked' : 'could not record: ' + (err.message || err.name)) + '. What to do: allow the microphone in the browser\'s site settings.');
         }
@@ -2757,7 +2773,9 @@
           mark('transcribe', 'RUNNING', 'Sending the recording to ' + TRANSCRIBER_LABELS[tid] + '…');
           try {
             const words = await transcribeSpeech(audio);
-            mark('transcribe', 'PASS', TRANSCRIBER_LABELS[tid] + ' answered. ' + (words ? 'Heard: "' + words + '"' : 'It heard no words, which is fine if you were quiet.'));
+            const quiet = peak <= SPEECH_LEVEL;
+            mark('transcribe', 'PASS', TRANSCRIBER_LABELS[tid] + ' answered. ' + (!quiet ? (words ? 'Heard: "' + words + '"' : 'It heard no words.')
+              : 'The second was silent, so nothing was said' + (words ? ' (Whisper guessed "' + words + '" for the silence; ATLAS ignores that: Dictate and Live send only the part where you speak)' : '') + '. Say something during the second to test the writing down.'));
           } catch (err) {
             mark('transcribe', 'FAIL', err.message + ' What to do: check the ' + TRANSCRIBER_LABELS[tid] + ' key in AI Chat → Model settings.');
           }
@@ -2782,6 +2800,7 @@
 
     function end() {
       state.running = false;
+      state.pendingText = '';
       if (state.recording) { const rec = state.recording; state.recording = null; rec.abort(); }
       if (state.rt) { const rt = state.rt; state.rt = null; rt.end(); }
       muteBtn.classList.add('hidden');
@@ -3053,6 +3072,7 @@
   }
 
   const isInstalled = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const PC_PAIRING = 'atlas.pc.v1'; // pc.js: token for the ATLAS PC helper on this computer
   const atlasKeys = () => { try { return Object.keys(localStorage).filter((k) => k.startsWith('atlas.')); } catch { return []; } };
 
   function renderDevices(v) {
@@ -3108,7 +3128,8 @@
 
     exportBtn.addEventListener('click', () => {
       const data = {};
-      for (const k of atlasKeys()) if (withKeys.checked || !k.startsWith(CLOUD_KEY_PREFIX)) data[k] = localStorage.getItem(k);
+      // The PC pairing token belongs to this PC and browser only: it is never put in a backup.
+      for (const k of atlasKeys()) if (k !== PC_PAIRING && (withKeys.checked || !k.startsWith(CLOUD_KEY_PREFIX))) data[k] = localStorage.getItem(k);
       downloadJson({ format: 'atlas-os-backup', version: runningVersion, exported_at: new Date().toISOString(), device: d.kind + ' · ' + d.os + ' · ' + d.browser, data }, 'atlas-backup-' + new Date().toISOString().slice(0, 10) + '.json');
       status.textContent = 'Exported ' + Object.keys(data).length + ' items' + (withKeys.checked ? ', including your keys. Keep the file private.' : ' (keys not included).');
       log('exported device data');
@@ -3123,7 +3144,7 @@
         let backup;
         try { backup = JSON.parse(String(reader.result)); } catch { status.textContent = 'That file is not valid JSON.'; return; }
         if (!backup || backup.format !== 'atlas-os-backup' || typeof backup.data !== 'object' || !backup.data) { status.textContent = 'That file is not an ATLAS backup.'; return; }
-        const entries = Object.entries(backup.data).filter(([k, val]) => k.startsWith('atlas.') && k.length < 100 && typeof val === 'string' && val.length < 2000000);
+        const entries = Object.entries(backup.data).filter(([k, val]) => k.startsWith('atlas.') && k !== PC_PAIRING && k.length < 100 && typeof val === 'string' && val.length < 2000000);
         if (!confirm('Import ' + entries.length + ' items from ' + (backup.device || 'another device') + '? Items with the same name on this device are replaced.')) return;
         try { for (const [k, val] of entries) localStorage.setItem(k, val); } catch { status.textContent = 'Browser storage is full or turned off.'; return; }
         log('imported ' + entries.length + ' items');

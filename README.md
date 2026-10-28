@@ -28,7 +28,7 @@
 
 > [!NOTE]
 > **ATLAS OS is a web app, not an operating system, and it is not production-ready.** It is built and
-> tested by one developer. Everything on this page describes what exists today (v0.25.3). Features
+> tested by one developer. Everything on this page describes what exists today (v0.26.0). Features
 > marked 🧪 pass their automated tests with **FAKE** AI services but have **not yet been tried against
 > the real provider**. The full, honest status of every feature is in
 > [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md).
@@ -84,6 +84,7 @@
 | 🩺 | **Test my voice setup** | Checks each part of voice separately and shows the provider's exact error and what to do. | 🧪 |
 | 🔊 | **Natural voice** | Answers read aloud in Gemini's natural voices with a Gemini key; otherwise the best voice your browser has. | 🧪 |
 | ⌨️ | **Dictate anywhere** | Chrome, Edge and Safari use their own speech service. In **Brave and Firefox**, your Groq or Gemini key writes down what you say. | ✅ |
+| 🖥️ | **PC control in Live** *(Windows)* | With the free ATLAS PC helper running on your PC and paired with a 6-digit code, Live opens apps, websites and files, searches YouTube, plays music, changes the volume, types and presses shortcuts. Typing, shortcuts and closing windows ask **Allow?** on the PC first; it never deletes, runs commands or shuts down. See [pc-helper/README.md](pc-helper/README.md). | 🧪 |
 | 📅 | **Google Calendar and Gmail** *(read-only)* | Today's and tomorrow's events and your 10 latest unread emails. Never sends, deletes or changes anything. Needs a Google client ID set up by the site owner. | 🧪 |
 | 🧠 | **Memory** | Notes you save are sent with chats so answers fit you. Export as JSON. | ✅ |
 | 🗺️ | **Plans and summaries** | Turn a goal into steps or summarize long text. Plans are written, never executed. | ✅ |
@@ -94,7 +95,7 @@
 
 <sub>✅ passes its automated browser tests (Chromium, with a labelled FAKE model) · 🧪 passes its tests with FAKE services, not yet tried with the real provider · ⚪ built, no automated test. None of this is a guarantee for every browser or device; see <a href="docs/FEATURE_MATRIX.md">FEATURE_MATRIX</a>.</sub>
 
-**Not supported** (ATLAS says so instead of pretending): sending email or messages, changing calendar events, acting on your computer, and local models.
+**Not supported** (ATLAS says so instead of pretending): sending email or messages, changing calendar events, controlling a phone or iPad, acting on a computer without the ATLAS PC helper, and local models.
 
 ---
 
@@ -304,7 +305,7 @@ ATLAS_FAKE_MODEL=1 node scripts/netlify/dev-server.mjs  # http://localhost:8888 
 | Browser tests | `node --test netlify/tests/e2e.test.mjs` | Real Chromium (Playwright) at phone size against the preview with FAKE providers |
 | Secret scan | `detect-secrets scan --all-files --exclude-files '(^|/)(\.git\|node_modules\|dist\|tests)/'` | Must report no results |
 
-Latest run (2026-10-28, v0.25.3): **37** function tests and **17** browser tests passed in Chromium; CI job `cloud` runs the same on every push. Details and the list of manual checks still needed: [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
+Latest run (2026-10-28, v0.26.0): **37** function tests, **20** browser tests and **19** PC helper tests passed (Chromium; helper on Windows); CI job `cloud` runs the same on every push. Details and the list of manual checks still needed: [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 
 To refresh the README screenshots: `node scripts/netlify/build.mjs && node scripts/netlify/screenshots.mjs`.
 

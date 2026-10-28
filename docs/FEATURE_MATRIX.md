@@ -4,7 +4,7 @@ States: **Not implemented** · **Partially implemented** · **Implemented** (cod
 
 "Verified (Chromium, FAKE model)" means the browser tests passed in Chromium on Linux with the model provider replaced by a labelled fake. It is **not** evidence that a real provider, Safari or a real phone works.
 
-Last updated: 2026-10-28 (v0.25.3). The PC version (backend, Windows installer, PC actions, local models, document search, local voice, device pairing) was removed in 0.15.0; its rows are in the Git history of this file.
+Last updated: 2026-10-28 (v0.26.0). The PC version (backend, Windows installer, PC actions, local models, document search, local voice, device pairing) was removed in 0.15.0; its rows are in the Git history of this file.
 
 | Feature | Location | Status | Evidence / gap |
 |---|---|---|---|
@@ -39,5 +39,6 @@ Last updated: 2026-10-28 (v0.25.3). The PC version (backend, Windows installer, 
 | Devices: device info, export, import, erase | `app.js` | Verified (Chromium) | e2e: keys left out of export by default, import only takes `atlas.*` text items, erase |
 | Dark and light theme | `theme.js`, `app.css` | Verified (Chromium) | e2e: switch, remembered after reload, Auto follows the device |
 | Neon design, per-screen colours, transitions | `app.css` | Implemented | Checked by screenshots at 390, 1180 and 1440 px in both themes; motion off with "reduce motion" |
+| PC control from Live through the ATLAS PC helper (Windows): pairing code, typed actions, Allow prompts for typing/shortcuts/closing (typing only into the approved window), no shell/delete/shutdown; tools in Gemini Live, OpenAI Realtime and turn by turn (ACTION lines) | `pc-helper/atlas_helper.py`, `pc.js`, `realtime.js`, `app.js` (`renderLive`) | **Verified on the owner's Windows 11 PC (2026-10-28)** with the real helper and real Brave over a local preview: pairing, system info, app list (164 apps), opening Notepad, volume up/down, saving and finding a note, opening Documents, a YouTube search; Allow box **Yes** typed 73 characters exactly, **No** typed nothing; PowerShell, Win+R, `cmd.exe`, a `.ps1` file and unknown actions refused. 19 helper tests, e2e with the helper in FAKE mode | **Not yet:** a real Gemini/OpenAI tool call driving the PC (needs a key in the PC browser), pairing from the live site in Brave/Chrome (local-network permission prompt), `lock_pc`. The .exe is unsigned (SmartScreen warns) |
 | Google Calendar and Gmail, read-only: today's and tomorrow's events, 10 latest unread (sender, subject), Sign out revokes | `google.js`, `app.js` (`googlePanel`), `build.mjs` (`config.json`), `netlify.toml` (CSP, COOP) | Verified (Chromium, FAKE Google sign-in script and FAKE Calendar/Gmail APIs) | e2e: client ID check, read-only scopes, only GETs with the token, metadata only, refused sign-in, expired token, revoke, nothing stored; cloud test: CSP hosts, no client ID in code, function is no proxy. **Not yet tried with Google's real sign-in or APIs**; needs the owner's OAuth client ID. Main calendar only |
 | Sending email or messages, changing calendar events, acting on a computer | — | Not implemented | ATLAS only reads Google data |

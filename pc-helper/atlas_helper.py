@@ -28,6 +28,7 @@ import sys
 import threading
 import time
 import webbrowser
+from collections import deque
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -36,8 +37,10 @@ from urllib.parse import quote_plus, urlsplit
 
 VERSION = '1.0.0'
 PORT = 47823
-# The ATLAS site and its Netlify deploy previews. More can be added with --allow-origin.
-ORIGIN_RE = re.compile(r'^https://([a-z0-9-]+--)?atlas-os-sm\.netlify\.app$')
+# Only the ATLAS site itself. Deploy previews are left out on purpose: anyone can open a pull request
+# on the public repository and get a preview of their own code on a *--atlas-os-sm.netlify.app address.
+# Another address (a local preview) can be added with --allow-origin.
+ORIGIN_RE = re.compile(r'^https://atlas-os-sm\.netlify\.app$')
 CODE_TTL = 10 * 60
 MAX_CODE_TRIES = 5
 MAX_BODY = 16 * 1024
@@ -105,6 +108,9 @@ class WindowsPC:
             self.user32 = ctypes.WinDLL('user32', use_last_error=True)
             self.kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
             self.user32.GetForegroundWindow.restype = wintypes.HWND
+            for fn in ('SetForegroundWindow', 'IsWindow', 'IsIconic'):
+                getattr(self.user32, fn).argtypes = [wintypes.HWND]
+            self.user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
             self.user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 
             class KEYBDINPUT(ctypes.Structure):
@@ -214,6 +220,23 @@ class WindowsPC:
         self.user32.GetWindowTextW(hwnd, buf, 512)
         return buf.value
 
+    def front(self) -> int:
+        """The window in front, as a handle (0 when there is none)."""
+        return int(self.user32.GetForegroundWindow() or 0) if IS_WINDOWS else 0
+
+    def bring_front(self, hwnd: int) -> bool:
+        """Puts that exact window in front again (the Allow box took the focus) and says whether it is."""
+        if not IS_WINDOWS or not hwnd or not self.user32.IsWindow(hwnd):
+            return False
+        if self.user32.IsIconic(hwnd):
+            self.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        for _ in range(15):
+            if self.front() == hwnd:
+                return True
+            self.user32.SetForegroundWindow(hwnd)
+            time.sleep(0.1)
+        return self.front() == hwnd
+
     def battery(self) -> dict | None:
         if not IS_WINDOWS:
             return None
@@ -234,8 +257,12 @@ class WindowsPC:
         flags = 0x4 | 0x30 | 0x100 | 0x1000 | 0x10000 | 0x40000  # YESNO, WARNING, DEFBUTTON2, SYSTEMMODAL, SETFOREGROUND, TOPMOST
         box = getattr(self.user32, 'MessageBoxTimeoutW', None)
         if box:
-            return box(None, question, 'ATLAS wants to act on this PC', flags, 0, CONFIRM_SECONDS * 1000) == 6
-        return self.user32.MessageBoxW(None, question, 'ATLAS wants to act on this PC', flags) == 6
+            answer = box(None, question, 'ATLAS wants to act on this PC', flags, 0, CONFIRM_SECONDS * 1000)
+        else:
+            answer = self.user32.MessageBoxW(None, question, 'ATLAS wants to act on this PC', flags)
+        # 6 = Yes, 7 = No, 32000 = no answer in time. Shown in the helper window, so it is clear what happened.
+        self.last_answer = {6: 'Yes', 7: 'No', 32000: 'no answer in time'}.get(answer, f'box closed ({answer})')
+        return answer == 6
 
 
 class FakePC(WindowsPC):
@@ -275,6 +302,14 @@ class FakePC(WindowsPC):
 
     def active_window(self):
         return 'Untitled - Notepad'
+
+    front_ok = True
+
+    def front(self):
+        return 1
+
+    def bring_front(self, hwnd):
+        return self.front_ok and hwnd == 1
 
     def battery(self):
         return {'percent': 80, 'charging': True}
@@ -406,18 +441,27 @@ class Actions:
         home = self.pc.home()
 
         def run():
+            # Level by level across all the folders, so a big Desktop cannot use up the time before
+            # Documents is looked at (seen on a real PC).
             hits, seen, deadline = [], 0, time.time() + 4
-            for top in [home / f for f in USER_FOLDERS] + sorted(home.glob('OneDrive*')):
-                for root, dirs, files in os.walk(top):
-                    dirs[:] = [d for d in dirs if not d.startswith('.') and d.lower() not in ('appdata', 'node_modules', '$recycle.bin')]
-                    if len(Path(root).relative_to(top).parts) >= 5:
-                        dirs[:] = []
-                    for f in files:
-                        seen += 1
-                        if all(w in _norm(f) for w in words):
-                            hits.append(str(Path(root) / f))
-                    if len(hits) >= 25 or seen > 40000 or time.time() > deadline:
-                        break
+            queue = deque((top, 0) for top in [home / f for f in USER_FOLDERS] + sorted(home.glob('OneDrive*')) if top.is_dir())
+            while queue and len(hits) < 25 and seen <= 40000 and time.time() < deadline:
+                folder, depth = queue.popleft()
+                try:
+                    entries = list(os.scandir(folder))
+                except OSError:
+                    continue
+                for e in entries:
+                    try:
+                        if e.is_dir(follow_symlinks=False):
+                            if depth < 4 and not e.name.startswith('.') and e.name.lower() not in ('appdata', 'node_modules', '$recycle.bin'):
+                                queue.append((Path(e.path), depth + 1))
+                        else:
+                            seen += 1
+                            if all(w in _norm(e.name) for w in words):
+                                hits.append(e.path)
+                    except OSError:
+                        continue
             return {'message': f'Found {len(hits)} file(s).', 'files': hits[:25]}
         return Plan(f'Find files named "{" ".join(words)}"', run)
 
@@ -461,19 +505,34 @@ class Actions:
         mods = [k for k in keys if k in ('ctrl', 'alt', 'shift', 'win')]
         return tuple(sorted(mods, key=['ctrl', 'alt', 'shift', 'win'].index) + [k for k in keys if k not in mods])
 
+    def _in_approved_window(self, do: Callable[[], None]) -> Callable[[], None]:
+        """The Allow box names the window in front now; after Yes, act on exactly that window or not at all.
+        (Seen on a real PC: when the box closed, Windows put a different window in front.)"""
+        hwnd, title = self.pc.front(), self.pc.active_window() or 'the active window'
+
+        def run():
+            if not self.pc.bring_front(hwnd):
+                raise ActionError(f'"{title}" is no longer the window in front, so nothing was done. Click it and ask again.')
+            do()
+        return run
+
     def do_press_keys(self, args):
         keys = self.parse_keys(_str(args, 'keys', 40))
         if keys in BLOCKED_COMBOS or set(keys) >= {'ctrl', 'alt', 'delete'}:
             raise ActionError('That shortcut opens system tools, so ATLAS does not press it.')
         label = '+'.join(keys)
+        ask = keys not in SAFE_COMBOS
+        press = (lambda: self.pc.press(list(keys)))
+        press = self._in_approved_window(press) if ask else press
         return Plan(f'Press {label} in "{self.pc.active_window() or "the active window"}"',
-                    lambda: (self.pc.press(list(keys)), {'message': f'Pressed {label}.'})[1], ask=keys not in SAFE_COMBOS)
+                    lambda: (press(), {'message': f'Pressed {label}.'})[1], ask=ask)
 
     def do_type_text(self, args):
         text = _str(args, 'text', 2000)
         shown = text if len(text) <= 400 else text[:400] + '…'
+        typing = self._in_approved_window(lambda: self.pc.type_text(text))
         return Plan(f'Type into "{self.pc.active_window() or "the active window"}":\n\n{shown}',
-                    lambda: (self.pc.type_text(text), {'message': f'Typed {len(text)} characters.'})[1], ask=True)
+                    lambda: (typing(), {'message': f'Typed {len(text)} characters.'})[1], ask=True)
 
     def do_window(self, args):
         acts = {'show_desktop': ('win', 'd'), 'switch': ('alt', 'tab'), 'maximize': ('win', 'up'), 'minimize': ('win', 'down'),
@@ -482,8 +541,10 @@ class Actions:
         if a not in acts:
             raise ActionError('action must be one of: ' + ', '.join(acts) + '.')
         title = self.pc.active_window() or 'the active window'
+        press = (lambda: self.pc.press(list(acts[a])))
+        press = self._in_approved_window(press) if a == 'close' else press
         return Plan(('Close' if a == 'close' else a.replace('_', ' ').capitalize()) + f' "{title}"',
-                    lambda: (self.pc.press(list(acts[a])), {'message': a.replace('_', ' ').capitalize() + ' done.'})[1], ask=a == 'close')
+                    lambda: (press(), {'message': a.replace('_', ' ').capitalize() + ' done.'})[1], ask=a == 'close')
 
     def do_lock_pc(self, args):
         return Plan('Lock the PC', lambda: (self.pc.lock(), {'message': 'Locked the PC.'})[1])
@@ -589,7 +650,9 @@ class Helper:
                 raise ActionError('Another Allow box is already open on the PC. Answer that one first.')
             try:
                 self.say(f'  [{stamp}] ASKING: {plan.summary}')
-                if not self.pc.confirm(plan.summary + '\n\nAllow this?'):
+                allowed = self.pc.confirm(plan.summary + '\n\nAllow this?')
+                self.say(f'  [{stamp}] answer: {getattr(self.pc, "last_answer", "Yes" if allowed else "No")}')
+                if not allowed:
                     self.say(f'  [{stamp}] not allowed')
                     return {'ok': False, 'denied': True, 'message': 'Not allowed: the user said No on the PC (or did not answer).'}
             finally:
@@ -770,6 +833,9 @@ def main(argv=None) -> int:
     print(f'  Paired browsers: {len(helper.config["tokens"])}.  P = new pairing code, U = unpair all, Q = quit.')
     print('  Close this window to stop ATLAS controlling this PC.')
     helper.new_code()
+    if not a.fake:
+        # Windows takes several seconds to list the Start menu the first time; do it now, not on the first request.
+        threading.Thread(target=pc.apps, daemon=True).start()
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
     try:

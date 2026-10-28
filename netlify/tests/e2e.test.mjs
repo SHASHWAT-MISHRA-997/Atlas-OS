@@ -732,6 +732,19 @@ test('Test my voice setup: each step runs on its own and shows pass or fail with
     });
   }
   await page.addInitScript(() => {
+    // A microphone with steady sound, so the one-second recording always contains something.
+    const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async (c) => {
+      if (!c || !c.audio || c.video) return real(c);
+      const ctx = new AudioContext();
+      const out = ctx.createMediaStreamDestination();
+      const g = ctx.createGain();
+      g.gain.value = 0.3;
+      const o = ctx.createOscillator();
+      o.connect(g).connect(out);
+      o.start();
+      return out.stream;
+    };
     if (!localStorage.getItem('atlas.cloud.key.gemini')) localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-test-check-key'));
     if (!localStorage.getItem('atlas.cloud.key.groq')) localStorage.setItem('atlas.cloud.key.groq', JSON.stringify('gsk_check_key_123'));
   });
@@ -896,8 +909,11 @@ test('a browser without a speech service (Brave): Dictate and Live record and th
       const ctx = new AudioContext();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.5, ctx.currentTime);
-      gain.gain.setValueAtTime(0, ctx.currentTime + 1);
+      // Quiet, then one second of sound starting 0.8 s after the microphone is on (like someone
+      // starting to speak), then quiet again.
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.setValueAtTime(0.5, ctx.currentTime + 0.8);
+      gain.gain.setValueAtTime(0, ctx.currentTime + 1.8);
       const out = ctx.createMediaStreamDestination();
       osc.connect(gain).connect(out);
       osc.start();
@@ -917,6 +933,10 @@ test('a browser without a speech service (Brave): Dictate and Live record and th
   assert.equal(sent[0].provider, 'groq');
   assert.equal(sent[0].api_key, 'gsk_brave_key_123');
   assert.ok(sent[0].audio.startsWith('UklGR'), 'a WAV recording');
+  // One second of sound, then silence: the silence after it is cut off (Whisper writes words like
+  // "Thank you." for silence), keeping about 0.4 s before and 0.3 s after the sound.
+  const seconds = (Buffer.from(sent[0].audio, 'base64').length - 44) / 32000;
+  assert.ok(seconds > 0.9 && seconds < 2.1, 'recording of ' + seconds + ' s');
   await page.click('#chatsettings summary');
   await page.selectOption('#atlasmodelpick', 'fake-large');
   await go(page, 'live');
@@ -1223,6 +1243,77 @@ test('Google Calendar and Gmail: read-only sign-in, today and tomorrow, 10 unrea
   await go(page, 'integrations');
   await page.waitForSelector('#googleconnect:not([disabled])');
   assert.equal(await page.locator('#googleevents').count(), 0);
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+test('Live typing: a question typed before tapping the orb starts real-time voice and reaches Gemini once it is ready', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  // FAKE Gemini Live that, like the real one on a phone, takes a moment to finish setting up.
+  const got = [];
+  await page.routeWebSocket(/^wss:\/\/generativelanguage\.googleapis\.com\//, (ws) => {
+    ws.onMessage((raw) => {
+      const msg = JSON.parse(String(raw));
+      got.push(msg);
+      if (msg.setup) setTimeout(() => ws.send(JSON.stringify({ setupComplete: {} })), 1500);
+      if (msg.clientContent) {
+        ws.send(JSON.stringify({ serverContent: { outputTranscription: { text: 'FAKE the capital is New Delhi' } } }));
+        ws.send(JSON.stringify({ serverContent: { turnComplete: true } }));
+      }
+    });
+  });
+  await page.addInitScript(() => { if (!localStorage.getItem('atlas.cloud.key.gemini')) localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-test-typing-key')); });
+  await page.goto(base + '/');
+  await go(page, 'live');
+  await page.waitForSelector('#livemode');
+  assert.equal(await page.inputValue('#livemode'), 'realtime');
+  // Typed without tapping the orb: Live starts by itself.
+  await page.fill('#livetyped', 'capital of India?');
+  await page.press('#livetyped', 'Enter');
+  await page.waitForSelector('#liveheard >> text=capital of India?');
+  await page.waitForSelector('#livesaid >> text=FAKE the capital is New Delhi', { timeout: 15000 });
+  const setupAt = got.findIndex((m) => m.setup);
+  const textAt = got.findIndex((m) => m.clientContent);
+  assert.ok(setupAt >= 0 && textAt > setupAt, 'the text goes after the setup');
+  assert.deepEqual(got[textAt].clientContent.turns[0].parts, [{ text: 'capital of India?' }]);
+  assert.equal(got.filter((m) => m.clientContent).length, 1, 'sent once, not lost and not twice');
+  // Typed again while connecting after End and a new tap: it waits and is sent once Gemini is ready.
+  await page.click('#liveend');
+  await page.click('#liveorb');
+  await page.fill('#livetyped', 'second question');
+  await page.press('#livetyped', 'Enter');
+  for (let i = 0; i < 50 && got.filter((m) => m.clientContent).length < 2; i += 1) await page.waitForTimeout(100);
+  assert.deepEqual(got.filter((m) => m.clientContent)[1].clientContent.turns[0].parts, [{ text: 'second question' }]);
+  await page.click('#liveend');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+test('Test my voice setup with a silent microphone: the Whisper guess for silence is shown as a guess and ignored', async () => {
+  const page = await phone({ serviceWorkers: 'block' });
+  await page.addInitScript(() => {
+    localStorage.setItem('atlas.cloud.key.groq', JSON.stringify('gsk_silent_mic_key'));
+    localStorage.setItem('atlas.os.chat.settings.v1', JSON.stringify({ provider: 'groq', model: 'fake-large' }));
+    // A microphone that hears nothing at all.
+    navigator.mediaDevices.getUserMedia = async (c) => {
+      const ctx = new AudioContext();
+      const out = ctx.createMediaStreamDestination();
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      const o = ctx.createOscillator();
+      o.connect(g).connect(out);
+      o.start();
+      return out.stream;
+    };
+  });
+  await page.goto(base + '/');
+  await go(page, 'live');
+  await page.click('#livetest');
+  await page.waitForSelector('#livestatus >> text=Voice check done', { timeout: 30000 });
+  const row = await page.textContent('#livetestresults li[data-step=transcribe]');
+  assert.match(row, /PASS/);
+  assert.match(row, /The second was silent, so nothing was said \(Whisper guessed "FAKE heard speech" for the silence; ATLAS ignores that/);
+  assert.doesNotMatch(row, /Heard:/);
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });

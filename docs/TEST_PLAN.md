@@ -16,12 +16,13 @@ Fakes live only in tests and in the preview server behind `ATLAS_FAKE_MODEL=1`; 
 
 ## Latest report
 
-Date: 2026-10-28, v0.25.3. Environment: Windows 11, Node 24, Playwright 1.64 Chromium (headless); CI runs the same on Linux with Node 22. **Not Safari.**
+Date: 2026-10-28, v0.26.0. Environment: Windows 11, Node 24, Playwright 1.64 Chromium (headless); CI runs the same on Linux with Node 22. **Not Safari.**
 
 | Command | Passed | Failed |
 |---|---|---|
 | `node --test netlify/tests/cloud.test.mjs netlify/tests/attack.test.mjs netlify/tests/budget.test.mjs` | 37 | 0 |
-| `node --test netlify/tests/e2e.test.mjs` | 17 | 0 |
+| `node --test netlify/tests/e2e.test.mjs` (set `PYTHON=python` on Windows for the PC helper test) | 20 | 0 |
+| `python -m unittest test_atlas_helper` (in `pc-helper/`, Windows 11) | 19 | 0 |
 | `detect-secrets scan` (excluding tests, node_modules, dist) | no findings | — |
 
 ## Against the real services, without a key (2026-10-28, live site)
@@ -41,6 +42,19 @@ Each provider was called through the live function (or directly, for the WebSock
 2026-10-28 run of `provider-check.mjs`: 14 passed, 0 failed. Real browsers on the owner's PC (Windows 11): **Brave 1.98 (Chromium 156, `navigator.brave` true), Chrome 156 and Edge 156 each passed all 17 browser tests.**
 
 Not covered: a successful answer, a real voice, real Calendar/Gmail data and quotas, which need the owner's own keys and Google client ID.
+
+## PC control on the owner's Windows PC (2026-10-28, real helper, real Brave, local preview)
+
+| Action | Result |
+|---|---|
+| Pair with the 6-digit code | paired |
+| system_info, list_apps | PC name, battery, 164 Start menu apps (first list 13–17 s, now loaded at start) |
+| open_app Notepad, media volume up/down, open_folder Documents, web_search YouTube | done |
+| write_note, then find_files | first run: **not found** (a big Desktop used up the 4 s) → fixed: found in `Documents\ATLAS Notes` |
+| type_text, Allow box | first run: the box named a Brave tab but the text went into Notepad → **fixed** (only the approved window). Then, in a test window that records keys: **Yes → 73/73 characters exactly**, **No → nothing typed** |
+| open PowerShell, Win+R, `C:\Windows\System32\cmd.exe`, `Documents\evil.ps1`, `run_command` | all refused, no box |
+
+Not covered: a real Gemini/OpenAI tool call (needs a key in the PC browser), pairing from the live site (Chrome/Brave local-network permission), `lock_pc`.
 
 ## With the owner's real keys, on the owner's phone (2026-10-28)
 
