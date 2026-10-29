@@ -1,4 +1,4 @@
-# Handoff — 2026-10-29 (v0.29.0)
+# Handoff — 2026-10-29 (v0.29.1)
 
 ## State
 
@@ -11,6 +11,7 @@
 
 ## Recent versions
 
+- v0.29.1: with the PC paired, Live offers only the PC tools (real Gemini picked a phone button for "open YouTube" on the owner's PC). Next: the owner retries "Notepad kholo", "Volume thoda badhao" and "Notepad mein likho: Hello from ATLAS" in Brave.
 - v0.29.0: "Test my voice setup" removed from Live at the owner's request (button, results list, `AtlasRealtime.probe`, the fixed-length recording, its tests and screenshot). Live errors still name the failed step and what to do.
 - v0.28.0: Google Calendar and Gmail and the "Calendar, email, messaging" tile removed at the owner's request; CSP and COOP tightened back.
 - v0.27.1: phone actions fixed against real Gemini Live (stricter tool instruction; `call_phone` renamed `dial_number` because Google's server failed on it).

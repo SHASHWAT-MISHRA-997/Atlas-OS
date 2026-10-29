@@ -2330,9 +2330,11 @@
       return { ok: false, message: 'There is no tool called ' + name + ' here.' };
     }
     /** Tools for the real-time services: phone actions always, PC actions when the helper is on. */
-    const liveTools = (pcOn) => (PHONE || pcOn ? {
-      gemini: [{ functionDeclarations: [...(PHONE ? PHONE.geminiDecls() : []), ...(pcOn ? PC.geminiTools()[0].functionDeclarations : [])] }],
-      openai: [...(PHONE ? PHONE.openaiTools() : []), ...(pcOn ? PC.openaiTools() : [])],
+    // With the PC paired, only the PC tools: they act directly. Offered together with the phone tools,
+    // the real Gemini picked the phone's "tap this button" tool for "open YouTube" on the owner's PC.
+    const liveTools = (pcOn) => (pcOn ? { gemini: PC.geminiTools(), openai: PC.openaiTools() } : PHONE ? {
+      gemini: [{ functionDeclarations: PHONE.geminiDecls() }],
+      openai: PHONE.openaiTools(),
     } : null);
     const NO_PC = 'You cannot act on the user\'s device beyond these tools; never claim you did.';
     if (PC) {
@@ -2505,8 +2507,7 @@
       const pcOn = await pcReady();
       const system = 'You are ATLAS OS in Live voice mode. Answer in one to three short spoken sentences, with no markdown or lists, in the language the user speaks (English, Hindi or Hinglish). ' +
         (picture ? 'The attached image is the current view of the user\'s ' + picture.name.replace('.jpg', '') + ': describe only what you can actually see, and say so when it is unclear. ' : 'Do not mention images or attachments. ') +
-        (pcOn ? PC.textPrompt() + ' ' : '') + (PHONE ? PHONE.PROMPT + (pcOn ? 'Phone tools: ' + PHONE.describe() : 'To use a tool, reply with only one line: ACTION {"name": "<tool>", "args": {...}} and nothing else; you will get the result back. Tools: ' + PHONE.describe()) + ' ' : '') +
-        (pcOn ? '' : NO_PC);
+        (pcOn ? PC.textPrompt() : (PHONE ? PHONE.PROMPT + 'To use a tool, reply with only one line: ACTION {"name": "<tool>", "args": {...}} and nothing else; you will get the result back. Tools: ' + PHONE.describe() + ' ' : '') + NO_PC);
       const messages = [{ role: 'system', content: system }, ...state.turns.slice(-10), { role: 'user', content: text, ...(picture ? { attachments: [picture] } : {}) }];
       try {
         let data;
@@ -2547,7 +2548,7 @@
       'Reply in the language the user speaks (English, Hindi or Hinglish). When you get camera or screen pictures, describe only what you can actually see, and say so when it is unclear. ' +
       'You cannot act on the user\'s device, open apps or send messages; never claim you did.';
     // With PC control, the "cannot act" rule is swapped for what the PC tools can and cannot do.
-    const rtSystem = (pcOn) => RT_SYSTEM.replace(/You cannot act on the user's device[^]*$/, '') + (PHONE ? PHONE.PROMPT : '') + (pcOn ? PC.PROMPT : NO_PC);
+    const rtSystem = (pcOn) => RT_SYSTEM.replace(/You cannot act on the user's device[^]*$/, '') + (pcOn ? PC.PROMPT : (PHONE ? PHONE.PROMPT : '') + NO_PC);
 
     async function startRealtime() {
       const svc = service();

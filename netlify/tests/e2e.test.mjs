@@ -996,6 +996,9 @@ test('PC control: pairs with the ATLAS PC helper, Gemini Live opens an app on th
     const decls = setup.tools[0].functionDeclarations;
     assert.ok(decls.some((d) => d.name === 'open_app' && d.parameters.type === 'OBJECT'));
     assert.ok(decls.some((d) => d.name === 'lock_pc' && !d.parameters), 'no empty OBJECT for Gemini');
+    // With the PC paired, the phone's "tap a button" tools are not offered (real Gemini picked them for "open YouTube").
+    assert.ok(!decls.some((d) => ['open_website', 'play_youtube', 'dial_number', 'navigate_to'].includes(d.name)), decls.map((d) => d.name).join());
+    assert.doesNotMatch(setup.systemInstruction.parts[0].text, /tap the button/);
     assert.match(setup.systemInstruction.parts[0].text, /ATLAS PC helper/);
     assert.doesNotMatch(setup.systemInstruction.parts[0].text, /You cannot act on the user's device/);
     await page.fill('#livetyped', 'notepad kholo');

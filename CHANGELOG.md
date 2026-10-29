@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.1 — 2026-10-29
+
+From the owner's own test of PC control in Brave:
+- **Fix: Live asked you to tap a button instead of acting on the PC.** With the PC paired, "open YouTube" got a phone-style "Open website" card, because Live offered the phone actions and the PC tools together and the real Gemini picked the phone one. When the PC helper is paired, Live now offers only the PC tools (and the PC instructions); the phone actions are offered when it is not.
+- Not tried against the real Gemini Live service: the PC-only tool list was tested with the FAKE Gemini server (no phone tools and no "tap the button" instruction while paired). The owner's retest in Brave is the real check.
+
 ## 0.29.0 — 2026-10-29
 
 At the owner's request:
