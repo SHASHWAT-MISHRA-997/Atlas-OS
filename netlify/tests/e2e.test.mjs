@@ -1060,6 +1060,33 @@ test('PC control: pairs with the ATLAS PC helper, Gemini Live opens an app on th
   }
 });
 
+test('PC control blocked by the browser: Brave is told to allow Localhost access, other browsers their setting', async () => {
+  for (const brave of [true, false]) {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    // FAKE block: every request to the helper fails, as when Brave's Localhost access is not allowed.
+    await page.route(/^http:\/\/127\.0\.0\.1:47823\//, (route) => route.abort('blockedbyclient'));
+    await page.addInitScript((isBrave) => {
+      if (isBrave) Object.defineProperty(navigator, 'brave', { value: { isBrave: async () => true } });
+      localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-test-pc-key'));
+    }, brave);
+    await page.goto(base + '/');
+    await go(page, 'live');
+    await page.click('#livepc');
+    await page.fill('#livepccode', '123456');
+    await page.click('#livepcpair');
+    await page.waitForSelector('#livepctext >> text=Could not reach the ATLAS helper');
+    const text = await page.textContent('#livepctext');
+    assert.match(text, /Open AtlasHelper on this PC/);
+    if (brave) assert.match(text, /Localhost access to Allow.*brave:\/\/settings\/content\/localhostAccess/);
+    else assert.match(text, /Local network access|allow it for this site/);
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+});
+
 test('Live typing: a question typed before tapping the orb starts real-time voice and reaches Gemini once it is ready', async () => {
   const page = await phone({ serviceWorkers: 'block' });
   // FAKE Gemini Live that, like the real one on a phone, takes a moment to finish setting up.
