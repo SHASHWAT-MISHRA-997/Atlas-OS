@@ -74,16 +74,12 @@ try {
 
   await page.context().close();
 
-  // Phone: Home, Live with the voice check, System (light).
+  // Phone: Home, Live, then Home and AI Chat (light).
   page = await open('dark', PHONE);
   await snap(page, 'home-phone-dark');
   await go(page, 'live');
   await page.waitForSelector('#liveorb');
   await snap(page, 'live-phone-dark');
-  await page.click('#livetest');
-  await page.waitForSelector('#livestatus >> text=Voice check done', { timeout: 30000 });
-  await page.locator('#livetestresults').scrollIntoViewIfNeeded();
-  await snap(page, 'voice-check-phone-dark');
   await page.context().close();
 
   page = await open('light', PHONE);

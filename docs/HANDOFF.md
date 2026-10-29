@@ -1,4 +1,4 @@
-# Handoff — 2026-10-29 (v0.28.0)
+# Handoff — 2026-10-29 (v0.28.1)
 
 ## State
 
@@ -11,6 +11,7 @@
 
 ## Recent versions
 
+- v0.28.1: with the PC paired, Live offers only the PC tools (real Gemini picked a phone button for "open YouTube" on the owner's PC); "Test my voice setup" removed at the owner's request.
 - v0.28.0: Google Calendar and Gmail and the "Calendar, email, messaging" tile removed at the owner's request; CSP and COOP tightened back.
 - v0.27.1: phone actions fixed against real Gemini Live (stricter tool instruction; `call_phone` renamed `dial_number` because Google's server failed on it).
 - v0.27.0: phone actions in Live (one-tap call, SMS, WhatsApp, Maps, YouTube, website, share); Microsoft Store readiness (privacy page, manifest); WebKit run.
@@ -33,11 +34,11 @@
 
 - At v0.22.1 (start of the session): 32 function/attack/size tests and 15 browser tests passed.
 - At v0.27.0: 38 function/attack/size tests, 23 browser tests and 19 PC helper tests pass; the secret scan reports nothing; first load is 75.1 KB gzipped at v0.28.0 (budget 80 KB).
-- Real services were checked with invalid keys (daily `Provider check`), Test my voice setup passed on the owner's Android phone with real keys, the browser tests passed in real Brave, Chrome and Edge, and the PC helper was tested for real on the owner's Windows PC. Not in Safari.
+- Real services were checked with invalid keys (daily `Provider check`), the voice check (removed in 0.28.1) passed on the owner's Android phone with real keys, the browser tests passed in real Brave, Chrome and Edge, and the PC helper was tested for real on the owner's Windows PC. Not in Safari.
 
 ## Next tasks, in order
 
 1. Google Calendar and Gmail were removed in 0.28.0 at the owner's request (also the Google Cloud project `atlas-os-513012` and the Netlify variable `ATLAS_GOOGLE_CLIENT_ID`).
-2. The owner runs **Live → Test my voice setup** with real Gemini and Groq keys on the PC (Brave) and the phone, and sends the text of any FAIL.
+2. The owner tries Live with the PC paired: "Notepad kholo", "Volume thoda badhao", "Notepad mein likho: Hello from ATLAS"; Gemini should act on the PC (with an Allow box for typing), not show a phone button.
 3. The owner sends a real chat with their own key on the live site, including a photo, a PDF (Gemini) and a thinking level.
 4. The owner makes the repository private and protects `main` (only the `cloud` check) in GitHub settings.

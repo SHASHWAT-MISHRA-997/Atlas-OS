@@ -28,7 +28,7 @@
 
 > [!NOTE]
 > **ATLAS OS is a web app, not an operating system, and it is not production-ready.** It is built and
-> tested by one developer. Everything on this page describes what exists today (v0.28.0). Features
+> tested by one developer. Everything on this page describes what exists today (v0.28.1). Features
 > marked 🧪 pass their automated tests with **FAKE** AI services but have **not yet been tried against
 > the real provider**. The full, honest status of every feature is in
 > [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md).
@@ -55,14 +55,6 @@
     <td align="center"><b>Live</b> — tap the orb and talk; camera and screen share</td>
   </tr>
   <tr>
-    <td><img src="docs/images/chat-phone-light.png" alt="AI Chat on a phone in the light theme"></td>
-    <td><img src="docs/images/voice-check-phone-dark.png" alt="Test my voice setup: four steps with PASS results"></td>
-  </tr>
-  <tr>
-    <td align="center"><b>AI Chat on a phone</b></td>
-    <td align="center"><b>Test my voice setup</b> — every step, pass or fail</td>
-  </tr>
-  <tr>
     <td><img src="docs/images/chat-phone-light.png" alt="AI Chat on a phone in the light theme" width="49%"> <img src="docs/images/home-phone-light.png" alt="Home on a phone in the light theme" width="49%"></td>
     <td align="center"><b>Light theme</b><br>Dark, light, or follow the device. Each screen has its own accent colour.</td>
   </tr>
@@ -81,7 +73,6 @@
 | 🎙️ | **Live — real-time voice** | With a free Google Gemini key: streaming voice like the Gemini app, 8 voices, talk over it to interrupt, camera or shared screen. | 🧪 |
 | 🗣️ | **Live — ChatGPT voice** *(paid, optional)* | OpenAI's Realtime API with your own OpenAI key — only after you tick that it is billed to you. | 🧪 |
 | 🔄 | **Live — turn by turn** | Works with any provider: listen → answer → speak, with a picture from the camera when it is on. | ✅ |
-| 🩺 | **Test my voice setup** | Checks each part of voice separately and shows the provider's exact error and what to do. | 🧪 |
 | 🔊 | **Natural voice** | Answers read aloud in Gemini's natural voices with a Gemini key; otherwise the best voice your browser has. | 🧪 |
 | ⌨️ | **Dictate anywhere** | Chrome, Edge and Safari use their own speech service. In **Brave and Firefox**, your Groq or Gemini key writes down what you say. | ✅ |
 | 🖥️ | **PC control in Live** *(Windows)* | With the free ATLAS PC helper running on your PC and paired with a 6-digit code, Live opens apps, websites and files, searches YouTube, plays music, changes the volume, types and presses shortcuts. Typing, shortcuts and closing windows ask **Allow?** on the PC first; it never deletes, runs commands or shuts down. See [pc-helper/README.md](pc-helper/README.md). | 🧪 |
@@ -184,21 +175,6 @@ sequenceDiagram
     end
     You->>App: End
     Note over App: Only the text is saved to chat history — never audio or pictures
-```
-
-</details>
-
-<details>
-<summary><b>🩺 What "Test my voice setup" checks</b></summary>
-
-```mermaid
-flowchart LR
-    S([Test my voice setup]) --> M["1 · Real-time models<br/>for your Gemini key"]
-    M -->|model found| W["2 · Gemini Live connection<br/>wait for setupComplete"]
-    M -->|failed| WS[2 · skipped]
-    S --> V["3 · Natural voice<br/>/cloud/speak + play it"]
-    S --> T["4 · Record 1 second<br/>/cloud/transcribe"]
-    W & WS & V & T --> R[/"PASS · FAIL · WARN · SKIPPED<br/>with the provider's exact words<br/>and what to do"/]
 ```
 
 </details>

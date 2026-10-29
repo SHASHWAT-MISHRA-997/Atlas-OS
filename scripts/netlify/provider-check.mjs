@@ -56,7 +56,7 @@ await check('gemini: speech refuses a wrong key', async () => {
   const r = await cloud('speak', { provider: 'gemini', api_key: BAD.gemini, text: 'hello', voice: 'Puck' });
   return expect(r.status === 502 && /Check your API key/.test(r.data.detail || ''), r.status + ' ' + (r.data.detail || '').slice(0, 160));
 });
-// One second of 16 kHz silence as a WAV file, like the app's voice check.
+// One second of 16 kHz silence as a WAV file.
 const n = 16000;
 const wav = Buffer.alloc(44 + n * 2);
 wav.write('RIFF', 0); wav.writeUInt32LE(36 + n * 2, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);

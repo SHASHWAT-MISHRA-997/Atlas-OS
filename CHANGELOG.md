@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.28.1 — 2026-10-29
+
+From the owner's own test of PC control in Brave, and at their request ("remove permanently test for voice setup"):
+- **Fix: Live asked you to tap a button instead of acting on the PC.** With the PC paired, "open YouTube" got a phone-style "Open website" card, because Live offered the phone actions and the PC tools together and the real Gemini picked the phone one. When the PC helper is paired, Live now offers only the PC tools (and the PC instructions); the phone actions are offered when it is not.
+- **Removed "Test my voice setup"** from Live: the button, its results list, its connection check in `realtime.js`, its two browser tests, its screenshot (README and app manifest) and its README diagram. Live's error messages no longer point to it; they say what to check instead. The function's speech tests stay.
+- Not tried against real services in this release: the PC-only tool list with the real Gemini Live service (tested with the FAKE Gemini server: no phone tools are offered while paired). The owner's retest in Brave is the real check.
+
 ## 0.28.0 — 2026-10-29
 
 At the owner's request ("ye calendar and gmail permanently delete kardo", "also messaging remove"):

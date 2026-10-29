@@ -23,8 +23,7 @@ browser                                          Netlify
   browser: chat, model lists, speech (`/speak`) and transcription (`/transcribe`) go to the
   function; tasks run in the page and are saved in localStorage; auto-switch between free providers
   happens here, so each key only ever travels to its own provider.
-- `frontend/static/realtime.js` and `live-worklet.js`: loaded only on the Live screen (and by
-  "Test my voice setup"). Real-time voice over a WebSocket straight from the browser to Google's
+- `frontend/static/realtime.js` and `live-worklet.js`: loaded only on the Live screen. Real-time voice over a WebSocket straight from the browser to Google's
   Gemini Live API or, when the user picks it and ticks that it is billed, OpenAI's Realtime API.
   The worklet captures the microphone as 16-bit PCM; Dictate and turn-by-turn Live use it too in
   browsers without a speech service (Brave, Firefox).
