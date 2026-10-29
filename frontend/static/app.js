@@ -2250,7 +2250,7 @@
         if (!h.paired) { await PC.unpair(); pcText.textContent = 'This browser is no longer paired (it was unpaired on the PC). Pair again with a new code.'; refreshPC(); return; }
         pcText.textContent = base + ' The ATLAS helper is running.';
       } catch (err) {
-        pcText.textContent = base + ' ' + err.message + ' Open AtlasHelper on this PC.';
+        pcText.textContent = base + ' ' + err.message;
       }
     }
     /** Paired, switched on, and the helper answers: then Live gets the PC tools. */
@@ -2356,7 +2356,7 @@
           await refreshPC(true);
           status.textContent = 'PC control is on.' + (state.running ? ' It starts the next time you start Live.' : '');
         } catch (err) {
-          pcText.textContent = err.message + (err.offline ? ' Open AtlasHelper on this PC first.' : '');
+          pcText.textContent = err.message;
         } finally {
           pcPair.disabled = false;
         }

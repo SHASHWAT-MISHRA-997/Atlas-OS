@@ -51,6 +51,26 @@
     try { if (v) localStorage.setItem(TOKEN_KEY, JSON.stringify(v)); else localStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked */ }
   }
 
+  /**
+   * What to do when the browser could not reach the helper at all. The browser does not say
+   * whether the helper is closed or the site was blocked from this PC, so both are named,
+   * with the setting for this browser (Brave blocked it on the owner's PC until "Localhost access" was allowed).
+   */
+  async function blockedHint() {
+    let denied = false;
+    try { denied = (await navigator.permissions.query({ name: 'local-network-access' })).state === 'denied'; } catch { /* not in this browser */ }
+    if (navigator.brave) {
+      return 'In Brave, this site must be allowed to reach this PC: click the icon left of the address, open Site settings, set Localhost access to Allow (or go to brave://settings/content/localhostAccess), then reload the page.';
+    }
+    if (denied) {
+      return 'This browser is blocking this site from reaching this PC: click the icon left of the address, open Site settings, set Local network access to Allow, then reload the page.';
+    }
+    if (/Chrome|Edg\//.test(navigator.userAgent)) {
+      return 'If the browser asked to let this site access devices on your local network, allow it (Site settings, Local network access), then reload the page.';
+    }
+    return 'If your browser blocks sites from reaching this PC, allow it for this site, then reload the page.';
+  }
+
   async function call(path, { method = 'GET', body, timeout = 4000 } = {}) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeout);
@@ -63,7 +83,8 @@
         body: body ? JSON.stringify(body) : undefined,
       });
     } catch (err) {
-      const e = new Error(err.name === 'AbortError' ? 'The ATLAS helper did not answer in time.' : 'The ATLAS helper is not running on this PC (or the browser blocked it).');
+      const e = new Error(err.name === 'AbortError' ? 'The ATLAS helper did not answer in time. Check that AtlasHelper is open on this PC.'
+        : 'Could not reach the ATLAS helper. Open AtlasHelper on this PC if it is closed. ' + await blockedHint());
       e.offline = true;
       throw e;
     } finally {

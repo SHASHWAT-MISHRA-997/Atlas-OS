@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.2 — 2026-10-29
+
+From pairing on the owner's PC, where Brave silently blocked the site from reaching the helper:
+- **Clearer message when the PC helper cannot be reached.** It used to say only that the helper "is not running (or the browser blocked it)". It now says to open AtlasHelper if it is closed, and how to allow the site for this browser: in Brave, Site settings → Localhost access → Allow (or `brave://settings/content/localhostAccess`); in Chrome and Edge, Local network access; then reload.
+- Tested with a FAKE block in the browser test (Brave and non-Brave). Not tried in a real Chrome or Edge that blocks local network access.
+
 ## 0.29.1 — 2026-10-29
 
 From the owner's own test of PC control in Brave:
