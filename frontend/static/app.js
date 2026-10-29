@@ -1780,8 +1780,7 @@
         node.port.onmessage = (e) => {
           const now = Date.now();
           onLevel(e.data.level);
-          const pcm = new Int16Array(e.data.pcm);
-          kept.push(pcm);
+          kept.push(new Int16Array(e.data.pcm));
           if (!spoke && kept.length > 4) kept.shift(); // keep a little sound from just before speech
           if (e.data.level > SPEECH_LEVEL) { spoke = true; quietSince = 0; lastLoud = kept.length - 1; } else if (!quietSince) quietSince = now;
           if ((spoke && quietSince && now - quietSince > 1200) || now - started > 30000 || (!spoke && now - started > 8000)) finish();
@@ -2330,7 +2329,7 @@
       if (PC && PC.enabled()) return pcTool(name, args);
       return { ok: false, message: 'There is no tool called ' + name + ' here.' };
     }
-    /** Tools for the real-time services: the PC tools when the helper is on, otherwise the phone actions. */
+    /** Tools for the real-time services: phone actions always, PC actions when the helper is on. */
     // With the PC paired, only the PC tools: they act directly. Offered together with the phone tools,
     // the real Gemini picked the phone's "tap this button" tool for "open YouTube" on the owner's PC.
     const liveTools = (pcOn) => (pcOn ? { gemini: PC.geminiTools(), openai: PC.openaiTools() } : PHONE ? {
@@ -2480,7 +2479,7 @@
     async function speak(text) {
       setState('speaking', 'Speaking… tap to interrupt');
       const r = await speakAloud(text, { lang });
-      if (r.error) status.textContent += ' Speaking in the natural voice failed: ' + r.error + ' Your browser\'s voice spoke instead. What to do: check the Gemini key in AI Chat → Model settings.';
+      if (r.error) status.textContent += ' Speaking in the natural voice failed: ' + r.error + ' Your browser\'s voice spoke instead. What to do: check the voice key in AI Chat → Model settings.';
     }
 
     async function ask(text) {
@@ -2603,8 +2602,8 @@
               if (info && info.step === 'connect') {
                 failed('Connecting to ' + label + ' (' + liveModel + ')', reason, svc === 'openai'
                   ? 'check your OpenAI key, that your OpenAI account has credit, and your internet; then tap the orb again.'
-                  : 'check your Gemini key, that today\'s free Live limit is not used up, and your internet; then tap the orb again.');
-              } else failed('The ' + label + ' conversation', reason, 'tap the orb to start again; if it keeps stopping, check your internet and the key.');
+                  : 'check your Gemini key, that today\'s free Live limit is not used up, and your internet.');
+              } else failed('The ' + label + ' conversation', reason, 'tap the orb to start again; if it keeps stopping, check your key and internet.');
             },
           },
         });
@@ -2627,7 +2626,6 @@
       status.textContent = 'Live with ' + label + ' (' + liveModel + '). ' + (typedStart ? 'The microphone is muted because you typed; tap Unmute to talk.' : 'Talk any time; speak over it to interrupt.') + (pcOn ? ' PC control is on.' : '') + (svc === 'openai' ? ' Billed to your OpenAI account while on.' : '');
       log('live real-time started with ' + liveModel);
     }
-
 
     function start() {
       if (!ready()) { applySetup(); status.textContent = setupText.textContent; (setupKeyRow.classList.contains('hidden') ? setupChat : setupKey).focus(); return; }

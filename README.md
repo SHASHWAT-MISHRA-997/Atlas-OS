@@ -28,7 +28,7 @@
 
 > [!NOTE]
 > **ATLAS OS is a web app, not an operating system, and it is not production-ready.** It is built and
-> tested by one developer. Everything on this page describes what exists today (v0.28.1). Features
+> tested by one developer. Everything on this page describes what exists today (v0.29.1). Features
 > marked 🧪 pass their automated tests with **FAKE** AI services but have **not yet been tried against
 > the real provider**. The full, honest status of every feature is in
 > [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md).
@@ -55,8 +55,12 @@
     <td align="center"><b>Live</b> — tap the orb and talk; camera and screen share</td>
   </tr>
   <tr>
-    <td><img src="docs/images/chat-phone-light.png" alt="AI Chat on a phone in the light theme" width="49%"> <img src="docs/images/home-phone-light.png" alt="Home on a phone in the light theme" width="49%"></td>
-    <td align="center"><b>Light theme</b><br>Dark, light, or follow the device. Each screen has its own accent colour.</td>
+    <td><img src="docs/images/chat-phone-light.png" alt="AI Chat on a phone in the light theme"></td>
+    <td><img src="docs/images/home-phone-light.png" alt="Home on a phone in the light theme"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>AI Chat on a phone</b></td>
+    <td align="center"><b>Light theme</b> — dark, light, or follow the device</td>
   </tr>
 </table>
 

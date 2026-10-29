@@ -378,7 +378,7 @@ test('Calendar and Gmail were removed: no Google sign-in, Calendar or Gmail host
   assert.equal(t.calls.length, 0);
 });
 
-test('speech: a real 1-second WAV is accepted, and failing speech and transcription return the provider\'s own words', async () => {
+test('speech endpoints: a real 1-second WAV is accepted, and every failing step returns the provider\'s own words', async () => {
   // One second of 16 kHz mono 16-bit silence, built the same way as the app's recorder.
   const n = 16000;
   const wav = Buffer.alloc(44 + n * 2);

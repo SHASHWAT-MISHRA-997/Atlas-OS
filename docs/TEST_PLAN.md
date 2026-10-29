@@ -58,7 +58,7 @@ Not covered: a real Gemini/OpenAI tool call (needs a key in the PC browser), pai
 
 ## With the owner's real keys, on the owner's phone (2026-10-28)
 
-**Test my voice setup** on the live site (v0.25.2), with the Gemini and Groq keys saved on the phone, microphone allowed by the owner:
+**Test my voice setup** (removed in 0.29.0) on the live site (v0.25.2), with the Gemini and Groq keys saved on the phone, microphone allowed by the owner:
 
 | Step | Result |
 |---|---|

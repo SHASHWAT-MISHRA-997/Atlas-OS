@@ -74,7 +74,7 @@ try {
 
   await page.context().close();
 
-  // Phone: Home, Live, then Home and AI Chat (light).
+  // Phone: Home, Live, System (light).
   page = await open('dark', PHONE);
   await snap(page, 'home-phone-dark');
   await go(page, 'live');

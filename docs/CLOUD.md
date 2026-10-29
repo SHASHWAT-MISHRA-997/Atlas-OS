@@ -16,7 +16,7 @@ Gateway credits are never used, so visitors cannot spend the owner's quota.
 | Tasks: plan a goal, summarize long text | Yes | Run while the page is open; saved in this browser. The key is held in memory for the task only |
 | Home quick plan | Yes | Uses your key and the chat's model |
 | Dictation and read-aloud | Yes | Chrome, Edge, Safari: the browser's speech service (in Chrome the audio goes to Google). Brave, Firefox: a short recording goes through `/cloud/transcribe` to your Groq or Gemini key. Read aloud: Gemini's natural voice through `/cloud/speak` with a Gemini key, otherwise the browser's voice |
-| Live (real-time voice, turn by turn, camera, screen) | Yes | Real-time: straight from the browser to Google (Gemini key) or OpenAI (paid, after a tick) |
+| Live (real-time voice, turn by turn, camera, screen) | Yes | Real-time: straight from the browser to Google (Gemini key) or OpenAI (paid, after a tick). |
 | CSV workbench | Yes | In the browser |
 | Install as an app | Yes | Android and desktop Chrome/Edge: "Install app". iPhone/iPad: Safari → Share → Add to Home Screen |
 | Acting on a computer (apps, files), local models | **No** | A web page cannot do this safely. The PC version that could was removed in 0.15.0 (D-025) |
