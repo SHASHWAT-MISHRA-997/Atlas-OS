@@ -1,8 +1,8 @@
-// Phone actions for Live: call, SMS, WhatsApp, directions, YouTube, a website, or sharing text. A web
-// page may not dial, send or open other apps by itself, so the model only prepares the action: ATLAS
-// shows it as a button with everything filled in, and nothing happens until the user taps it. Nothing
-// is read from the phone (no contacts, messages or notifications) unless the user picks a contact.
-// Loaded only when the Live screen opens.
+// Phone actions for Live: call, SMS, WhatsApp, directions, YouTube, a website, or sharing text. ATLAS
+// opens the dialer, the message or the page by itself when the browser lets it (app.js), and shows a
+// button with everything filled in when the browser blocks that. It never dials or sends: the user
+// presses Call or Send in their own app. Nothing is read from the phone (no contacts, messages or
+// notifications) unless the user picks a contact. Loaded only when the Live screen opens.
 (function () {
   'use strict';
 
@@ -11,21 +11,22 @@
   const TOOLS = [
     // Named dial_number: with the name "call_phone", Google's Gemini Live server ended the session with
     // "Internal error occurred" whenever the model called it (seen on the owner's phone, 2026-10-28).
-    { name: 'dial_number', description: 'Show a button that opens the phone dialer with this number filled in. Give the number with country code if known, or only the name of the person if the user did not say a number.', parameters: obj({ number: str('Phone number, digits with optional +'), name: str('Who is called, if said') }, []) },
-    { name: 'send_sms', description: 'Prepare an SMS on this device with the text filled in; the user taps Send in their messages app.', parameters: obj({ number: str('Phone number, or empty to choose in the app'), name: str('Who it is for, if said'), text: str('Message text') }, ['text']) },
-    { name: 'send_whatsapp', description: 'Prepare a WhatsApp message with the text filled in; the user taps Send in WhatsApp. Number with country code (e.g. 919876543210), or empty to choose the chat in WhatsApp.', parameters: obj({ number: str('Number with country code, or empty'), name: str('Who it is for, if said'), text: str('Message text') }, ['text']) },
-    { name: 'navigate_to', description: 'Prepare directions to a place in Google Maps on this device.', parameters: obj({ place: str('Place or address') }) },
-    { name: 'play_youtube', description: 'Prepare a YouTube search on this device, to play a song or video.', parameters: obj({ query: str('What to play') }) },
-    { name: 'open_website', description: 'Prepare a web address (http or https) to open on this device.', parameters: obj({ url: str('Full http(s) address') }) },
-    { name: 'share_text', description: 'Prepare text to share to any app on this device (the share sheet).', parameters: obj({ text: str('Text to share') }) },
+    { name: 'dial_number', description: 'Open the phone dialer with this number filled in; the user presses Call. Give the number with country code if known, or only the name of the person if the user did not say a number.', parameters: obj({ number: str('Phone number, digits with optional +'), name: str('Who is called, if said') }, []) },
+    { name: 'send_sms', description: 'Open an SMS on this device with the text filled in; the user presses Send in their messages app.', parameters: obj({ number: str('Phone number, or empty to choose in the app'), name: str('Who it is for, if said'), text: str('Message text') }, ['text']) },
+    { name: 'send_whatsapp', description: 'Open a WhatsApp message with the text filled in; the user presses Send in WhatsApp. Number with country code (e.g. 919876543210), or empty to choose the chat in WhatsApp.', parameters: obj({ number: str('Number with country code, or empty'), name: str('Who it is for, if said'), text: str('Message text') }, ['text']) },
+    { name: 'navigate_to', description: 'Open directions to a place in Google Maps on this device.', parameters: obj({ place: str('Place or address') }) },
+    { name: 'play_youtube', description: 'Open a YouTube search on this device, to play a song or video.', parameters: obj({ query: str('What to play') }) },
+    { name: 'open_website', description: 'Open a web address (http or https) on this device.', parameters: obj({ url: str('Full http(s) address') }) },
+    { name: 'share_text', description: 'Show the share button for text to share to any app on this device (the share sheet).', parameters: obj({ text: str('Text to share') }) },
   ];
   const NAMES = new Set([...TOOLS.map((t) => t.name), 'call_phone']); // the old name still works (ACTION lines)
 
   // Checked against the real Gemini Live service: with a softer wording the model said "tap the button"
-  // without calling the tool, so no button appeared.
+  // without calling the tool, so no button appeared. The "must call in that same turn" wording stays.
   const PROMPT = 'You have phone tools: dial_number, send_sms, send_whatsapp, navigate_to, play_youtube, open_website and share_text. ' +
-    'When the user asks to call someone, send an SMS or WhatsApp, get directions, play something on YouTube, open a website or share text, you must call the matching tool in that same turn: the button the user taps exists only after you call the tool. ' +
-    'After the tool result, tell the user in a few words to tap the button; never say you called, sent or opened anything, and never say there is a button unless you called the tool and its result says ok. ' +
+    'When the user asks to call someone, send an SMS or WhatsApp, get directions, play something on YouTube, open a website or share text, you must call the matching tool in that same turn: nothing opens and no button appears unless you call the tool. ' +
+    'After the tool result, say in a few natural words exactly what its message says happened: if it opened, say it is open; if it says a button is on the screen, ask the user to tap it. ' +
+    'Never say a call was made or a message was sent: the user presses Call or Send in their own app. Never claim something opened unless the result says so. ' +
     'You cannot read contacts, messages, notifications or call history; if the user names a person without a number, call the tool with only the name. ';
 
   const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -89,6 +90,7 @@
     }
   }
 
+  // app.js replaces this message when it opened the link by itself.
   function card(title, label, href, pickContact, sms) {
     const what = href ? 'A button "' + label + '" is on the screen; the user taps it to do it.' : 'The user needs to pick the contact on the screen first.';
     return { ok: true, message: what, card: { title, label, href, pickContact: !!pickContact, sms } };
