@@ -2085,8 +2085,8 @@
     const orb = el('button', { class: 'liveorb', id: 'liveorb', type: 'button', 'data-state': 'idle', 'aria-label': 'Start Live' }, [el('span', { class: 'orbcore' }), orbLabel]);
     const heard = el('p', { class: 'liveheard', id: 'liveheard' });
     const said = el('p', { class: 'livesaid', id: 'livesaid', 'aria-live': 'polite' });
-    // A phone action the model prepared: nothing happens until the user taps its button.
-    const actionBox = el('div', { class: 'liveaction hidden', id: 'liveaction', role: 'group', 'aria-label': 'Action to confirm' });
+    // A phone action: opened by itself when the browser allows, with its button here as the fallback.
+    const actionBox = el('div', { class: 'liveaction hidden', id: 'liveaction', role: 'group', 'aria-label': 'Phone action' });
     const video = el('video', { id: 'livevideo', class: 'livevideo hidden', playsinline: '', muted: '', autoplay: '' });
     video.muted = true;
     const camBtn = el('button', { class: 'btn chip', type: 'button', id: 'livecam' }, [icon('camera'), 'Camera']);
@@ -2278,7 +2278,22 @@
       if (/no longer paired/.test(r.message || '')) refreshPC();
       return r;
     }
-    /** Shows a prepared phone action as a button; returns what the model is told. */
+    /**
+     * Opens a phone action's link without a tap when the browser allows it (pop-ups allowed for this
+     * site, or right after a tap). Returns 'opened', 'tried' (tel: or sms: on a phone, where the browser
+     * does not say whether the app opened) or 'blocked'.
+     */
+    function openNow(href) {
+      const web = /^https?:/.test(href);
+      // A computer has no dialer or SMS app to open; leave the button.
+      if (!web && (!window.matchMedia || !matchMedia('(pointer: coarse)').matches)) return 'blocked';
+      // Never navigates this page: going to tel: here closed the Live connection in Chromium.
+      const w = window.open(href, '_blank');
+      if (!w) return 'blocked';
+      try { w.opener = null; } catch { /* another site's window */ }
+      return web ? 'opened' : 'tried';
+    }
+    /** Opens a phone action, or shows it as a button when it cannot; returns what the model is told. */
     function phoneTool(name, args) {
       const r = PHONE.plan(name, args);
       log('phone ' + name + ': ' + (r.ok ? 'shown' : 'refused'));
@@ -2286,7 +2301,7 @@
       const c = r.card;
       const go = el('a', { class: 'btn primary', id: 'liveactiongo', target: '_blank', rel: 'noopener noreferrer' });
       const close = el('button', { class: 'btn', type: 'button', text: 'Cancel', onclick: () => { actionBox.replaceChildren(); actionBox.classList.add('hidden'); } });
-      const note = el('p', { class: 'tiny muted', text: 'Nothing happens until you tap. ' + (c.share ? 'Choose the app to share to.' : 'Your phone opens the app with everything filled in.') });
+      const note = el('p', { class: 'tiny muted', text: 'Tap to open it. ' + (c.share ? 'Choose the app to share to.' : 'Your phone opens the app with everything filled in; calls and messages go only when you press Call or Send.') });
       const setLink = (href, label) => {
         go.textContent = label;
         if (href) { go.setAttribute('href', href); go.classList.remove('hidden'); } else go.classList.add('hidden');
@@ -2321,7 +2336,18 @@
       actionBox.replaceChildren(...parts);
       actionBox.classList.remove('hidden');
       status.textContent = 'Phone: ' + (c.href || c.share ? 'tap "' + (c.share ? 'Share' : c.label) + '" to do it.' : 'pick the contact first.');
-      return { ok: true, message: r.message };
+      // A contact still to be picked comes first; sharing always needs the tap (the browser requires it).
+      if (c.share || !c.href || c.pickContact) return { ok: true, message: r.message };
+      const how = openNow(c.href);
+      const last = /^tel:/.test(c.href) ? ' The user presses Call there.' : c.sms || /^https:\/\/wa\.me\//.test(c.href) ? ' The user presses Send there.' : '';
+      log('phone ' + name + ': ' + how);
+      if (how === 'blocked') {
+        if (/^https?:/.test(c.href)) status.textContent += ' To let ATLAS open things by itself, allow pop-ups for this site in the browser\'s site settings.';
+        return { ok: true, message: r.message };
+      }
+      note.textContent = how === 'opened' ? 'Opened. If you do not see it, tap below.' : 'Opening on your phone. If nothing opened, tap below.';
+      status.textContent = 'Phone: ' + (how === 'opened' ? 'opened' : 'opening') + ' ' + c.title + '.';
+      return { ok: true, message: (how === 'opened' ? 'It is open on the device now: ' + c.title + '.' : 'ATLAS asked the phone to open it: ' + c.title + '. If nothing opened, a button "' + c.label + '" is on the screen.') + last };
     }
     /** Runs a tool the model asked for: phone actions on this screen, PC actions through the helper. */
     async function liveTool(name, args) {
@@ -2505,7 +2531,7 @@
       setState('thinking', 'Thinking…');
       const picture = await frame();
       const pcOn = await pcReady();
-      const system = 'You are ATLAS OS in Live voice mode. Answer in one to three short spoken sentences, with no markdown or lists, in the language the user speaks (English, Hindi or Hinglish). ' +
+      const system = 'You are ATLAS OS in Live voice mode. Answer in one to three short spoken sentences, like a warm, relaxed person talking, with no markdown or lists, in the language the user speaks (English, Hindi or Hinglish). ' +
         (picture ? 'The attached image is the current view of the user\'s ' + picture.name.replace('.jpg', '') + ': describe only what you can actually see, and say so when it is unclear. ' : 'Do not mention images or attachments. ') +
         (pcOn ? PC.textPrompt() : (PHONE ? PHONE.PROMPT + 'To use a tool, reply with only one line: ACTION {"name": "<tool>", "args": {...}} and nothing else; you will get the result back. Tools: ' + PHONE.describe() + ' ' : '') + NO_PC);
       const messages = [{ role: 'system', content: system }, ...state.turns.slice(-10), { role: 'user', content: text, ...(picture ? { attachments: [picture] } : {}) }];
@@ -2544,8 +2570,10 @@
       if (state.running) listen(); else setState('idle', SR ? 'Tap to start' : 'Type below');
     }
 
-    const RT_SYSTEM = 'You are ATLAS OS, a friendly voice assistant made by Shashwat Mishra, talking with the user in real time. Keep answers short and natural for speech, with no markdown or lists. ' +
-      'Reply in the language the user speaks (English, Hindi or Hinglish). When you get camera or screen pictures, describe only what you can actually see, and say so when it is unclear. ' +
+    const RT_SYSTEM = 'You are ATLAS OS, a friendly voice assistant made by Shashwat Mishra, talking with the user in real time. ' +
+      'Talk like a warm, relaxed person in a real conversation, not like someone reading out text: short sentences, everyday words, a natural pace, and small reactions such as "okay", "got it" or "haan" where they fit. ' +
+      'Match the user\'s mood and language (English, Hindi or Hinglish, the way they speak). Give the answer first, keep it short, and ask a follow-up only when it helps. Never read out lists, markdown or symbols. ' +
+      'When you get camera or screen pictures, describe only what you can actually see, and say so when it is unclear. ' +
       'You cannot act on the user\'s device, open apps or send messages; never claim you did.';
     // With PC control, the "cannot act" rule is swapped for what the PC tools can and cannot do.
     const rtSystem = (pcOn) => RT_SYSTEM.replace(/You cannot act on the user's device[^]*$/, '') + (pcOn ? PC.PROMPT : (PHONE ? PHONE.PROMPT : '') + NO_PC);

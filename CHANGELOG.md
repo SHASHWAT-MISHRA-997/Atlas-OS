@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.29.3 — 2026-11-01
+
+At the owner's request ("it should open, not ask me to click"; "the voice should sound like a real person"):
+- **Live opens phone actions by itself when the browser allows.** WhatsApp, directions, YouTube and websites open in a new tab or app right away; on a phone the dialer and SMS open too. The user still presses Call or Send in their own app: ATLAS never dials or sends. If the browser blocks it (a pop-up blocker), the button is shown as before and Live says to allow pop-ups for this site. Picking a contact and sharing still need a tap.
+- The model is told what actually happened ("it is open now" or "tap the button"), so it no longer asks for a tap when the page was already opened.
+- Fix found while testing: opening `tel:` from the Live page itself ended the Live connection in Chromium; links now open in a new window and the page stays.
+- **More natural voice in Live.** The real-time instructions now ask for a warm, relaxed, conversational way of talking (short sentences, everyday words, small reactions like "okay" or "haan", matching the user's mood and language). The voice itself is still Google's or OpenAI's own real-time voice, as before.
+- Tested with the FAKE Gemini server in the browser tests (Edge): opened, tried (`tel:` on a phone) and blocked cases. Not tried on a real phone or against the real Gemini Live service; whether a phone opens the dialer without a tap depends on its browser.
+
 ## 0.29.2 — 2026-10-29
 
 From pairing on the owner's PC, where Brave silently blocked the site from reaching the helper:

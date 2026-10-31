@@ -1139,8 +1139,13 @@ test('Live typing: a question typed before tapping the orb starts real-time voic
   await page.context().close();
 });
 
-test('Phone actions in Live: the model prepares a call, WhatsApp, directions or YouTube; nothing happens until the user taps', async () => {
+test('Phone actions in Live: ATLAS opens a call, WhatsApp, directions or YouTube itself when the browser allows, else shows the button', async () => {
   const page = await phone({ serviceWorkers: 'block' });
+  // window.open is recorded instead of opening real sites; window.__blockOpen acts like a pop-up blocker.
+  await page.addInitScript(() => {
+    window.__opened = [];
+    window.open = (url) => { window.__opened.push(String(url)); return window.__blockOpen ? null : {}; };
+  });
   // FAKE Gemini Live that asks for phone actions; nothing reaches Google.
   const got = [];
   const next = [];
@@ -1173,17 +1178,32 @@ test('Phone actions in Live: the model prepares a call, WhatsApp, directions or 
   assert.ok(['dial_number', 'send_sms', 'send_whatsapp', 'navigate_to', 'play_youtube', 'open_website', 'share_text'].every((n) => decls.includes(n)), decls.join());
   assert.match(setup.systemInstruction.parts[0].text, /you must call the matching tool in that same turn/);
   assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'tel:+919876543210');
-  assert.match(await page.textContent('#liveaction'), /Call Mom \(\+919876543210\).*Nothing happens until you tap/s);
-  const reply = got.find((m) => m.toolResponse).toolResponse.functionResponses[0];
-  assert.equal(reply.response.ok, true);
-  assert.match(reply.response.message, /the user taps it/);
+  // On a phone the dialer is asked to open; the browser cannot say whether it did, so the button stays.
+  assert.match(await page.textContent('#liveaction'), /Call Mom \(\+919876543210\).*Opening on your phone\. If nothing opened, tap below\./s);
+  const replies = () => got.filter((m) => m.toolResponse).map((m) => m.toolResponse.functionResponses[0].response);
+  assert.equal(replies()[0].ok, true);
+  assert.match(replies()[0].message, /ATLAS asked the phone to open it: Call Mom.*presses Call there/);
   await ask({ id: 'c2', name: 'send_whatsapp', args: { number: '919876543210', name: 'Rahul', text: 'Running 10 min late' } }, 'whatsapp rahul');
   assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://wa.me/919876543210?text=Running%2010%20min%20late');
+  for (let i = 0; i < 30 && replies().length < 2; i += 1) await page.waitForTimeout(100);
+  assert.match(replies()[1].message, /It is open on the device now: WhatsApp Rahul.*presses Send there/);
+  assert.match(await page.textContent('#liveaction'), /Opened\. If you do not see it, tap below\./);
   await ask({ id: 'c3', name: 'navigate_to', args: { place: 'India Gate, Delhi' } }, 'india gate ka rasta');
   assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.google.com/maps/dir/?api=1&destination=India%20Gate%2C%20Delhi');
+  // A pop-up blocker: the button is the way, and the model is told so.
+  await page.evaluate(() => { window.__blockOpen = true; });
   await ask({ id: 'c4', name: 'play_youtube', args: { query: 'arijit singh' } }, 'arijit chalao');
   assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.youtube.com/results?search_query=arijit%20singh');
   assert.equal(await page.getAttribute('#liveactiongo', 'rel'), 'noopener noreferrer');
+  for (let i = 0; i < 30 && replies().length < 4; i += 1) await page.waitForTimeout(100);
+  assert.match(replies()[3].message, /A button "Open YouTube" is on the screen; the user taps it/);
+  assert.match(await page.textContent('#livestatus'), /allow pop-ups for this site/);
+  assert.deepEqual(await page.evaluate(() => window.__opened), [
+    'tel:+919876543210',
+    'https://wa.me/919876543210?text=Running%2010%20min%20late',
+    'https://www.google.com/maps/dir/?api=1&destination=India%20Gate%2C%20Delhi',
+    'https://www.youtube.com/results?search_query=arijit%20singh',
+  ]);
   // Unsafe or empty requests are refused and nothing is shown.
   next.push({ id: 'c5', name: 'open_website', args: { url: 'javascript:alert(1)' } });
   await page.fill('#livetyped', 'open this');
