@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.29.6';
+export const VERSION = '0.29.7';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -105,51 +105,75 @@ const VIDEO_ID_RE = /(?:youtube\.com\/(?:watch\?(?:[^\s"'<>]*&)?v=|shorts\/|embe
 // Words that say "play" rather than what to play; the rest must appear in the video's title or channel.
 const FILLER = new Set(['play', 'song', 'songs', 'video', 'videos', 'latest', 'new', 'the', 'and', 'by', 'of', 'on', 'youtube', 'music', 'official', 'ke', 'ka', 'ki', 'gaana', 'gaane', 'gana', 'gane', 'chalao', 'bajao', 'lagao', 'koi', 'wala', 'wale']);
 
-/**
- * The top YouTube video for what the user asked to play (a song, singer, actor or channel), with the
- * visitor's own Google key. First the YouTube Data API; Google AI Studio keys are bound to the Gemini
- * API and cannot call it ("account bound keys"), so then Gemini with Google Search names the video and
- * YouTube's public oEmbed confirms it exists and that its title or channel matches what was asked.
- */
-async function findVideo(fetchImpl, p, query, signal) {
-  const api = await fetchImpl('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=' + encodeURIComponent(query) + '&key=' + encodeURIComponent(p.key), { signal });
+/** Video ids in a Gemini answer: Google Search first when the key may use it, else what the model knows. */
+async function askGemini(fetchImpl, p, query, search, signal) {
+  const prompt = search
+    ? 'Use Google Search to find the YouTube video that best matches this request to play: "' + query + '". Prefer the official upload. Reply with only its full https://www.youtube.com/watch?v= link, nothing else.'
+    : 'Give the full https://www.youtube.com/watch?v= link of the official YouTube video that best matches this request to play: "' + query + '". Reply with only the link. If you do not know the exact link, reply NONE.';
+  // The next model is tried when one is retired for this key (404) or busy or out of quota (429, 503).
+  let res;
   let data = {};
-  try { data = await api.json(); } catch { /* not JSON */ }
-  const item = api.ok && (data.items || [])[0];
-  const apiId = item && item.id && item.id.videoId;
-  if (apiId && /^[\w-]{11}$/.test(apiId)) return { id: apiId, title: cleanText(item.snippet && item.snippet.title), channel: cleanText(item.snippet && item.snippet.channelTitle), via: 'youtube' };
-  const apiError = api.ok ? 'YouTube found no video' : 'YouTube: ' + errText(data, api);
-
-  // The next model is tried when one is retired for this key (404) or busy (429, 503).
-  let ask;
-  let found = {};
   for (const model of SEARCH_MODELS) {
-    ask = await fetchImpl(p.base + '/v1beta/models/' + model + ':generateContent', {
+    res = await fetchImpl(p.base + '/v1beta/models/' + model + ':generateContent', {
       method: 'POST', signal, headers: { 'Content-Type': 'application/json', 'x-goog-api-key': p.key },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: 'Use Google Search to find the YouTube video that best matches this request to play: "' + query + '". Prefer the official upload. Reply with only its full https://www.youtube.com/watch?v= link, nothing else.' }] }],
-        tools: [{ google_search: {} }],
-      }),
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], ...(search ? { tools: [{ google_search: {} }] } : {}) }),
     });
-    found = {};
-    try { found = await ask.json(); } catch { /* not JSON */ }
-    if (ask.ok || ![404, 429, 503].includes(ask.status)) break;
+    data = {};
+    try { data = await res.json(); } catch { /* not JSON */ }
+    if (res.ok || ![404, 429, 503].includes(res.status)) break;
   }
-  if (!ask.ok) throw new Error(apiError + '; Google Search: ' + errText(found, ask));
-  const cand = (found.candidates || [])[0] || {};
+  if (!res.ok) return { error: errText(data, res) };
+  const cand = (data.candidates || [])[0] || {};
   const text = ((cand.content && cand.content.parts) || []).map((x) => x.text || '').join(' ');
-  const ids = [...new Set([...text.matchAll(VIDEO_ID_RE)].map((m) => m[1]))].slice(0, 3);
-  const words = query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 && !FILLER.has(w));
+  return { ids: [...new Set([...text.matchAll(VIDEO_ID_RE)].map((m) => m[1]))].slice(0, 3) };
+}
+
+/**
+ * The first id that YouTube's public oEmbed knows (made-up ids fail there) and whose title or channel
+ * holds at least half of the words that say what to play, so a wrong video is never played.
+ */
+async function checkVideos(fetchImpl, ids, words, signal) {
   for (const id of ids) {
     const o = await fetchImpl('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent('https://www.youtube.com/watch?v=' + id), { signal });
-    if (!o.ok) continue; // removed, private or made up
+    if (!o.ok) continue;
     let info = {};
     try { info = await o.json(); } catch { continue; }
     const seen = (String(info.title || '') + ' ' + String(info.author_name || '')).toLowerCase();
-    if (words.length && !words.some((w) => seen.includes(w))) continue;
-    return { id, title: cleanText(info.title), channel: cleanText(info.author_name), via: 'search' };
+    if (words.filter((w) => seen.includes(w)).length < Math.ceil(words.length / 2)) continue;
+    return { id, title: cleanText(info.title), channel: cleanText(info.author_name) };
   }
-  throw new Error('Could not find a matching YouTube video for "' + query + '" (' + apiError + '; Google Search gave ' + (ids.length ? 'no matching video' : 'no YouTube link') + ').');
+  return null;
+}
+
+/**
+ * The top YouTube video for what the user asked to play (a song, singer, actor or channel).
+ * 1. The YouTube Data API: with ATLAS's own key when the site has one (ATLAS_YOUTUBE_KEY), then with
+ *    the visitor's key. Google AI Studio keys are bound to the Gemini API and are always refused.
+ * 2. Gemini names the video with Google Search (free keys get no search quota on Gemini 3 and newer),
+ *    then from what the model itself knows. Every id is checked on YouTube before it is played.
+ */
+async function findVideo(fetchImpl, p, query, signal, youtubeKey) {
+  const tried = [];
+  for (const [who, key] of [['ATLAS key', youtubeKey], ['your key', p.key]]) {
+    if (!key) continue;
+    const api = await fetchImpl('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=' + encodeURIComponent(query) + '&key=' + encodeURIComponent(key), { signal });
+    let data = {};
+    try { data = await api.json(); } catch { /* not JSON */ }
+    const item = api.ok && (data.items || [])[0];
+    const id = item && item.id && item.id.videoId;
+    if (id && /^[\w-]{11}$/.test(id)) return { id, title: cleanText(item.snippet && item.snippet.title), channel: cleanText(item.snippet && item.snippet.channelTitle), via: 'youtube' };
+    tried.push('YouTube (' + who + '): ' + (api.ok ? 'no video' : errText(data, api)));
+  }
+  const words = query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 && !FILLER.has(w));
+  for (const search of [true, false]) {
+    const label = search ? 'Google Search' : 'Gemini';
+    const r = await askGemini(fetchImpl, p, query, search, signal);
+    if (r.error) { tried.push(label + ': ' + r.error); continue; }
+    const hit = await checkVideos(fetchImpl, r.ids, words, signal);
+    if (hit) return { ...hit, via: search ? 'search' : 'gemini' };
+    tried.push(label + ': ' + (r.ids.length ? 'no matching video' : 'no YouTube link'));
+  }
+  throw new Error('Could not find a matching YouTube video for "' + query + '" (' + tried.join('; ') + ').');
 }
 
 /** Writes down a WAV recording with the visitor's provider: Whisper on Groq and OpenAI, Gemini itself on Google. */
@@ -403,7 +427,7 @@ function validateChat(body, providers) {
 
 // ---------------------------------------------------------------- handler
 
-export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {}) {
+export function createHandler({ fetchImpl = fetch, providers = PROVIDERS, youtubeKey = '' } = {}) {
   async function chat(req, body) {
     const v = validateChat(body, providers);
     if (v.error) return fail(422, 'invalid_request', v.error);
@@ -510,7 +534,7 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
         const query = typeof body.query === 'string' ? body.query.trim() : '';
         if (!query || query.length > 200) return fail(422, 'invalid_request', 'Say what to play, in at most 200 characters.');
         try {
-          return json(await findVideo(fetchImpl, p, query, req.signal));
+          return json(await findVideo(fetchImpl, p, query, req.signal, youtubeKey));
         } catch (err) {
           return fail(502, 'provider_error', err.message);
         }
