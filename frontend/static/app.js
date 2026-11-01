@@ -2095,6 +2095,14 @@
     try { await loadScript('/static/phone.js'); PHONE = window.AtlasPhone; } catch { /* offline: no phone actions */ }
     const voicePrefs = { lang: '', voice: '', ...storageGet(VOICE_KEY, {}) };
     const lang = voicePrefs.lang || navigator.language || 'en-US';
+    // Real-time speech to text: the user's language (voice setting or browser) plus English and Hindi
+    // for Hinglish. Gemini still wrote English speech in Telugu script on the owner's PC, so a
+    // transcript in a script none of these languages use is not shown or saved as their words.
+    const speechLanguages = () => [...new Set([lang, 'en-IN', 'hi-IN'])];
+    const LANG_SCRIPTS = { te: 'Telugu', ta: 'Tamil', kn: 'Kannada', ml: 'Malayalam', bn: 'Bengali', as: 'Bengali', gu: 'Gujarati', pa: 'Gurmukhi', or: 'Oriya', ur: 'Arabic', ar: 'Arabic', fa: 'Arabic', ru: 'Cyrillic', uk: 'Cyrillic', el: 'Greek', th: 'Thai', he: 'Hebrew', ko: 'Hangul', zh: 'Han', ja: 'Han|Hiragana|Katakana' };
+    const scriptOk = new RegExp('^(?:[^\\p{L}]|\\p{Script=Latin}|\\p{Script=Devanagari}' + (LANG_SCRIPTS[lang.slice(0, 2)] || '').split('|').filter(Boolean).map((s) => '|\\p{Script=' + s + '}').join('') + ')$', 'u');
+    const shownHeard = (t) => ([...String(t || '')].every((ch) => scriptOk.test(ch)) ? t
+      : '(ATLAS understood you, but the words came back in the wrong script, so they are not shown.)');
 
     const orbLabel = el('span', { class: 'orblabel', text: 'Tap to start' });
     const orb = el('button', { class: 'liveorb', id: 'liveorb', type: 'button', 'data-state': 'idle', 'aria-label': 'Start Live' }, [el('span', { class: 'orbcore' }), orbLabel]);
@@ -2668,17 +2676,17 @@
       try {
         state.rt = await window.AtlasRealtime.start({
           service: svc, key: rtKeys[svc], model: liveModel, voice: voiceSel.value, system: rtSystem(pcOn),
-          tools: liveTools(pcOn),
+          tools: liveTools(pcOn), languages: speechLanguages(),
           worklet: '/static/live-worklet.js' + (ASSET_VERSION ? '?v=' + ASSET_VERSION : ''),
           on: {
             state: (s) => setState(s === 'connecting' ? 'thinking' : s, s === 'speaking' ? 'Speaking… tap to stop' : s === 'listening' ? 'Listening… tap to end' : 'Connecting…'),
             level: (x) => orb.style.setProperty('--lvl', Math.min(0.5, x * 3).toFixed(3)),
-            heard: (t) => { heard.textContent = t; },
+            heard: (t) => { heard.textContent = shownHeard(t); },
             said: (t) => { said.textContent = t; },
             tool: liveTool,
             turn: async ({ user, model: answer }) => {
               // Text only: the audio and pictures are never stored.
-              if (user) await store.appendChat({ role: 'user', content: user });
+              if (user) await store.appendChat({ role: 'user', content: shownHeard(user) });
               if (answer) await store.appendChat({ role: 'assistant', content: answer, meta: 'Live · real-time · ' + label + ' · ' + liveModel });
             },
             ended: (reason, info) => {

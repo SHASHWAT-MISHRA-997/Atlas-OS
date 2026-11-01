@@ -321,7 +321,9 @@
             generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: opts.voice } } } },
             systemInstruction: { parts: [{ text: opts.system }] },
             ...(tools.gemini ? { tools: tools.gemini } : {}),
-            inputAudioTranscription: {},
+            // The languages the user speaks: without them Gemini wrote English speech in Telugu script
+            // on the owner's PC ("యు సీ మై స్క్రీన్" for "you see my screen").
+            inputAudioTranscription: opts.languages && opts.languages.length ? { languageCodes: opts.languages } : {},
             outputAudioTranscription: {},
             contextWindowCompression: { slidingWindow: {} },
             sessionResumption: handle ? { handle } : {},
