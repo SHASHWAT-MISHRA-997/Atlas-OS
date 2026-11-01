@@ -1208,7 +1208,8 @@ test('Phone actions in Live: ATLAS opens a call, WhatsApp, directions or YouTube
   // A pop-up blocker: the button is the way, and the model is told so.
   await page.evaluate(() => { window.__blockOpen = true; });
   // "Play" finds the top video with the user's Google key and opens the video itself, not a search.
-  await ask({ id: 'c4', name: 'play_youtube', args: { query: 'arijit singh' } }, 'arijit chalao', 'FAKE Kesariya');
+  // Without "query" (as the real Gemini sent it on the owner's key) the other fields still say what to play.
+  await ask({ id: 'c4', name: 'play_youtube', args: { song: 'arijit', artist: 'singh' } }, 'arijit chalao', 'FAKE Kesariya');
   assert.deepEqual(lookups[0], { provider: 'gemini', api_key: 'AIza-test-phone-key', query: 'arijit singh' });
   assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.youtube.com/watch?v=abcDEF12345');
   assert.equal(await page.getAttribute('#liveactiongo', 'rel'), 'noopener noreferrer');

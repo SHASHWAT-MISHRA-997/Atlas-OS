@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.10 — 2026-11-01
+
+From the owner's real key, Live turn by turn, "Kesariya Arijit Singh gaana chalao": Gemini called play_youtube without the "query" field, so ATLAS had nothing to search for and Live said it could not play.
+- **Fix:** what to play is now read from whichever fields the model filled (query, song, artist, title, singer and others), joined in order.
+- Browser test: play_youtube with only song and artist finds the video. Unit 42/42, browser 21/21.
+
 ## 0.29.9 — 2026-11-01
 
 From testing 0.29.8 live with the owner's real key: asked for three links, Gemini made up an id for "Kesariya Arijit Singh" (YouTube: 404); asked for one, it gave the right video.
