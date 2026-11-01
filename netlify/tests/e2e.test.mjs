@@ -666,6 +666,8 @@ test('Live real-time voice: streams the mic to Gemini Live, plays and shows the 
   assert.deepEqual(setup.generationConfig.responseModalities, ['AUDIO']);
   assert.equal(setup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName, 'Kore');
   assert.ok(setup.inputAudioTranscription && setup.outputAudioTranscription);
+  // The languages the user speaks go with the transcription request (a real field: Google rejects unknown ones).
+  assert.ok(['en-IN', 'hi-IN'].every((c) => setup.inputAudioTranscription.languageCodes.includes(c)), JSON.stringify(setup.inputAudioTranscription));
   assert.match(setup.systemInstruction.parts[0].text, /never claim you did/);
   const audio = got.find((m) => m.realtimeInput && m.realtimeInput.audio).realtimeInput.audio;
   assert.equal(audio.mimeType, 'audio/pcm;rate=16000');
@@ -681,6 +683,15 @@ test('Live real-time voice: streams the mic to Gemini Live, plays and shows the 
   // Gemini says the user talked over it: playback stops and it listens.
   sockets[1].send(JSON.stringify({ serverContent: { interrupted: true } }));
   await page.waitForSelector('#liveorb[data-state=listening]');
+  // English speech written in Telugu script (seen on the owner's PC) is not shown or saved as their words.
+  sockets[1].send(JSON.stringify({ serverContent: { inputTranscription: { text: 'యు సీ మై స్క్రీన్' } } }));
+  sockets[1].send(JSON.stringify({ serverContent: { outputTranscription: { text: 'FAKE I see your screen' } } }));
+  sockets[1].send(JSON.stringify({ serverContent: { turnComplete: true } }));
+  await page.waitForSelector('#livesaid >> text=FAKE I see your screen');
+  assert.match(await page.textContent('#liveheard'), /wrong script/);
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('atlas.os.chat.v1') || '[]').some((m) => m.content === 'FAKE I see your screen'));
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.chat.v1')).map((m) => m.content).join('\n'));
+  assert.doesNotMatch(saved, /\p{Script=Telugu}/u);
   // The camera sends pictures while Live is on.
   await page.click('#livecam');
   await page.waitForFunction(() => document.querySelector('#livevideo').videoWidth > 0);
@@ -699,7 +710,9 @@ test('Live real-time voice: streams the mic to Gemini Live, plays and shows the 
   await page.waitForSelector('#liveorb[data-state=idle]');
   await page.waitForSelector('#livemute', { state: 'hidden' });
   const history = await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.os.chat.v1')));
-  assert.deepEqual(history.map((m) => m.content), ['hello atlas', 'FAKE live hi', 'typed question', 'FAKE typed reply']);
+  assert.deepEqual(history.map((m) => m.content), ['hello atlas', 'FAKE live hi',
+    '(ATLAS understood you, but the words came back in the wrong script, so they are not shown.)', 'FAKE I see your screen',
+    'typed question', 'FAKE typed reply']);
   assert.match(history[1].meta, /real-time/);
   assert.ok(!/base64|AIza/.test(JSON.stringify(history)), 'no audio, pictures or key in history');
   assert.equal(await page.inputValue('#livevoice'), 'Kore');

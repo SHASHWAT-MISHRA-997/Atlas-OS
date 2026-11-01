@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.29.13 — 2026-11-02
+
+From the owner's PC: in real-time Live, "you see my screen" was shown as "యు సీ మై స్క్రీన్" (English speech in Telugu script); Gemini understood it and answered correctly.
+- **The languages the user speaks now go with the transcription request:** the voice setting (or the browser's language) plus en-IN and hi-IN. Checked against the real Gemini Live service: `inputAudioTranscription.languageCodes` is a real field (an unknown field is refused).
+- **A transcript in a script none of those languages use is not shown or saved as the user's words;** Live says it understood but the words came back in the wrong script. Someone whose language is Telugu (te) still sees Telugu.
+- Not checked by speaking (no microphone here): whether the language hint alone stops the wrong script; the safety check covers it either way.
+- Browser test: the language codes are sent, and a Telugu transcript for an English speaker is not shown or saved. Unit 42/42, browser 21/21.
+
 ## 0.29.12 — 2026-11-02
 
 From the owner: "play nahi hua, mai chahta hu bajne lage". The right video was found, but opening it needed a pop-up, which the browser blocked, so only a button appeared.

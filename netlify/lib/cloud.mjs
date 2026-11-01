@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.29.12';
+export const VERSION = '0.29.13';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
