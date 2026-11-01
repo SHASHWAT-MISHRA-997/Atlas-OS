@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.29.3';
+export const VERSION = '0.29.4';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -93,6 +93,25 @@ function withKey(providers, id, key) {
 }
 
 // ---------------------------------------------------------------- model calls
+
+const ENTITIES = { '&amp;': '&', '&quot;': '"', '&#39;': "'", '&lt;': '<', '&gt;': '>' };
+/**
+ * The top YouTube video for what the user asked to play (a song, singer, actor or channel), found
+ * with the visitor's own Google key through the YouTube Data API (free daily quota). A key made in
+ * Google AI Studio works only after "YouTube Data API v3" is enabled in its Google Cloud project.
+ */
+async function findVideo(fetchImpl, p, query, signal) {
+  const url = 'https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=' + encodeURIComponent(query) + '&key=' + encodeURIComponent(p.key);
+  const response = await fetchImpl(url, { signal });
+  let data = {};
+  try { data = await response.json(); } catch { /* not JSON */ }
+  if (!response.ok) throw new Error('YouTube: ' + String((data.error && data.error.message) || 'HTTP ' + response.status).replace(/<[^>]*>/g, '').slice(0, 300));
+  const item = (data.items || [])[0];
+  const id = item && item.id && item.id.videoId;
+  if (!id || !/^[\w-]{11}$/.test(id)) throw new Error('YouTube found no video for "' + query + '".');
+  const clean = (s) => String(s || '').replace(/&(amp|quot|#39|lt|gt);/g, (m) => ENTITIES[m]).slice(0, 200);
+  return { id, title: clean(item.snippet && item.snippet.title), channel: clean(item.snippet && item.snippet.channelTitle) };
+}
 
 /** Writes down a WAV recording with the visitor's provider: Whisper on Groq and OpenAI, Gemini itself on Google. */
 async function transcribe(fetchImpl, p, audio, signal) {
@@ -407,7 +426,7 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
         })),
       });
     }
-    if (method !== 'POST' || !['/chat', '/models', '/transcribe', '/speak'].includes(path)) return fail(404, 'not_found', 'Unknown ATLAS cloud endpoint.');
+    if (method !== 'POST' || !['/chat', '/models', '/transcribe', '/speak', '/youtube'].includes(path)) return fail(404, 'not_found', 'Unknown ATLAS cloud endpoint.');
     if (fromOtherSite(req, url)) return fail(403, 'cross_site', 'ATLAS online only answers its own page.');
     // JSON only: a plain HTML form on another site cannot send this content type.
     if (!/^application\/json\s*(;|$)/i.test(req.headers.get('content-type') || '')) return fail(415, 'json_only', 'Send JSON (Content-Type: application/json).');
@@ -443,6 +462,16 @@ export function createHandler({ fetchImpl = fetch, providers = PROVIDERS } = {})
         if (body.voice !== undefined && (typeof body.voice !== 'string' || !VOICE_RE.test(body.voice))) return fail(422, 'invalid_request', 'Unknown voice name.');
         try {
           return json({ provider: p.id, ...(await speak(fetchImpl, p, words, body.voice, req.signal)) });
+        } catch (err) {
+          return fail(502, 'provider_error', err.message);
+        }
+      }
+      if (path === '/youtube') {
+        if (p.id !== 'gemini') return fail(422, 'invalid_request', 'Playing on YouTube needs a Google Gemini key (a Google API key).');
+        const query = typeof body.query === 'string' ? body.query.trim() : '';
+        if (!query || query.length > 200) return fail(422, 'invalid_request', 'Say what to play, in at most 200 characters.');
+        try {
+          return json(await findVideo(fetchImpl, p, query, req.signal));
         } catch (err) {
           return fail(502, 'provider_error', err.message);
         }
