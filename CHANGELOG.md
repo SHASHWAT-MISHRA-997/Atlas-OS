@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.11 — 2026-11-01
+
+Found by capturing the real Gemini answer on the owner's key: in Live turn by turn it wrote `ACTION {"name": "play_youtube", "query": "Kesariya Arijit Singh"}`, with the arguments next to the name instead of inside "args". ATLAS read only "args", so every phone action (and PC action) written that way arrived empty; "play" said "Say what to play".
+- **Fix:** ACTION lines are read in both forms, on the phone and the PC.
+- Browser test with both forms. Unit 42/42, browser 21/21.
+
 ## 0.29.10 — 2026-11-01
 
 From the owner's real key, Live turn by turn, "Kesariya Arijit Singh gaana chalao": Gemini called play_youtube without the "query" field, so ATLAS had nothing to search for and Live said it could not play.
