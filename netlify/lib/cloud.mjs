@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.29.7';
+export const VERSION = '0.29.8';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -109,8 +109,10 @@ const FILLER = new Set(['play', 'song', 'songs', 'video', 'videos', 'latest', 'n
 async function askGemini(fetchImpl, p, query, search, signal) {
   const prompt = search
     ? 'Use Google Search to find the YouTube video that best matches this request to play: "' + query + '". Prefer the official upload. Reply with only its full https://www.youtube.com/watch?v= link, nothing else.'
-    : 'Give the full https://www.youtube.com/watch?v= link of the official YouTube video that best matches this request to play: "' + query + '". Reply with only the link. If you do not know the exact link, reply NONE.';
-  // The next model is tried when one is retired for this key (404) or busy or out of quota (429, 503).
+    : 'Give the full https://www.youtube.com/watch?v= links of up to three official YouTube videos that best match this request to play: "' + query + '", best first, one per line. Reply with only the links. If you do not know an exact link, reply NONE.';
+  // The next model is tried when one is retired for this key (404) or busy (429, 503). Google Search
+  // stops at the first 429: free keys have no search quota on any current model, so trying more only
+  // spends the daily requests.
   let res;
   let data = {};
   for (const model of SEARCH_MODELS) {
@@ -120,7 +122,7 @@ async function askGemini(fetchImpl, p, query, search, signal) {
     });
     data = {};
     try { data = await res.json(); } catch { /* not JSON */ }
-    if (res.ok || ![404, 429, 503].includes(res.status)) break;
+    if (res.ok || ![404, 429, 503].includes(res.status) || (search && res.status === 429)) break;
   }
   if (!res.ok) return { error: errText(data, res) };
   const cand = (data.candidates || [])[0] || {};
@@ -130,7 +132,8 @@ async function askGemini(fetchImpl, p, query, search, signal) {
 
 /**
  * The first id that YouTube's public oEmbed knows (made-up ids fail there) and whose title or channel
- * holds at least half of the words that say what to play, so a wrong video is never played.
+ * holds enough of the words that say what to play: at least one, and half of them from four words up.
+ * A song's title often leaves out the singer ('"Tum Hi Ho" Aashiqui 2 …' for "Tum Hi Ho Arijit Singh").
  */
 async function checkVideos(fetchImpl, ids, words, signal) {
   for (const id of ids) {
@@ -139,7 +142,7 @@ async function checkVideos(fetchImpl, ids, words, signal) {
     let info = {};
     try { info = await o.json(); } catch { continue; }
     const seen = (String(info.title || '') + ' ' + String(info.author_name || '')).toLowerCase();
-    if (words.filter((w) => seen.includes(w)).length < Math.ceil(words.length / 2)) continue;
+    if (words.filter((w) => seen.includes(w)).length < Math.max(words.length ? 1 : 0, Math.floor(words.length / 2))) continue;
     return { id, title: cleanText(info.title), channel: cleanText(info.author_name) };
   }
   return null;
