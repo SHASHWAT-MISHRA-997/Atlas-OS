@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.29.8 — 2026-11-01
+
+From testing 0.29.7 live with the owner's real key:
+- **Fix: a right video was refused when its title leaves out the singer.** "Tum Hi Ho Arijit Singh" found '"Tum Hi Ho" Aashiqui 2 …' (T-Series) but needed half the words. Now one matching word is enough up to three words, half from four up; a video with no matching word is still never played.
+- Gemini is asked for up to three links, best first, so one wrong guess does not end the search.
+- Google Search stops at its first "quota exceeded": free keys have no search quota on current models, and trying each model only used up the day's requests.
+- Unit 29/29 (cloud), browser 21/21.
+
 ## 0.29.7 — 2026-11-01
 
 Found with the owner's real key: free Gemini keys have no Google Search quota on Gemini 3 and newer ("Search grounding 0 / 0" in AI Studio), and the older models that have it are retired for new keys. So 0.29.6 still could not find the video.

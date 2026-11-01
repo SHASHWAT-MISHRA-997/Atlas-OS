@@ -451,7 +451,7 @@ test("youtube: finds the top video with the visitor's Google key; refuses other 
 
 test('youtube: an AI Studio key (bound to the Gemini API) finds the video with Gemini, checked on YouTube', async () => {
   // FAKE Google: the Data API refuses bound keys; Gemini answers with links; oEmbed knows two videos.
-  const VIDEOS = { kesar111111: { title: 'Kesariya - Brahmastra | Arijit Singh', author_name: 'Sony Music India' }, other222222: { title: 'Cooking pasta at home', author_name: 'Chef' } };
+  const VIDEOS = { kesar111111: { title: 'Kesariya - Brahmastra | Arijit Singh', author_name: 'Sony Music India' }, other222222: { title: 'Cooking pasta at home', author_name: 'Chef' }, tumhiho1111: { title: '"Tum Hi Ho" Aashiqui 2 Full Song With Lyrics | Aditya Roy Kapur, Shraddha Kapoor', author_name: 'T-Series' } };
   const say = { search: '', plain: '', searchQuota: false };
   const asked = [];
   const t = setup({ upstream: (url, init) => {
@@ -483,7 +483,11 @@ test('youtube: an AI Studio key (bound to the Gemini API) finds the video with G
   assert.equal(known.status, 200);
   assert.equal((await known.json()).via, 'gemini');
   assert.ok(asked.includes('search') && asked.at(-1) === 'plain', asked.join());
-  // An unrelated video (only "arijit" would match one word of three) is never played: an honest error.
+  // A song title that leaves out the singer still counts (one of three words is enough).
+  say.plain = 'https://www.youtube.com/watch?v=tumhiho1111';
+  const tum = await call('Tum Hi Ho Arijit Singh');
+  assert.equal((await tum.json()).id, 'tumhiho1111');
+  // An unrelated video (no word matches) is never played: an honest error.
   say.plain = 'https://www.youtube.com/watch?v=other222222';
   const none = await call('Kesariya Arijit Singh');
   assert.equal(none.status, 502);
