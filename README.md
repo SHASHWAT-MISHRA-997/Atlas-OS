@@ -28,7 +28,7 @@
 
 > [!NOTE]
 > **ATLAS OS is a web app, not an operating system, and it is not production-ready.** It is built and
-> tested by one developer. Everything on this page describes what exists today (v0.29.8). Features
+> tested by one developer. Everything on this page describes what exists today (v0.29.9). Features
 > marked 🧪 pass their automated tests with **FAKE** AI services but have **not yet been tried against
 > the real provider**. The full, honest status of every feature is in
 > [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md).

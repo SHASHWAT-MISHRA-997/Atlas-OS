@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.29.8';
+export const VERSION = '0.29.9';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -105,11 +105,18 @@ const VIDEO_ID_RE = /(?:youtube\.com\/(?:watch\?(?:[^\s"'<>]*&)?v=|shorts\/|embe
 // Words that say "play" rather than what to play; the rest must appear in the video's title or channel.
 const FILLER = new Set(['play', 'song', 'songs', 'video', 'videos', 'latest', 'new', 'the', 'and', 'by', 'of', 'on', 'youtube', 'music', 'official', 'ke', 'ka', 'ki', 'gaana', 'gaane', 'gana', 'gane', 'chalao', 'bajao', 'lagao', 'koi', 'wala', 'wale']);
 
-/** Video ids in a Gemini answer: Google Search first when the key may use it, else what the model knows. */
-async function askGemini(fetchImpl, p, query, search, signal) {
+/**
+ * Video ids in a Gemini answer. mode: 'search' (with Google Search, when the key may use it), 'one' (the
+ * single best link the model knows, at temperature 0) or 'three' (up to three links). On the owner's
+ * key, asking for three made the model invent an id for "Kesariya" that asking for one got right.
+ */
+async function askGemini(fetchImpl, p, query, mode, signal) {
+  const search = mode === 'search';
   const prompt = search
     ? 'Use Google Search to find the YouTube video that best matches this request to play: "' + query + '". Prefer the official upload. Reply with only its full https://www.youtube.com/watch?v= link, nothing else.'
-    : 'Give the full https://www.youtube.com/watch?v= links of up to three official YouTube videos that best match this request to play: "' + query + '", best first, one per line. Reply with only the links. If you do not know an exact link, reply NONE.';
+    : mode === 'one'
+      ? 'Give the full https://www.youtube.com/watch?v= link of the official YouTube video that best matches this request to play: "' + query + '". Reply with only the link. If you do not know the exact link, reply NONE.'
+      : 'Give the full https://www.youtube.com/watch?v= links of up to three official YouTube videos that best match this request to play: "' + query + '", best first, one per line. Reply with only the links. If you do not know an exact link, reply NONE.';
   // The next model is tried when one is retired for this key (404) or busy (429, 503). Google Search
   // stops at the first 429: free keys have no search quota on any current model, so trying more only
   // spends the daily requests.
@@ -118,7 +125,7 @@ async function askGemini(fetchImpl, p, query, search, signal) {
   for (const model of SEARCH_MODELS) {
     res = await fetchImpl(p.base + '/v1beta/models/' + model + ':generateContent', {
       method: 'POST', signal, headers: { 'Content-Type': 'application/json', 'x-goog-api-key': p.key },
-      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], ...(search ? { tools: [{ google_search: {} }] } : {}) }),
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], ...(search ? { tools: [{ google_search: {} }] } : {}), ...(mode === 'one' ? { generationConfig: { temperature: 0 } } : {}) }),
     });
     data = {};
     try { data = await res.json(); } catch { /* not JSON */ }
@@ -168,12 +175,12 @@ async function findVideo(fetchImpl, p, query, signal, youtubeKey) {
     tried.push('YouTube (' + who + '): ' + (api.ok ? 'no video' : errText(data, api)));
   }
   const words = query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 && !FILLER.has(w));
-  for (const search of [true, false]) {
-    const label = search ? 'Google Search' : 'Gemini';
-    const r = await askGemini(fetchImpl, p, query, search, signal);
+  for (const mode of ['search', 'one', 'three']) {
+    const label = mode === 'search' ? 'Google Search' : mode === 'one' ? 'Gemini' : 'Gemini (3 links)';
+    const r = await askGemini(fetchImpl, p, query, mode, signal);
     if (r.error) { tried.push(label + ': ' + r.error); continue; }
     const hit = await checkVideos(fetchImpl, r.ids, words, signal);
-    if (hit) return { ...hit, via: search ? 'search' : 'gemini' };
+    if (hit) return { ...hit, via: mode === 'search' ? 'search' : 'gemini' };
     tried.push(label + ': ' + (r.ids.length ? 'no matching video' : 'no YouTube link'));
   }
   throw new Error('Could not find a matching YouTube video for "' + query + '" (' + tried.join('; ') + ').');

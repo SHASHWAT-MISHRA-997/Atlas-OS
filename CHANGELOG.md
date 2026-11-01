@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.9 — 2026-11-01
+
+From testing 0.29.8 live with the owner's real key: asked for three links, Gemini made up an id for "Kesariya Arijit Singh" (YouTube: 404); asked for one, it gave the right video.
+- Gemini is now asked for the single best link first, at temperature 0, and for three links only if that one is not a matching video. Every id is still checked on YouTube.
+- Unit 29/29 (cloud), browser 21/21.
+
 ## 0.29.8 — 2026-11-01
 
 From testing 0.29.7 live with the owner's real key:

@@ -460,11 +460,15 @@ test('youtube: an AI Studio key (bound to the Gemini API) finds the video with G
       // The first model is retired for this key, as gemini-2.5-flash was on the owner's key.
       if (url.includes('/models/gemini-flash-lite-latest:')) return new Response(JSON.stringify({ error: { message: 'This model is no longer available to new users.' } }), { status: 404 });
       assert.equal(init.headers['x-goog-api-key'], KEY);
-      const search = !!JSON.parse(init.body).tools;
-      asked.push(search ? 'search' : 'plain');
+      const body = JSON.parse(init.body);
+      const kind = body.tools ? 'search' : /up to three/.test(body.contents[0].parts[0].text) ? 'three' : 'one';
+      asked.push(kind);
+      // The single best link is asked for at temperature 0.
+      assert.equal(kind === 'one' ? body.generationConfig.temperature : undefined, kind === 'one' ? 0 : undefined);
       // Free keys get no Google Search quota on Gemini 3 and newer (0 / 0 on the owner's key).
-      if (search && say.searchQuota) return new Response(JSON.stringify({ error: { message: 'You exceeded your current quota, please check your plan and billing details.' } }), { status: 429 });
-      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: search ? say.search : say.plain }] } }] }));
+      if (kind === 'search' && say.searchQuota) return new Response(JSON.stringify({ error: { message: 'You exceeded your current quota, please check your plan and billing details.' } }), { status: 429 });
+      const text = kind === 'search' ? say.search : kind === 'three' && say.three !== undefined ? say.three : say.plain;
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }));
     }
     const id = new URL(new URL(url).searchParams.get('url')).searchParams.get('v');
     return VIDEOS[id] ? new Response(JSON.stringify(VIDEOS[id])) : new Response('Bad Request', { status: 400 });
@@ -482,7 +486,15 @@ test('youtube: an AI Studio key (bound to the Gemini API) finds the video with G
   const known = await call('Kesariya Arijit Singh');
   assert.equal(known.status, 200);
   assert.equal((await known.json()).via, 'gemini');
-  assert.ok(asked.includes('search') && asked.at(-1) === 'plain', asked.join());
+  assert.deepEqual(asked, ['search', 'one'], 'search tried once, then the single best link');
+  // The single link is made up (as for "Kesariya" with three links on the owner's key): three links follow.
+  say.plain = 'https://www.youtube.com/watch?v=madeup12345';
+  say.three = 'https://www.youtube.com/watch?v=madeup67890\nhttps://www.youtube.com/watch?v=kesar111111';
+  asked.length = 0;
+  const second = await call('Kesariya Arijit Singh');
+  assert.equal((await second.json()).id, 'kesar111111');
+  assert.deepEqual(asked, ['search', 'one', 'three']);
+  delete say.three;
   // A song title that leaves out the singer still counts (one of three words is enough).
   say.plain = 'https://www.youtube.com/watch?v=tumhiho1111';
   const tum = await call('Tum Hi Ho Arijit Singh');
@@ -492,7 +504,7 @@ test('youtube: an AI Studio key (bound to the Gemini API) finds the video with G
   const none = await call('Kesariya Arijit Singh');
   assert.equal(none.status, 502);
   const detail = (await none.json()).detail;
-  assert.match(detail, /^Could not find a matching YouTube video for "Kesariya Arijit Singh" \(YouTube \(your key\): Requests to this API .* are blocked\. x; Google Search: You exceeded your current quota.*; Gemini: no matching video\)\.$/);
+  assert.match(detail, /^Could not find a matching YouTube video for "Kesariya Arijit Singh" \(YouTube \(your key\): Requests to this API .* are blocked\. x; Google Search: You exceeded your current quota.*; Gemini: no matching video; Gemini \(3 links\): no matching video\)\.$/);
   assert.doesNotMatch(detail, /<b>/);
 });
 
