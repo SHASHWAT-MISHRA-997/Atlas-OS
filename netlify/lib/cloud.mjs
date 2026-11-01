@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.29.4';
+export const VERSION = '0.29.5';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -60,6 +60,8 @@ const MAX_BODY = 5_000_000; // a chat with up to about 3 MB of images or PDFs
 // A Whisper piece more likely silence than speech is dropped (Whisper's own no-speech estimate).
 const NO_SPEECH = 0.5;
 const TRANSCRIBE_MODELS = { groq: 'whisper-large-v3-turbo', gemini: 'gemini-2.5-flash', openai: 'gpt-4o-mini-transcribe' };
+// Finds the video to play with Google Search when the key cannot call the YouTube Data API.
+const SEARCH_MODEL = 'gemini-2.5-flash';
 const MAX_AUDIO = 3_000_000; // base64 characters, about 70 seconds of 16 kHz speech
 // Text to speech in a natural voice for spoken answers (Live turn-by-turn, Read aloud). Gemini's TTS
 // models are free on a Gemini key; OpenAI's is paid and is used only when OpenAI is the chosen provider.
@@ -95,22 +97,51 @@ function withKey(providers, id, key) {
 // ---------------------------------------------------------------- model calls
 
 const ENTITIES = { '&amp;': '&', '&quot;': '"', '&#39;': "'", '&lt;': '<', '&gt;': '>' };
+const cleanText = (s) => String(s || '').replace(/&(amp|quot|#39|lt|gt);/g, (m) => ENTITIES[m]).slice(0, 200);
+const errText = (data, response) => String((data.error && data.error.message) || 'HTTP ' + response.status).replace(/<[^>]*>/g, '').slice(0, 300);
+const VIDEO_ID_RE = /(?:youtube\.com\/(?:watch\?(?:[^\s"'<>]*&)?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})(?![\w-])/g;
+// Words that say "play" rather than what to play; the rest must appear in the video's title or channel.
+const FILLER = new Set(['play', 'song', 'songs', 'video', 'videos', 'latest', 'new', 'the', 'and', 'by', 'of', 'on', 'youtube', 'music', 'official', 'ke', 'ka', 'ki', 'gaana', 'gaane', 'gana', 'gane', 'chalao', 'bajao', 'lagao', 'koi', 'wala', 'wale']);
+
 /**
- * The top YouTube video for what the user asked to play (a song, singer, actor or channel), found
- * with the visitor's own Google key through the YouTube Data API (free daily quota). A key made in
- * Google AI Studio works only after "YouTube Data API v3" is enabled in its Google Cloud project.
+ * The top YouTube video for what the user asked to play (a song, singer, actor or channel), with the
+ * visitor's own Google key. First the YouTube Data API; Google AI Studio keys are bound to the Gemini
+ * API and cannot call it ("account bound keys"), so then Gemini with Google Search names the video and
+ * YouTube's public oEmbed confirms it exists and that its title or channel matches what was asked.
  */
 async function findVideo(fetchImpl, p, query, signal) {
-  const url = 'https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=' + encodeURIComponent(query) + '&key=' + encodeURIComponent(p.key);
-  const response = await fetchImpl(url, { signal });
+  const api = await fetchImpl('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=' + encodeURIComponent(query) + '&key=' + encodeURIComponent(p.key), { signal });
   let data = {};
-  try { data = await response.json(); } catch { /* not JSON */ }
-  if (!response.ok) throw new Error('YouTube: ' + String((data.error && data.error.message) || 'HTTP ' + response.status).replace(/<[^>]*>/g, '').slice(0, 300));
-  const item = (data.items || [])[0];
-  const id = item && item.id && item.id.videoId;
-  if (!id || !/^[\w-]{11}$/.test(id)) throw new Error('YouTube found no video for "' + query + '".');
-  const clean = (s) => String(s || '').replace(/&(amp|quot|#39|lt|gt);/g, (m) => ENTITIES[m]).slice(0, 200);
-  return { id, title: clean(item.snippet && item.snippet.title), channel: clean(item.snippet && item.snippet.channelTitle) };
+  try { data = await api.json(); } catch { /* not JSON */ }
+  const item = api.ok && (data.items || [])[0];
+  const apiId = item && item.id && item.id.videoId;
+  if (apiId && /^[\w-]{11}$/.test(apiId)) return { id: apiId, title: cleanText(item.snippet && item.snippet.title), channel: cleanText(item.snippet && item.snippet.channelTitle), via: 'youtube' };
+  const apiError = api.ok ? 'YouTube found no video' : 'YouTube: ' + errText(data, api);
+
+  const ask = await fetchImpl(p.base + '/v1beta/models/' + SEARCH_MODEL + ':generateContent', {
+    method: 'POST', signal, headers: { 'Content-Type': 'application/json', 'x-goog-api-key': p.key },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: 'Use Google Search to find the YouTube video that best matches this request to play: "' + query + '". Prefer the official upload. Reply with only its full https://www.youtube.com/watch?v= link, nothing else.' }] }],
+      tools: [{ google_search: {} }],
+    }),
+  });
+  let found = {};
+  try { found = await ask.json(); } catch { /* not JSON */ }
+  if (!ask.ok) throw new Error(apiError + '; Google Search: ' + errText(found, ask));
+  const cand = (found.candidates || [])[0] || {};
+  const text = ((cand.content && cand.content.parts) || []).map((x) => x.text || '').join(' ');
+  const ids = [...new Set([...text.matchAll(VIDEO_ID_RE)].map((m) => m[1]))].slice(0, 3);
+  const words = query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 && !FILLER.has(w));
+  for (const id of ids) {
+    const o = await fetchImpl('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent('https://www.youtube.com/watch?v=' + id), { signal });
+    if (!o.ok) continue; // removed, private or made up
+    let info = {};
+    try { info = await o.json(); } catch { continue; }
+    const seen = (String(info.title || '') + ' ' + String(info.author_name || '')).toLowerCase();
+    if (words.length && !words.some((w) => seen.includes(w))) continue;
+    return { id, title: cleanText(info.title), channel: cleanText(info.author_name), via: 'search' };
+  }
+  throw new Error('Could not find a matching YouTube video for "' + query + '" (' + apiError + '; Google Search gave ' + (ids.length ? 'no matching video' : 'no YouTube link') + ').');
 }
 
 /** Writes down a WAV recording with the visitor's provider: Whisper on Groq and OpenAI, Gemini itself on Google. */

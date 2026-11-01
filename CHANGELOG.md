@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.29.5 — 2026-11-01
+
+Found while setting up the owner's key: a Google AI Studio key is "account bound" and Google allows it only for the Gemini API, so it can never call the YouTube Data API, even with that API enabled.
+- **"Play …" now works with a normal AI Studio Gemini key.** When the YouTube Data API refuses the key, Gemini with Google Search names the video, and YouTube's public oEmbed checks that it exists and that its title or channel matches what was asked (made-up or unrelated videos are skipped). The YouTube Data API is still tried first for keys that allow it.
+- The error no longer tells users to enable the YouTube Data API (that cannot help with AI Studio keys); it says what was tried.
+- Tested with FAKE Google answers (unit tests) and against the real YouTube oEmbed endpoint (a real video answers 200, a made-up id 400). Not yet tried with a real Gemini key.
+
 ## 0.29.4 — 2026-11-01
 
 From the owner's test: "play this" opened a YouTube search or asked which one, and never played.
