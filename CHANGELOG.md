@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.29.7 — 2026-11-01
+
+Found with the owner's real key: free Gemini keys have no Google Search quota on Gemini 3 and newer ("Search grounding 0 / 0" in AI Studio), and the older models that have it are retired for new keys. So 0.29.6 still could not find the video.
+- **"Play" now finds the video on a free key.** After the YouTube Data API and Google Search, Gemini names the video from what it knows, and YouTube's oEmbed checks that it exists and that its title or channel holds at least half of the words asked for; otherwise nothing is played and the search page opens as before.
+- Checked with the owner's real key: Gemini gave links for "Kesariya Arijit Singh", "Tum Hi Ho", "Shape of You Ed Sheeran" and "Despacito", and YouTube confirmed all four were the right videos.
+- Optional `ATLAS_YOUTUBE_KEY` on Netlify: a plain Google API key limited to the YouTube Data API. When set it is tried first, which also finds new or less known songs.
+- The error now lists every way that was tried. Unit 42/42, browser 21/21.
+
 ## 0.29.6 — 2026-11-01
 
 Found by testing with the owner's real Gemini key: Google retires dated models for new keys. `gemini-2.5-flash` and `gemini-2.5-flash-lite` answer 404 "no longer available to new users", although the model list still shows them.

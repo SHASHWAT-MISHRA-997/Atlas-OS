@@ -449,37 +449,59 @@ test("youtube: finds the top video with the visitor's Google key; refuses other 
   assert.equal(t.calls.length, 1, 'refused requests never reach Google');
 });
 
-test('youtube: an AI Studio key (bound to the Gemini API) finds the video with Google Search, checked on YouTube', async () => {
+test('youtube: an AI Studio key (bound to the Gemini API) finds the video with Gemini, checked on YouTube', async () => {
   // FAKE Google: the Data API refuses bound keys; Gemini answers with links; oEmbed knows two videos.
   const VIDEOS = { kesar111111: { title: 'Kesariya - Brahmastra | Arijit Singh', author_name: 'Sony Music India' }, other222222: { title: 'Cooking pasta at home', author_name: 'Chef' } };
-  const geminiSays = { text: '' };
+  const say = { search: '', plain: '', searchQuota: false };
+  const asked = [];
   const t = setup({ upstream: (url, init) => {
     if (url.startsWith('https://www.googleapis.com/youtube/')) return new Response(JSON.stringify({ error: { message: 'Requests to this API youtube.googleapis.com method youtube.api.v3.V3DataSearchService.List are blocked. <b>x</b>' } }), { status: 403 });
     if (url.includes(':generateContent')) {
       // The first model is retired for this key, as gemini-2.5-flash was on the owner's key.
       if (url.includes('/models/gemini-flash-lite-latest:')) return new Response(JSON.stringify({ error: { message: 'This model is no longer available to new users.' } }), { status: 404 });
-      assert.match(url, /\/models\/gemini-flash-latest:generateContent$/);
-      const body = JSON.parse(init.body);
-      assert.deepEqual(body.tools, [{ google_search: {} }]);
       assert.equal(init.headers['x-goog-api-key'], KEY);
-      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: geminiSays.text }] } }] }));
+      const search = !!JSON.parse(init.body).tools;
+      asked.push(search ? 'search' : 'plain');
+      // Free keys get no Google Search quota on Gemini 3 and newer (0 / 0 on the owner's key).
+      if (search && say.searchQuota) return new Response(JSON.stringify({ error: { message: 'You exceeded your current quota, please check your plan and billing details.' } }), { status: 429 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: search ? say.search : say.plain }] } }] }));
     }
     const id = new URL(new URL(url).searchParams.get('url')).searchParams.get('v');
-    return VIDEOS[id] ? new Response(JSON.stringify(VIDEOS[id])) : new Response('Not Found', { status: 404 });
+    return VIDEOS[id] ? new Response(JSON.stringify(VIDEOS[id])) : new Response('Bad Request', { status: 400 });
   } });
   const call = (query) => t.call('youtube', { method: 'POST', body: { provider: 'gemini', api_key: KEY, query } });
-  // A made-up id (404) and an unrelated video are skipped; the matching one is played.
-  geminiSays.text = 'https://www.youtube.com/watch?v=fakefake123 then https://youtu.be/other222222 or https://www.youtube.com/watch?v=kesar111111&t=3';
+  // With Google Search: a made-up id and an unrelated video are skipped; the matching one is played.
+  say.search = 'https://www.youtube.com/watch?v=fakefake123 then https://youtu.be/other222222 or https://www.youtube.com/watch?v=kesar111111&t=3';
   const found = await call('Kesariya Arijit Singh');
   assert.equal(found.status, 200);
   assert.deepEqual(await found.json(), { id: 'kesar111111', title: 'Kesariya - Brahmastra | Arijit Singh', channel: 'Sony Music India', via: 'search' });
-  // Nothing matching: an honest error with both reasons, no HTML.
-  geminiSays.text = 'https://www.youtube.com/watch?v=other222222';
+  // No search quota (a free key): Gemini names the video from what it knows; still checked on YouTube.
+  say.searchQuota = true;
+  say.plain = 'https://www.youtube.com/watch?v=kesar111111';
+  asked.length = 0;
+  const known = await call('Kesariya Arijit Singh');
+  assert.equal(known.status, 200);
+  assert.equal((await known.json()).via, 'gemini');
+  assert.ok(asked.includes('search') && asked.at(-1) === 'plain', asked.join());
+  // An unrelated video (only "arijit" would match one word of three) is never played: an honest error.
+  say.plain = 'https://www.youtube.com/watch?v=other222222';
   const none = await call('Kesariya Arijit Singh');
   assert.equal(none.status, 502);
   const detail = (await none.json()).detail;
-  assert.match(detail, /Could not find a matching YouTube video for "Kesariya Arijit Singh" \(YouTube: Requests to this API .* are blocked\. x; Google Search gave no matching video\)/);
+  assert.match(detail, /^Could not find a matching YouTube video for "Kesariya Arijit Singh" \(YouTube \(your key\): Requests to this API .* are blocked\. x; Google Search: You exceeded your current quota.*; Gemini: no matching video\)\.$/);
   assert.doesNotMatch(detail, /<b>/);
+});
+
+test('youtube: with ATLAS_YOUTUBE_KEY set, the site key finds the video first', async () => {
+  const urls = [];
+  const handle = createHandler({ youtubeKey: 'site-youtube-key-123', fetchImpl: async (url) => {
+    urls.push(String(url));
+    return new Response(JSON.stringify({ items: [{ id: { videoId: 'abcDEF12345' }, snippet: { title: 'Kesariya', channelTitle: 'Sony Music India' } }] }));
+  } });
+  const r = await handle(new Request('https://atlas.example/cloud/youtube', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'gemini', api_key: KEY, query: 'kesariya' }) }));
+  assert.equal((await r.json()).id, 'abcDEF12345');
+  assert.equal(urls.length, 1);
+  assert.equal(new URL(urls[0]).searchParams.get('key'), 'site-youtube-key-123');
 });
 
 test('gemini chat models: the -latest aliases come first, so a new key never starts on a retired dated model', async () => {
