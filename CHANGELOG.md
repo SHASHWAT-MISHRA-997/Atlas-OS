@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.29.6 — 2026-11-01
+
+Found by testing with the owner's real Gemini key: Google retires dated models for new keys. `gemini-2.5-flash` and `gemini-2.5-flash-lite` answer 404 "no longer available to new users", although the model list still shows them.
+- **Fix: AI Chat failed on the first question for new Gemini keys.** The default chat model was the oldest flash-lite in the list (`gemini-2.5-flash-lite`). The `gemini-flash-lite-latest` and `gemini-flash-latest` aliases now come first; the fallback suggestion is `gemini-flash-lite-latest`.
+- **Fix: "Play" could not search** (it used `gemini-2.5-flash`). Google Search now tries `gemini-flash-lite-latest`, then `gemini-flash-latest`, then `gemini-3.5-flash-lite`, moving on when one is retired (404) or busy (429, 503).
+- Speech to text with a Gemini key uses `gemini-flash-lite-latest`.
+- Checked with the owner's real key before the change: `gemini-flash-lite-latest` and `gemini-3.5-flash-lite` answered; natural voice (TTS) worked; all four Live models connected. Unit 41/41, browser 21/21.
+
 ## 0.29.5 — 2026-11-01
 
 Found while setting up the owner's key: a Google AI Studio key is "account bound" and Google allows it only for the Gemini API, so it can never call the YouTube Data API, even with that API enabled.

@@ -164,7 +164,7 @@ test('model lists are filtered; listing errors fall back to a suggestion, bad ke
   assert.equal(t.calls[0].init.headers.Authorization, 'Bearer ' + KEY);
   assert.deepEqual((await (await list('openrouter')).json()).models, ['meta-llama/llama-3.3-70b-instruct:free', 'mistralai/mistral-7b:free'], 'free models only');
   const fallback = await (await list('gemini')).json();
-  assert.deepEqual(fallback.models, ['gemini-2.5-flash']);
+  assert.deepEqual(fallback.models, ['gemini-flash-lite-latest'], 'the -latest alias: dated models are retired for new keys');
   assert.equal(fallback.suggested_only, true);
   assert.match(fallback.warning, /not found/);
   assert.equal((await t.call('models', { method: 'POST', body: { provider: 'groq' } })).status, 422);
@@ -320,7 +320,7 @@ test('speech to text: Whisper on Groq, Gemini on Google, WAV only, no OpenRouter
   assert.equal(t.calls[0].init.body.get('file').type, 'audio/wav');
   const gemini = await (await call('gemini')).json();
   assert.equal(gemini.text, 'kal ka plan batao');
-  assert.match(t.calls[1].url, /gemini-2\.5-flash:generateContent$/);
+  assert.match(t.calls[1].url, /gemini-flash-lite-latest:generateContent$/);
   assert.equal(JSON.parse(t.calls[1].init.body).contents[0].parts[0].inlineData.mimeType, 'audio/wav');
   assert.equal((await call('openrouter')).status, 422);
   assert.equal((await call('groq', Buffer.from('not a wav file').toString('base64'))).status, 422);
@@ -456,6 +456,9 @@ test('youtube: an AI Studio key (bound to the Gemini API) finds the video with G
   const t = setup({ upstream: (url, init) => {
     if (url.startsWith('https://www.googleapis.com/youtube/')) return new Response(JSON.stringify({ error: { message: 'Requests to this API youtube.googleapis.com method youtube.api.v3.V3DataSearchService.List are blocked. <b>x</b>' } }), { status: 403 });
     if (url.includes(':generateContent')) {
+      // The first model is retired for this key, as gemini-2.5-flash was on the owner's key.
+      if (url.includes('/models/gemini-flash-lite-latest:')) return new Response(JSON.stringify({ error: { message: 'This model is no longer available to new users.' } }), { status: 404 });
+      assert.match(url, /\/models\/gemini-flash-latest:generateContent$/);
       const body = JSON.parse(init.body);
       assert.deepEqual(body.tools, [{ google_search: {} }]);
       assert.equal(init.headers['x-goog-api-key'], KEY);
@@ -477,4 +480,11 @@ test('youtube: an AI Studio key (bound to the Gemini API) finds the video with G
   const detail = (await none.json()).detail;
   assert.match(detail, /Could not find a matching YouTube video for "Kesariya Arijit Singh" \(YouTube: Requests to this API .* are blocked\. x; Google Search gave no matching video\)/);
   assert.doesNotMatch(detail, /<b>/);
+});
+
+test('gemini chat models: the -latest aliases come first, so a new key never starts on a retired dated model', async () => {
+  const t = setup({ upstream: async () => Response.json({ models: ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest']
+    .map((id) => ({ name: 'models/' + id, supportedGenerationMethods: ['generateContent'] })) }) });
+  const models = (await (await t.call('models', { method: 'POST', body: { provider: 'gemini', api_key: KEY } })).json()).models;
+  assert.deepEqual(models.slice(0, 2), ['gemini-flash-lite-latest', 'gemini-flash-latest']);
 });
