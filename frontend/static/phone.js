@@ -39,6 +39,19 @@
   }
   const text = (raw, max) => String(raw || '').trim().slice(0, max);
 
+  // What to play, from whichever fields the model filled: on the owner's key Gemini called play_youtube
+  // without "query" (so nothing was found), and models also send song, artist, title and the like.
+  const PLAY_KEYS = ['query', 'q', 'song', 'track', 'title', 'search', 'artist', 'singer', 'name', 'video', 'channel', 'text'];
+  function playQuery(args) {
+    const a = args && typeof args === 'object' ? args : {};
+    const parts = [];
+    for (const k of new Set([...PLAY_KEYS, ...Object.keys(a)])) {
+      const v = k === 'videoId' ? '' : String(typeof a[k] === 'string' ? a[k] : '').trim();
+      if (v && !parts.includes(v)) parts.push(v);
+    }
+    return parts.join(' ').slice(0, 200);
+  }
+
   /**
    * Turns a tool call into what the screen shows: { ok, message, card: { title, label, href, share, pickContact } }.
    * href is only ever tel:, sms: or https: to a fixed site (or the user's own http(s) address for open_website).
@@ -72,7 +85,7 @@
         return card('Directions to ' + place, 'Open Google Maps', 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(place));
       }
       case 'play_youtube': {
-        const q = text(a.query, 200);
+        const q = playQuery(a.videoId ? { ...a, title: '' } : a);
         if (!q) return fail('Say what to play.');
         // app.js adds the video it found (videoId, title); without one, the search page opens.
         const id = typeof a.videoId === 'string' && /^[\w-]{11}$/.test(a.videoId) ? a.videoId : '';
@@ -128,6 +141,7 @@
       } catch { return null; }
     },
     plan,
+    playQuery,
     cleanNumber,
     isIOS,
     /** The Contact Picker (Android Chrome): the user picks one contact; only its name and numbers are read. */

@@ -2380,7 +2380,7 @@
     }
     /** Plays the video found for play_youtube (phone) or a YouTube web_search (PC); the search page if none. */
     async function playTool(name, args) {
-      const query = String((args && args.query) || '');
+      const query = name === 'play_youtube' ? PHONE.playQuery(args) : String((args && args.query) || '');
       status.textContent = 'Finding "' + query.slice(0, 80) + '" on YouTube…';
       const v = await findVideo(query);
       log('youtube lookup: ' + (v.id ? 'found' : 'not found'));
