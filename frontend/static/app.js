@@ -2353,6 +2353,22 @@
       status.textContent = 'Phone: ' + (c.href || c.share ? 'tap "' + (c.share ? 'Share' : c.label) + '" to do it.' : 'pick the contact first.');
       // A contact still to be picked comes first; sharing always needs the tap (the browser requires it).
       if (c.share || !c.href || c.pickContact) return { ok: true, message: r.message };
+      // A found video plays right here: no pop-up to allow, and it works in every browser. The tap or
+      // the words that started Live count as the go-ahead for sound under the browsers' autoplay rules.
+      // The page sends no referrer, but YouTube's player needs one, so the frame sets its own.
+      const yt = /^https:\/\/www\.youtube\.com\/watch\?v=([\w-]{11})$/.exec(c.href);
+      if (yt) {
+        actionBox.insertBefore(el('iframe', {
+          class: 'liveplayer', id: 'liveplayer', title: c.title, src: 'https://www.youtube-nocookie.com/embed/' + yt[1] + '?autoplay=1&playsinline=1&rel=0',
+          allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: true, referrerpolicy: 'strict-origin-when-cross-origin',
+        }), actionBox.children[1]);
+        go.textContent = 'Open in YouTube';
+        close.textContent = 'Stop';
+        note.textContent = 'Playing here. Tap Stop to end it, or open it in YouTube.';
+        status.textContent = 'Phone: playing ' + c.title + '.';
+        log('phone ' + name + ': playing here');
+        return { ok: true, message: 'It is playing now inside ATLAS: ' + c.title + '.' };
+      }
       const how = openNow(c.href);
       const last = /^tel:/.test(c.href) ? ' The user presses Call there.' : c.sms || /^https:\/\/wa\.me\//.test(c.href) ? ' The user presses Send there.' : '';
       log('phone ' + name + ': ' + how);

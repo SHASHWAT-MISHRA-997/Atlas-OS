@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.29.12 — 2026-11-02
+
+From the owner: "play nahi hua, mai chahta hu bajne lage". The right video was found, but opening it needed a pop-up, which the browser blocked, so only a button appeared.
+- **The song now plays inside ATLAS.** A found video plays in a YouTube player on the Live screen (youtube-nocookie.com, autoplay), with Stop and "Open in YouTube". No pop-up permission is needed, in any browser.
+- The player sends its own referrer (`strict-origin-when-cross-origin`), because the site sends none and YouTube's player needs one. The Content-Security-Policy allows frames from www.youtube-nocookie.com only.
+- The YouTube Data API asks only for embeddable videos; the Gemini path already skipped them (oEmbed refuses videos that cannot be embedded).
+- Camera, screen sharing and microphone did not work in the Claude app's built-in browser pane, which blocks them for every site ("Permission denied"); they are unchanged and work in Chrome, Edge and Safari.
+- Browser test: the player appears with autoplay and the referrer, plays without a pop-up even with a pop-up blocker on, and Stop removes it. Unit 42/42, browser 21/21.
+
 ## 0.29.11 — 2026-11-01
 
 Found by capturing the real Gemini answer on the owner's key: in Live turn by turn it wrote `ACTION {"name": "play_youtube", "query": "Kesariya Arijit Singh"}`, with the arguments next to the name instead of inside "args". ATLAS read only "args", so every phone action (and PC action) written that way arrived empty; "play" said "Say what to play".

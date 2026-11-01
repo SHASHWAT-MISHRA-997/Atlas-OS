@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.29.11';
+export const VERSION = '0.29.12';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -166,7 +166,7 @@ async function findVideo(fetchImpl, p, query, signal, youtubeKey) {
   const tried = [];
   for (const [who, key] of [['ATLAS key', youtubeKey], ['your key', p.key]]) {
     if (!key) continue;
-    const api = await fetchImpl('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=' + encodeURIComponent(query) + '&key=' + encodeURIComponent(key), { signal });
+    const api = await fetchImpl('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&maxResults=1&q=' + encodeURIComponent(query) + '&key=' + encodeURIComponent(key), { signal });
     let data = {};
     try { data = await api.json(); } catch { /* not JSON */ }
     const item = api.ok && (data.items || [])[0];

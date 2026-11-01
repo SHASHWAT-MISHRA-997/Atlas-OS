@@ -1169,6 +1169,8 @@ test('Phone actions in Live: ATLAS opens a call, WhatsApp, directions or YouTube
     });
   });
   await page.addInitScript(() => localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-test-phone-key')));
+  // FAKE YouTube player: nothing reaches YouTube.
+  await page.route('https://www.youtube-nocookie.com/**', (route) => route.fulfill({ contentType: 'text/html', body: '<p>FAKE player</p>' }));
   // FAKE YouTube lookup: one song is found; for another the key has the YouTube API switched off.
   const lookups = [];
   await page.route('**/cloud/youtube', async (route) => {
@@ -1203,32 +1205,40 @@ test('Phone actions in Live: ATLAS opens a call, WhatsApp, directions or YouTube
   for (let i = 0; i < 30 && replies().length < 2; i += 1) await page.waitForTimeout(100);
   assert.match(replies()[1].message, /It is open on the device now: WhatsApp Rahul.*presses Send there/);
   assert.match(await page.textContent('#liveaction'), /Opened\. If you do not see it, tap below\./);
-  await ask({ id: 'c3', name: 'navigate_to', args: { place: 'India Gate, Delhi' } }, 'india gate ka rasta');
-  assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.google.com/maps/dir/?api=1&destination=India%20Gate%2C%20Delhi');
   // A pop-up blocker: the button is the way, and the model is told so.
   await page.evaluate(() => { window.__blockOpen = true; });
-  // "Play" finds the top video with the user's Google key and opens the video itself, not a search.
-  // Without "query" (as the real Gemini sent it on the owner's key) the other fields still say what to play.
+  await ask({ id: 'c3', name: 'navigate_to', args: { place: 'India Gate, Delhi' } }, 'india gate ka rasta');
+  assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.google.com/maps/dir/?api=1&destination=India%20Gate%2C%20Delhi');
+  for (let i = 0; i < 30 && replies().length < 3; i += 1) await page.waitForTimeout(100);
+  assert.match(replies()[2].message, /A button "Open Google Maps" is on the screen; the user taps it/);
+  assert.match(await page.textContent('#livestatus'), /allow pop-ups for this site/);
+  // "Play" finds the top video with the user's Google key and plays it inside ATLAS: no pop-up needed,
+  // even with the blocker on. Without "query" (as the real Gemini sent it) the other fields say what to play.
   await ask({ id: 'c4', name: 'play_youtube', args: { song: 'arijit', artist: 'singh' } }, 'arijit chalao', 'FAKE Kesariya');
   assert.deepEqual(lookups[0], { provider: 'gemini', api_key: 'AIza-test-phone-key', query: 'arijit singh' });
+  assert.equal(await page.getAttribute('#liveplayer', 'src'), 'https://www.youtube-nocookie.com/embed/abcDEF12345?autoplay=1&playsinline=1&rel=0');
+  assert.equal(await page.getAttribute('#liveplayer', 'referrerpolicy'), 'strict-origin-when-cross-origin', 'YouTube needs a referrer; the page sends none');
+  assert.match(await page.getAttribute('#liveplayer', 'allow'), /autoplay/);
   assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.youtube.com/watch?v=abcDEF12345');
   assert.equal(await page.getAttribute('#liveactiongo', 'rel'), 'noopener noreferrer');
   for (let i = 0; i < 30 && replies().length < 4; i += 1) await page.waitForTimeout(100);
-  assert.match(replies()[3].message, /A button "Play on YouTube" is on the screen; the user taps it to do it\. Video: "FAKE Kesariya" by FAKE Sony Music India\./);
-  assert.match(await page.textContent('#livestatus'), /allow pop-ups for this site/);
+  assert.match(replies()[3].message, /^It is playing now inside ATLAS: Play: FAKE Kesariya\. Video: "FAKE Kesariya" by FAKE Sony Music India\.$/);
+  assert.match(await page.textContent('#livestatus'), /Phone: playing Play: FAKE Kesariya/);
+  // Stop ends it (the player is removed).
+  await page.click('#liveaction button:has-text("Stop")');
+  assert.equal(await page.locator('#liveplayer').count(), 0);
   assert.deepEqual(await page.evaluate(() => window.__opened), [
     'tel:+919876543210',
     'https://wa.me/919876543210?text=Running%2010%20min%20late',
     'https://www.google.com/maps/dir/?api=1&destination=India%20Gate%2C%20Delhi',
-    'https://www.youtube.com/watch?v=abcDEF12345',
-  ]);
+  ], 'the video played inside ATLAS, not in a pop-up');
   // Unsafe or empty requests are refused and nothing is shown.
   next.push({ id: 'c5', name: 'open_website', args: { url: 'javascript:alert(1)' } });
   await page.fill('#livetyped', 'open this');
   await page.press('#livetyped', 'Enter');
   for (let i = 0; i < 40 && got.filter((m) => m.toolResponse).length < 5; i += 1) await page.waitForTimeout(100);
   assert.equal(got.filter((m) => m.toolResponse)[4].toolResponse.functionResponses[0].response.ok, false);
-  assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.youtube.com/watch?v=abcDEF12345', 'the unsafe link was not shown');
+  assert.equal(await page.locator('#liveactiongo').count(), 0, 'the unsafe link was not shown');
   assert.equal(await page.evaluate(() => window.pwned), undefined);
   // The key cannot search YouTube: the search page is used and Live says how to turn the API on.
   await page.evaluate(() => { window.__blockOpen = false; });
