@@ -365,7 +365,10 @@ test('Calendar and Gmail were removed: no Google sign-in, Calendar or Gmail host
   const { readFileSync, existsSync } = await import('node:fs');
   const toml = readFileSync(new URL('../../netlify.toml', import.meta.url), 'utf8');
   const csp = /Content-Security-Policy = "([^"]+)"/.exec(toml)[1];
-  assert.doesNotMatch(csp, /accounts\.google\.com|gmail\.googleapis\.com|www\.googleapis\.com|oauth2\.googleapis\.com|frame-src/);
+  assert.doesNotMatch(csp, /accounts\.google\.com|gmail\.googleapis\.com|www\.googleapis\.com|oauth2\.googleapis\.com/);
+  // The only frame allowed is YouTube's privacy-enhanced player for "play" in Live (0.29.12).
+  assert.match(csp, /(^|; )frame-src https:\/\/www\.youtube-nocookie\.com;/);
+  assert.equal((csp.match(/frame-src [^;]*/g) || []).join(), 'frame-src https://www.youtube-nocookie.com');
   assert.match(csp, /script-src 'self';/);
   assert.match(toml, /Cross-Origin-Opener-Policy = "same-origin"\r?\n/);
   assert.equal(existsSync(new URL('../../frontend/static/google.js', import.meta.url)), false);
