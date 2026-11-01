@@ -432,3 +432,26 @@ test('Whisper words for silence ("Gracias.", seen on the owner\'s phone) are dro
   reply = { text: ' namaste atlas ' };
   assert.equal(await call(), 'namaste atlas', 'a reply without pieces is used as it is');
 });
+
+test('youtube: finds the top video with the visitor\'s Google key; refuses other providers and passes on YouTube\'s own error', async () => {
+  const t = setup({ upstream: (url) => (/q=off/.test(url)
+    ? new Response(JSON.stringify({ error: { message: 'YouTube Data API v3 has not been used in project 1 before or it is disabled. <a href="x">Enable it</a>' } }), { status: 403 })
+    : new Response(JSON.stringify({ items: [{ id: { videoId: 'abcDEF12345' }, snippet: { title: 'Tum Hi Ho &amp; more &#39;live&#39;', channelTitle: 'T-Series' } }] }))) });
+  const call = (body) => t.call('youtube', { method: 'POST', body: { provider: 'gemini', api_key: KEY, ...body } });
+  const found = await call({ query: 'tum hi ho arijit' });
+  assert.equal(found.status, 200);
+  assert.deepEqual(await found.json(), { id: 'abcDEF12345', title: 'Tum Hi Ho & more \'live\'', channel: 'T-Series' });
+  const sent = new URL(t.calls[0].url);
+  assert.equal(sent.origin + sent.pathname, 'https://www.googleapis.com/youtube/v3/search');
+  assert.equal(sent.searchParams.get('q'), 'tum hi ho arijit');
+  assert.equal(sent.searchParams.get('key'), KEY);
+  const off = await call({ query: 'off' });
+  assert.equal(off.status, 502);
+  const detail = (await off.json()).detail;
+  assert.match(detail, /^YouTube: YouTube Data API v3 has not been used/);
+  assert.doesNotMatch(detail, /<a /, 'HTML from the error is removed');
+  assert.equal((await call({ query: '' })).status, 422);
+  assert.equal((await call({ query: 'x'.repeat(201) })).status, 422);
+  assert.equal((await t.call('youtube', { method: 'POST', body: { provider: 'groq', api_key: KEY, query: 'song' } })).status, 422);
+  assert.equal(t.calls.length, 2, 'refused requests never reach Google');
+});

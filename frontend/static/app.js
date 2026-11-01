@@ -203,6 +203,21 @@
     });
     later.addEventListener('click', () => banner.remove());
     document.querySelector('header.top').after(banner);
+    notifyUpdate(latest);
+  }
+
+  /**
+   * Also a system notification, once per version, when the user already allowed notifications
+   * (Automations asks for that): it shows even while ATLAS is in the background. Never asks itself.
+   */
+  function notifyUpdate(latest) {
+    try {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      if (localStorage.getItem('atlas.os.update.notified') === latest) return;
+      localStorage.setItem('atlas.os.update.notified', latest);
+      const n = new Notification('ATLAS OS ' + latest + ' is ready', { body: 'Open ATLAS and tap "Update now" to get the latest version.', icon: '/static/icon-192.png', tag: 'atlas-update' });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch { /* notifications or storage blocked: the banner is still there */ }
   }
 
   function autoCheckForUpdate() {
@@ -2350,7 +2365,36 @@
       return { ok: true, message: (how === 'opened' ? 'It is open on the device now: ' + c.title + '.' : 'ATLAS asked the phone to open it: ' + c.title + '. If nothing opened, a button "' + c.label + '" is on the screen.') + last };
     }
     /** Runs a tool the model asked for: phone actions on this screen, PC actions through the helper. */
+    /**
+     * The top YouTube video for what the user asked to play, found with their Gemini key (it is a
+     * Google key), or { error } when there is no key or YouTube refused it.
+     */
+    async function findVideo(query) {
+      const key = cloudKey.get('gemini');
+      if (!key) return { error: 'Add a free Google Gemini key in AI Chat so ATLAS can find the video to play.' };
+      try {
+        return await api('/api/llm/youtube', { method: 'POST', body: { api_key: key, query: String(query || '').slice(0, 200) } });
+      } catch (err) {
+        const off = /has not been used|is disabled|SERVICE_DISABLED|blocked/i.test(err.message);
+        return { error: off ? 'Your Google key cannot search YouTube yet. Turn on "YouTube Data API v3" for the key\'s project in Google Cloud Console (APIs & Services → Library), then try again.' : err.message };
+      }
+    }
+    /** Plays the video found for play_youtube (phone) or a YouTube web_search (PC); the search page if none. */
+    async function playTool(name, args) {
+      const query = String((args && args.query) || '');
+      status.textContent = 'Finding "' + query.slice(0, 80) + '" on YouTube…';
+      const v = await findVideo(query);
+      log('youtube lookup: ' + (v.id ? 'found' : 'not found'));
+      let r;
+      if (name === 'play_youtube') r = phoneTool(name, v.id ? { ...args, videoId: v.id, title: v.title } : args);
+      else r = await pcTool(v.id ? 'open_url' : name, v.id ? { url: 'https://www.youtube.com/watch?v=' + v.id } : args);
+      if (r.ok) r = { ...r, message: (r.message || '') + (v.id ? ' Video: "' + v.title + '"' + (v.channel ? ' by ' + v.channel : '') + '.' : ' No single video was picked (' + v.error + '), so the YouTube search is used instead.') };
+      if (!v.id) status.textContent += ' ' + v.error;
+      return r;
+    }
     async function liveTool(name, args) {
+      if (name === 'play_youtube' && PHONE) return playTool(name, args);
+      if (name === 'web_search' && args && args.site === 'youtube' && PC && PC.enabled()) return playTool(name, args);
       if (PHONE && PHONE.has(name)) return phoneTool(name, args);
       if (PC && PC.enabled()) return pcTool(name, args);
       return { ok: false, message: 'There is no tool called ' + name + ' here.' };

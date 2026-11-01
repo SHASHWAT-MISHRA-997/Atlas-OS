@@ -206,6 +206,11 @@ test('a new version is announced with "Update now", and "Check for update" works
   // Requests from the service worker bypass page.route, so this test runs without it.
   const page = await phone({ serviceWorkers: 'block' });
   const version = (await import('node:fs')).readFileSync(root + 'VERSION', 'utf8').trim();
+  // FAKE system notifications, already allowed by the user; each one shown is listed in localStorage.
+  await page.addInitScript(() => {
+    window.Notification = class { constructor(title) { const l = JSON.parse(localStorage.getItem('fake.notes') || '[]'); l.push(title); localStorage.setItem('fake.notes', JSON.stringify(l)); } close() {} };
+    window.Notification.permission = 'granted';
+  });
   await page.goto(base + '/');
   await page.waitForSelector('#topstatus .dot');
   // Same version as the page: nothing to update.
@@ -222,6 +227,8 @@ test('a new version is announced with "Update now", and "Check for update" works
   await Promise.all([page.waitForEvent('load'), page.click('#updatenow')]);
   // After the reload the app checks again by itself (the fake deploy is still "newer").
   await page.waitForSelector('#updatebanner', { timeout: 10000 });
+  // One system notification for 9.9.9, not one per check.
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('fake.notes') || '[]')), ['ATLAS OS 9.9.9 is ready']);
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });
@@ -1162,14 +1169,22 @@ test('Phone actions in Live: ATLAS opens a call, WhatsApp, directions or YouTube
     });
   });
   await page.addInitScript(() => localStorage.setItem('atlas.cloud.key.gemini', JSON.stringify('AIza-test-phone-key')));
+  // FAKE YouTube lookup: one song is found; for another the key has the YouTube API switched off.
+  const lookups = [];
+  await page.route('**/cloud/youtube', async (route) => {
+    const body = JSON.parse(route.request().postData());
+    lookups.push(body);
+    if (/off/.test(body.query)) await route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ detail: 'YouTube: YouTube Data API v3 has not been used in project 123 before or it is disabled.', code: 'provider_error' }) });
+    else await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ id: 'abcDEF12345', title: 'FAKE Kesariya', channel: 'FAKE Sony Music India' }) });
+  });
   await page.goto(base + '/');
   await go(page, 'live');
   await page.waitForSelector('#livemode');
-  const ask = async (call, text) => {
+  const ask = async (call, text, shows) => {
     next.push(call);
     await page.fill('#livetyped', text);
     await page.press('#livetyped', 'Enter');
-    await page.waitForFunction((n) => document.querySelectorAll('#liveaction a, #liveaction button').length > 0 && document.querySelector('#liveaction strong')?.textContent.includes(n), call.args.name || call.args.place || call.args.query || call.args.text);
+    await page.waitForFunction((n) => document.querySelectorAll('#liveaction a, #liveaction button').length > 0 && document.querySelector('#liveaction strong')?.textContent.includes(n), shows || call.args.name || call.args.place || call.args.query || call.args.text);
   };
   await ask({ id: 'c1', name: 'dial_number', args: { number: '+91 98765-43210', name: 'Mom' } }, 'mom ko call karo');
   const setup = got.find((m) => m.setup).setup;
@@ -1192,17 +1207,19 @@ test('Phone actions in Live: ATLAS opens a call, WhatsApp, directions or YouTube
   assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.google.com/maps/dir/?api=1&destination=India%20Gate%2C%20Delhi');
   // A pop-up blocker: the button is the way, and the model is told so.
   await page.evaluate(() => { window.__blockOpen = true; });
-  await ask({ id: 'c4', name: 'play_youtube', args: { query: 'arijit singh' } }, 'arijit chalao');
-  assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.youtube.com/results?search_query=arijit%20singh');
+  // "Play" finds the top video with the user's Google key and opens the video itself, not a search.
+  await ask({ id: 'c4', name: 'play_youtube', args: { query: 'arijit singh' } }, 'arijit chalao', 'FAKE Kesariya');
+  assert.deepEqual(lookups[0], { provider: 'gemini', api_key: 'AIza-test-phone-key', query: 'arijit singh' });
+  assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.youtube.com/watch?v=abcDEF12345');
   assert.equal(await page.getAttribute('#liveactiongo', 'rel'), 'noopener noreferrer');
   for (let i = 0; i < 30 && replies().length < 4; i += 1) await page.waitForTimeout(100);
-  assert.match(replies()[3].message, /A button "Open YouTube" is on the screen; the user taps it/);
+  assert.match(replies()[3].message, /A button "Play on YouTube" is on the screen; the user taps it to do it\. Video: "FAKE Kesariya" by FAKE Sony Music India\./);
   assert.match(await page.textContent('#livestatus'), /allow pop-ups for this site/);
   assert.deepEqual(await page.evaluate(() => window.__opened), [
     'tel:+919876543210',
     'https://wa.me/919876543210?text=Running%2010%20min%20late',
     'https://www.google.com/maps/dir/?api=1&destination=India%20Gate%2C%20Delhi',
-    'https://www.youtube.com/results?search_query=arijit%20singh',
+    'https://www.youtube.com/watch?v=abcDEF12345',
   ]);
   // Unsafe or empty requests are refused and nothing is shown.
   next.push({ id: 'c5', name: 'open_website', args: { url: 'javascript:alert(1)' } });
@@ -1210,8 +1227,15 @@ test('Phone actions in Live: ATLAS opens a call, WhatsApp, directions or YouTube
   await page.press('#livetyped', 'Enter');
   for (let i = 0; i < 40 && got.filter((m) => m.toolResponse).length < 5; i += 1) await page.waitForTimeout(100);
   assert.equal(got.filter((m) => m.toolResponse)[4].toolResponse.functionResponses[0].response.ok, false);
-  assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.youtube.com/results?search_query=arijit%20singh', 'the unsafe link was not shown');
+  assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.youtube.com/watch?v=abcDEF12345', 'the unsafe link was not shown');
   assert.equal(await page.evaluate(() => window.pwned), undefined);
+  // The key cannot search YouTube: the search page is used and Live says how to turn the API on.
+  await page.evaluate(() => { window.__blockOpen = false; });
+  await ask({ id: 'c6', name: 'play_youtube', args: { query: 'songs off' } }, 'gaana chalao', 'songs off');
+  assert.equal(await page.getAttribute('#liveactiongo', 'href'), 'https://www.youtube.com/results?search_query=songs%20off');
+  for (let i = 0; i < 30 && replies().length < 6; i += 1) await page.waitForTimeout(100);
+  assert.match(replies()[5].message, /It is open on the device now: YouTube: songs off\. No single video was picked/);
+  assert.match(await page.textContent('#livestatus'), /YouTube Data API v3/);
   await page.click('#liveend');
   assert.deepEqual(page.errors, []);
   await page.context().close();

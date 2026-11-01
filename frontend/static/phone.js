@@ -15,7 +15,7 @@
     { name: 'send_sms', description: 'Open an SMS on this device with the text filled in; the user presses Send in their messages app.', parameters: obj({ number: str('Phone number, or empty to choose in the app'), name: str('Who it is for, if said'), text: str('Message text') }, ['text']) },
     { name: 'send_whatsapp', description: 'Open a WhatsApp message with the text filled in; the user presses Send in WhatsApp. Number with country code (e.g. 919876543210), or empty to choose the chat in WhatsApp.', parameters: obj({ number: str('Number with country code, or empty'), name: str('Who it is for, if said'), text: str('Message text') }, ['text']) },
     { name: 'navigate_to', description: 'Open directions to a place in Google Maps on this device.', parameters: obj({ place: str('Place or address') }) },
-    { name: 'play_youtube', description: 'Open a YouTube search on this device, to play a song or video.', parameters: obj({ query: str('What to play') }) },
+    { name: 'play_youtube', description: 'Play a song or video on YouTube on this device: ATLAS finds the top video for these words and plays it. Works with a song name, a singer, an actor, a channel or "latest video by X".', parameters: obj({ query: str('What to play, in the user\'s words, e.g. "Kesariya Arijit Singh" or "latest MrBeast video"') }) },
     { name: 'open_website', description: 'Open a web address (http or https) on this device.', parameters: obj({ url: str('Full http(s) address') }) },
     { name: 'share_text', description: 'Show the share button for text to share to any app on this device (the share sheet).', parameters: obj({ text: str('Text to share') }) },
   ];
@@ -27,6 +27,7 @@
     'When the user asks to call someone, send an SMS or WhatsApp, get directions, play something on YouTube, open a website or share text, you must call the matching tool in that same turn: nothing opens and no button appears unless you call the tool. ' +
     'After the tool result, say in a few natural words exactly what its message says happened: if it opened, say it is open; if it says a button is on the screen, ask the user to tap it. ' +
     'Never say a call was made or a message was sent: the user presses Call or Send in their own app. Never claim something opened unless the result says so. ' +
+    'To play something, call play_youtube right away with what the user said (song, singer, actor, channel); do not ask which one, and never ask them to choose. ' +
     'You cannot read contacts, messages, notifications or call history; if the user names a person without a number, call the tool with only the name. ';
 
   const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -73,6 +74,9 @@
       case 'play_youtube': {
         const q = text(a.query, 200);
         if (!q) return fail('Say what to play.');
+        // app.js adds the video it found (videoId, title); without one, the search page opens.
+        const id = typeof a.videoId === 'string' && /^[\w-]{11}$/.test(a.videoId) ? a.videoId : '';
+        if (id) return card('Play: ' + (text(a.title, 120) || q), 'Play on YouTube', 'https://www.youtube.com/watch?v=' + id);
         return card('YouTube: ' + q, 'Open YouTube', 'https://www.youtube.com/results?search_query=' + encodeURIComponent(q));
       }
       case 'open_website': {

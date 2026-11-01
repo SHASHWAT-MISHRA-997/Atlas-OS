@@ -17,7 +17,7 @@
     { name: 'open_app', description: 'Open an installed app on the user\'s Windows PC by its Start menu name, e.g. Notepad, Google Chrome, Spotify, WhatsApp, Word, Settings.', parameters: obj({ name: str('App name') }) },
     { name: 'list_apps', description: 'List installed apps on the PC, optionally filtered, to find the exact name before open_app.', parameters: obj({ filter: str('Part of the name, or empty for all') }, []) },
     { name: 'open_url', description: 'Open a web address (http or https) in the PC\'s browser.', parameters: obj({ url: str('Full http(s) address') }) },
-    { name: 'web_search', description: 'Search the web on the PC and show the results in the browser. site: google, youtube, bing, maps or wikipedia. Use youtube to play a song or video.', parameters: obj({ query: str('What to search for'), site: { type: 'string', enum: ['google', 'youtube', 'bing', 'maps', 'wikipedia'] } }, ['query']) },
+    { name: 'web_search', description: 'Search the web on the PC and show the results in the browser. site: google, youtube, bing, maps or wikipedia. Use youtube to play a song or video: ATLAS plays the top video for the words directly (a song, singer, actor or channel).', parameters: obj({ query: str('What to search for'), site: { type: 'string', enum: ['google', 'youtube', 'bing', 'maps', 'wikipedia'] } }, ['query']) },
     { name: 'media', description: 'Press a media key: play_pause, next, previous, stop, mute, volume_up or volume_down. steps (1-50) is for volume; each step is 2%.', parameters: obj({ key: { type: 'string', enum: ['play_pause', 'next', 'previous', 'stop', 'mute', 'volume_up', 'volume_down'] }, steps: { type: 'integer', description: 'Volume steps of 2%' } }, ['key']) },
     { name: 'find_files', description: 'Find files by name in the user\'s Desktop, Documents, Downloads, Pictures, Music, Videos and OneDrive. Returns full paths.', parameters: obj({ query: str('Words from the file name') }) },
     { name: 'open_file', description: 'Open a document, picture, song or video (full path, usually from find_files) in its usual app. Programs and scripts are never opened.', parameters: obj({ path: str('Full path') }) },
@@ -42,6 +42,7 @@
   const PROMPT = 'You can control the user\'s Windows PC through the ATLAS PC helper tools: open apps, websites and files, search, play media, change volume, type, press shortcuts and manage windows. ' +
     'When the user asks for something on the PC, call the tool, then say in a few words what happened, from the tool result. Never say something was done unless the result says ok. ' +
     'If the result says the user did not allow it, say so. Typing, most shortcuts and closing windows show an Allow box on the PC: tell the user to click Yes there. ' +
+    'To play a song or video, call web_search with site youtube right away with what the user said; do not ask which one. ' +
     'You cannot delete files, run commands, install software or shut down; say so if asked.';
 
   function saved() {
