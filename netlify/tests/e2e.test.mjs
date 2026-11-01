@@ -206,6 +206,11 @@ test('a new version is announced with "Update now", and "Check for update" works
   // Requests from the service worker bypass page.route, so this test runs without it.
   const page = await phone({ serviceWorkers: 'block' });
   const version = (await import('node:fs')).readFileSync(root + 'VERSION', 'utf8').trim();
+  // FAKE system notifications, already allowed by the user; each one shown is listed in localStorage.
+  await page.addInitScript(() => {
+    window.Notification = class { constructor(title) { const l = JSON.parse(localStorage.getItem('fake.notes') || '[]'); l.push(title); localStorage.setItem('fake.notes', JSON.stringify(l)); } close() {} };
+    window.Notification.permission = 'granted';
+  });
   await page.goto(base + '/');
   await page.waitForSelector('#topstatus .dot');
   // Same version as the page: nothing to update.
@@ -222,6 +227,8 @@ test('a new version is announced with "Update now", and "Check for update" works
   await Promise.all([page.waitForEvent('load'), page.click('#updatenow')]);
   // After the reload the app checks again by itself (the fake deploy is still "newer").
   await page.waitForSelector('#updatebanner', { timeout: 10000 });
+  // One system notification for 9.9.9, not one per check.
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('fake.notes') || '[]')), ['ATLAS OS 9.9.9 is ready']);
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });

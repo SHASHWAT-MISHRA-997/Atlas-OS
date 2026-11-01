@@ -203,6 +203,21 @@
     });
     later.addEventListener('click', () => banner.remove());
     document.querySelector('header.top').after(banner);
+    notifyUpdate(latest);
+  }
+
+  /**
+   * Also a system notification, once per version, when the user already allowed notifications
+   * (Automations asks for that): it shows even while ATLAS is in the background. Never asks itself.
+   */
+  function notifyUpdate(latest) {
+    try {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      if (localStorage.getItem('atlas.os.update.notified') === latest) return;
+      localStorage.setItem('atlas.os.update.notified', latest);
+      const n = new Notification('ATLAS OS ' + latest + ' is ready', { body: 'Open ATLAS and tap "Update now" to get the latest version.', icon: '/static/icon-192.png', tag: 'atlas-update' });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch { /* notifications or storage blocked: the banner is still there */ }
   }
 
   function autoCheckForUpdate() {

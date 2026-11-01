@@ -7,6 +7,7 @@ From the owner's test: "play this" opened a YouTube search or asked which one, a
 - New endpoint `/cloud/youtube` (Gemini keys only, at most 200 characters, YouTube's own error passed on without HTML).
 - A key made in Google AI Studio can search YouTube only after "YouTube Data API v3" is enabled in its Google Cloud project; until then the YouTube search page opens as before and Live says how to enable it.
 - Tested with FAKE YouTube answers (unit test and browser test). Not tried against the real YouTube Data API.
+- **Update notice also as a system notification.** When a new version is out, users who already allowed notifications (Automations asks for that) also get one Windows or phone notification per version ("ATLAS OS x.y.z is ready"), besides the in-app "Update now" banner. ATLAS never asks for the permission just for this. Tested with a FAKE notification in the browser test.
 
 ## 0.29.3 — 2026-11-01
 
