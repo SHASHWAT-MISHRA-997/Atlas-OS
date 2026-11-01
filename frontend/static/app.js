@@ -2367,7 +2367,7 @@
     /** Runs a tool the model asked for: phone actions on this screen, PC actions through the helper. */
     /**
      * The top YouTube video for what the user asked to play, found with their Gemini key (it is a
-     * Google key), or { error } when there is no key or YouTube refused it.
+     * Google key: YouTube Data API, or Gemini with Google Search), or { error } when none was found.
      */
     async function findVideo(query) {
       const key = cloudKey.get('gemini');
@@ -2375,8 +2375,7 @@
       try {
         return await api('/api/llm/youtube', { method: 'POST', body: { api_key: key, query: String(query || '').slice(0, 200) } });
       } catch (err) {
-        const off = /has not been used|is disabled|SERVICE_DISABLED|blocked/i.test(err.message);
-        return { error: off ? 'Your Google key cannot search YouTube yet. Turn on "YouTube Data API v3" for the key\'s project in Google Cloud Console (APIs & Services → Library), then try again.' : err.message };
+        return { error: err.message };
       }
     }
     /** Plays the video found for play_youtube (phone) or a YouTube web_search (PC); the search page if none. */
