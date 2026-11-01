@@ -137,7 +137,10 @@
       if (at < 0) return null;
       try {
         const a = JSON.parse(t.slice(t.indexOf('{', at), t.lastIndexOf('}') + 1));
-        return a && typeof a.name === 'string' ? { name: a.name, args: a.args && typeof a.args === 'object' ? a.args : {} } : null;
+        if (!a || typeof a.name !== 'string') return null;
+        // Gemini also writes the arguments next to the name ({"name": "play_youtube", "query": "…"}), seen on the owner's key.
+        const { name, args, ...rest } = a;
+        return { name, args: args && typeof args === 'object' ? args : rest };
       } catch { return null; }
     },
     plan,

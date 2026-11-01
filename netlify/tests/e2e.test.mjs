@@ -1261,6 +1261,9 @@ test('Phone actions, turn by turn: an ACTION line becomes a button; a name witho
   await page.fill('#livetyped', 'papa ko sms karo ghar aa raha hoon');
   await page.press('#livetyped', 'Enter');
   await page.waitForSelector('#livesaid >> text=FAKE tap the button to message Papa.');
+  // The real Gemini also writes the arguments next to the name (seen on the owner's key); both forms work.
+  const parsed = await page.evaluate(() => [window.AtlasPhone.parseAction('ACTION {"name": "play_youtube", "query": "Kesariya Arijit Singh"}'), window.AtlasPhone.parseAction('ACTION {"name": "play_youtube", "args": {"query": "Kesariya"}}')]);
+  assert.deepEqual(parsed, [{ name: 'play_youtube', args: { query: 'Kesariya Arijit Singh' } }, { name: 'play_youtube', args: { query: 'Kesariya' } }]);
   assert.match(sent[0].messages[0].content, /ACTION \{"name"/);
   assert.match(sent[0].messages[0].content, /send_sms/);
   assert.match(await page.textContent('#liveaction strong'), /SMS Papa: "Ghar aa raha hoon"/);
