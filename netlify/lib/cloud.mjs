@@ -10,7 +10,7 @@
 //
 // fetch and the provider table are injectable so tests run without Netlify or real models.
 
-export const VERSION = '0.29.5';
+export const VERSION = '0.29.6';
 
 const MAX_MESSAGES = 60;
 const MAX_TOTAL_CHARS = 100_000;
@@ -36,8 +36,8 @@ export const PROVIDERS = {
   },
   gemini: {
     label: 'Google Gemini', kind: 'gemini', pdf: true, base: 'https://generativelanguage.googleapis.com', keyUrl: 'https://aistudio.google.com/apikey',
-    note: 'Free tier with limits. A paid Google key also lists paid models such as Gemini 4 Argon, billed to your Google account.', prefer: [/flash-lite/, /flash/], skip: /image|tts|embedding|aqa|live|audio|vision|learnlm|gemma/i,
-    suggested: ['gemini-2.5-flash'],
+    note: 'Free tier with limits. A paid Google key also lists paid models such as Gemini 4 Argon, billed to your Google account.', prefer: [/^gemini-flash-lite-latest$/, /^gemini-flash-latest$/, /flash-lite/, /flash/], skip: /image|tts|embedding|aqa|live|audio|vision|learnlm|gemma/i,
+    suggested: ['gemini-flash-lite-latest'],
   },
   openrouter: {
     label: 'OpenRouter', kind: 'openai', pdf: true, thinking: 'openrouter', base: 'https://openrouter.ai/api/v1', keyUrl: 'https://openrouter.ai/settings/keys',
@@ -59,9 +59,11 @@ const MAX_BODY = 5_000_000; // a chat with up to about 3 MB of images or PDFs
 // recording, written down by the visitor's own provider. OpenRouter has no speech model.
 // A Whisper piece more likely silence than speech is dropped (Whisper's own no-speech estimate).
 const NO_SPEECH = 0.5;
-const TRANSCRIBE_MODELS = { groq: 'whisper-large-v3-turbo', gemini: 'gemini-2.5-flash', openai: 'gpt-4o-mini-transcribe' };
-// Finds the video to play with Google Search when the key cannot call the YouTube Data API.
-const SEARCH_MODEL = 'gemini-2.5-flash';
+const TRANSCRIBE_MODELS = { groq: 'whisper-large-v3-turbo', gemini: 'gemini-flash-lite-latest', openai: 'gpt-4o-mini-transcribe' };
+// Find the video to play with Google Search when the key cannot call the YouTube Data API. Google
+// retires dated models for new keys (gemini-2.5-flash answered 404 "no longer available to new users"
+// on the owner's key, 2026-11-01), so the -latest aliases come first.
+const SEARCH_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.5-flash-lite'];
 const MAX_AUDIO = 3_000_000; // base64 characters, about 70 seconds of 16 kHz speech
 // Text to speech in a natural voice for spoken answers (Live turn-by-turn, Read aloud). Gemini's TTS
 // models are free on a Gemini key; OpenAI's is paid and is used only when OpenAI is the chosen provider.
@@ -118,15 +120,21 @@ async function findVideo(fetchImpl, p, query, signal) {
   if (apiId && /^[\w-]{11}$/.test(apiId)) return { id: apiId, title: cleanText(item.snippet && item.snippet.title), channel: cleanText(item.snippet && item.snippet.channelTitle), via: 'youtube' };
   const apiError = api.ok ? 'YouTube found no video' : 'YouTube: ' + errText(data, api);
 
-  const ask = await fetchImpl(p.base + '/v1beta/models/' + SEARCH_MODEL + ':generateContent', {
-    method: 'POST', signal, headers: { 'Content-Type': 'application/json', 'x-goog-api-key': p.key },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: 'Use Google Search to find the YouTube video that best matches this request to play: "' + query + '". Prefer the official upload. Reply with only its full https://www.youtube.com/watch?v= link, nothing else.' }] }],
-      tools: [{ google_search: {} }],
-    }),
-  });
+  // The next model is tried when one is retired for this key (404) or busy (429, 503).
+  let ask;
   let found = {};
-  try { found = await ask.json(); } catch { /* not JSON */ }
+  for (const model of SEARCH_MODELS) {
+    ask = await fetchImpl(p.base + '/v1beta/models/' + model + ':generateContent', {
+      method: 'POST', signal, headers: { 'Content-Type': 'application/json', 'x-goog-api-key': p.key },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: 'Use Google Search to find the YouTube video that best matches this request to play: "' + query + '". Prefer the official upload. Reply with only its full https://www.youtube.com/watch?v= link, nothing else.' }] }],
+        tools: [{ google_search: {} }],
+      }),
+    });
+    found = {};
+    try { found = await ask.json(); } catch { /* not JSON */ }
+    if (ask.ok || ![404, 429, 503].includes(ask.status)) break;
+  }
   if (!ask.ok) throw new Error(apiError + '; Google Search: ' + errText(found, ask));
   const cand = (found.candidates || [])[0] || {};
   const text = ((cand.content && cand.content.parts) || []).map((x) => x.text || '').join(' ');
