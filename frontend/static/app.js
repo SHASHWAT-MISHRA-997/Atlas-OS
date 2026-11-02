@@ -2637,7 +2637,7 @@
       if (state.running) listen(); else setState('idle', SR ? 'Tap to start' : 'Type below');
     }
 
-    const RT_SYSTEM = 'You are ATLAS OS, a friendly voice assistant made by Shashwat Mishra, talking with the user in real time. ' +
+    const RT_SYSTEM = 'You are ATLAS OS, a friendly voice assistant made by SHASHWAT MISHRA, talking with the user in real time. ' +
       'Talk like a warm, relaxed person in a real conversation, not like someone reading out text: short sentences, everyday words, a natural pace, and small reactions such as "okay", "got it" or "haan" where they fit. ' +
       'Match the user\'s mood and language (English, Hindi or Hinglish, the way they speak). Give the answer first, keep it short, and ask a follow-up only when it helps. Never read out lists, markdown or symbols. ' +
       'When you get camera or screen pictures, describe only what you can actually see, and say so when it is unclear. ' +
@@ -2775,13 +2775,13 @@
 
   // ---------------------------------------------------------------- about
   const DEVELOPER = {
-    name: 'Shashwat Mishra',
+    name: 'SHASHWAT MISHRA',
     role: 'AI & Robotics Engineer · MTech graduate',
     intro: 'I build AI assistants around a simple idea: an assistant should work for you and keep what it learns to itself. ATLAS OS is one of them: one web app for every device, where each person uses their own AI key and their data stays in their own browser.',
     skills: ['Machine Learning', 'Generative AI', 'Robotics', 'Data Science', 'React', 'Power BI'],
     projects: [
       ['ATLAS OS', 'This app: an AI assistant in the browser, on any device, with your own key.', 'https://atlas-os-sm.netlify.app'],
-      ['SMARAN.AI', 'An AI assistant that runs on your own machine, built and maintained by Shashwat.', 'https://smaran-ai.netlify.app'],
+      ['SMARAN.AI', 'An AI assistant that runs on your own machine, built and maintained by SHASHWAT MISHRA.', 'https://smaran-ai.netlify.app'],
       ['SMARAN.AI Codex', 'A VS Code extension.', 'https://marketplace.visualstudio.com/items?itemName=ShashwatMishra.smaran-ai-codex'],
     ],
     links: [

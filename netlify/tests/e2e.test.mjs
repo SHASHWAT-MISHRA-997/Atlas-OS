@@ -608,7 +608,7 @@ test('Live: camera picture goes with a question, the answer is shown and saved; 
   await page.waitForSelector('#livecam.on');
   await go(page, 'about');
   assert.equal(await page.evaluate(() => document.querySelectorAll('video').length), 0);
-  await page.waitForSelector('text=Shashwat Mishra');
+  await page.waitForSelector('text=SHASHWAT MISHRA');
   const links = await page.$$eval('.aboutlinks a', (as) => as.map((a) => [a.textContent, a.href, a.rel]));
   assert.deepEqual(links.map((l) => l[0]), ['Portfolio', 'LinkedIn', 'GitHub', 'YouTube']);
   assert.equal(links[0][1], 'https://shashwatmishra-portfolio.netlify.app/');

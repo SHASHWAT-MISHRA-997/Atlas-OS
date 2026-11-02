@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.14 — 2026-11-03
+
+At the owner's request, the developer's name is written in full capitals everywhere: SHASHWAT MISHRA.
+- About screen, the SMARAN.AI project line, the Live voice instructions ("made by SHASHWAT MISHRA") and the privacy policy. Links and handles (GitHub, YouTube) are unchanged so they keep working.
+- Unit 42/42, browser 21/21.
+
 ## 0.29.13 — 2026-11-02
 
 From the owner's PC: in real-time Live, "you see my screen" was shown as "యు సీ మై స్క్రీన్" (English speech in Telugu script); Gemini understood it and answered correctly.
