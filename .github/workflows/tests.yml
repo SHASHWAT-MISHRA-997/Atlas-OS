@@ -64,7 +64,7 @@ jobs:
           dist\AtlasHelper.exe --self-test
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Get-FileHash dist\AtlasHelper.exe -Algorithm SHA256 | Format-List
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: runner.os == 'Windows'
         with:
           name: AtlasHelper
